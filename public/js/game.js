@@ -675,6 +675,7 @@ class FarmGame {
       }
       this._dragging = true;
       this._dragMoved = false;
+      this._isTouch = !!e.touches;
       this._lastPointer = getPos(e);
     };
 
@@ -703,14 +704,20 @@ class FarmGame {
         this._lastPointer = pos;
         return;
       }
-      // A plain left-click/touch drag no longer pans the camera — only
-      // right-click-drag does (see above). Still tracked here so taps vs.
-      // drags can be told apart for tile-click handling.
       if (!this._dragging) return;
       const pos = getPos(e);
       const dx = pos.x - this._lastPointer.x;
       const dy = pos.y - this._lastPointer.y;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._dragMoved = true;
+      // Touch has no right-click equivalent, so a one-finger drag pans the
+      // map directly (this is safe on touch specifically: a real tap never
+      // triggers noticeable movement, so it doesn't fight with tap-to-act).
+      // Mouse dragging still doesn't pan — that's what right-click-drag is
+      // for on desktop — only tracked here to tell taps from drags.
+      if (this._isTouch) {
+        this.camera.x += dx;
+        this.camera.y += dy;
+      }
       this._lastPointer = pos;
     };
 

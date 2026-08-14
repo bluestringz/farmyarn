@@ -1134,8 +1134,17 @@
     document.getElementById('chat-whisper-target').addEventListener('change', (e) => {
       whisperTargetId = e.target.value || null;
     });
+    // Chat starts fully hidden behind the small floating button — tapping
+    // it opens the box; the ✕ inside closes it back down to just the
+    // button. Replaces the old "collapsed bar" state, which still sat on
+    // screen and was fiddly to open/close on mobile.
+    document.getElementById('chat-fab').addEventListener('click', () => {
+      document.getElementById('chat-box').classList.remove('hidden');
+      document.getElementById('chat-fab').classList.add('hidden');
+    });
     document.getElementById('chat-toggle').addEventListener('click', () => {
-      document.getElementById('chat-box').classList.toggle('collapsed');
+      document.getElementById('chat-box').classList.add('hidden');
+      document.getElementById('chat-fab').classList.remove('hidden');
     });
 
     // Deliberately NOT loading chat history here — global chat only shows

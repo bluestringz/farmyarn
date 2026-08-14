@@ -187,14 +187,19 @@
     <div class="side-panel-body" id="side-panel-body"></div>
   </aside>
 
+  <!-- Small floating button — tap to open the chat box. Keeps the chat
+       fully out of the way until wanted, instead of a "collapsed" bar that
+       still ate up screen space and was fiddly to open on mobile. -->
+  <button id="chat-fab" class="chat-fab" title="Chat">💬</button>
+
   <!-- GLOBAL CHAT BOX (bottom-left) -->
-  <div id="chat-box" class="chat-box">
+  <div id="chat-box" class="chat-box hidden">
     <div class="chat-header">
       <div class="chat-tabs">
         <button class="chat-tab active" data-mode="global">🌐 Global</button>
         <button class="chat-tab" data-mode="whisper">🤫 Whisper</button>
       </div>
-      <button class="chat-collapse-btn" id="chat-toggle">▾</button>
+      <button class="chat-collapse-btn" id="chat-toggle">✕</button>
     </div>
     <div id="chat-log" class="chat-log"></div>
     <div class="chat-input-row">

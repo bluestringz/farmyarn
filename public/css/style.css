@@ -345,14 +345,23 @@ button { font-family: inherit; cursor: pointer; }
   flex-direction: column;
   z-index: 40;
   overflow: hidden;
-  transition: max-height 0.2s ease;
 }
-.chat-box.collapsed {
-  max-height: 34px;
-}
-.chat-box.collapsed .chat-log,
-.chat-box.collapsed .chat-input-row {
-  display: none;
+/* Small floating button that opens the chat — sits where the chat box
+   itself used to always be, so nothing blocks the farm view until the
+   player actually wants to chat. */
+.chat-fab {
+  position: fixed;
+  left: 10px;
+  bottom: 78px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid var(--wood);
+  background: var(--sun);
+  font-size: 20px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  z-index: 40;
+  cursor: pointer;
 }
 .chat-header {
   display: flex;
@@ -814,7 +823,8 @@ button { font-family: inherit; cursor: pointer; }
   .tool-icon { font-size: 16px; }
   .tool-label { font-size: 8px; }
 
-  .chat-box { width: 60vw; max-height: 190px; bottom: 68px; }
+  .chat-box { width: 60vw; max-height: 190px; bottom: 110px; }
+  .chat-fab { bottom: 110px; width: 40px; height: 40px; font-size: 18px; }
   .chat-log { min-height: 60px; max-height: 100px; }
   .chat-input-row input { font-size: 16px; } /* 16px prevents iOS auto-zoom-in on focus */
 
@@ -862,6 +872,7 @@ button { font-family: inherit; cursor: pointer; }
   .tool-label { display: none; } /* icon-only — labels cost too much vertical room here */
 
   .chat-box { max-height: 110px; bottom: 56px; }
+  .chat-fab { bottom: 56px; width: 34px; height: 34px; font-size: 15px; }
   .chat-log { min-height: 30px; max-height: 50px; }
 
   .visiting-banner, .house-banner, .market-banner { padding: 3px 8px; font-size: 11px; }
