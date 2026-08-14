@@ -1,0 +1,33 @@
+# Fly.io deployment config.
+# Before deploying, replace "your-app-name" with what `fly launch` gave you,
+# and pick the region you chose (see the [[vm]] and top `app` line).
+
+app = "your-app-name"
+primary_region = "sin"  # change to whatever region you picked
+
+[build]
+
+[env]
+  PORT = "3000"
+  DB_PATH = "/data/farmco-op.db"
+  UPLOADS_DIR = "/data/uploads"
+  CORS_ORIGIN = "*"
+
+# The persistent volume — this is what keeps the SQLite database and
+# uploaded avatars alive across restarts/redeploys. Create it first with:
+#   fly volumes create farmco_data --size 1 --region sin
+[mounts]
+  source = "farmco_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
