@@ -39,6 +39,24 @@ app.use('/api/admin', requireAuth, requireAdmin, require('./routes/admin')(db));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: Date.now() }));
 
+// One-time admin bootstrap, reachable from a plain browser URL — for
+// deployments (like Railway) where there's no easy terminal access to run
+// `npm run make-admin` locally. Does nothing unless ADMIN_BOOTSTRAP_KEY is
+// set in the environment, and only promotes the exact username given when
+// the key in the URL matches it, so it's safe to leave in place even after
+// you're done using it (an attacker without the key can't do anything here).
+app.get('/api/bootstrap-admin', (req, res) => {
+  const configuredKey = process.env.ADMIN_BOOTSTRAP_KEY;
+  if (!configuredKey) return res.status(404).json({ error: 'Not enabled' });
+  if (req.query.key !== configuredKey) return res.status(403).json({ error: 'Wrong key' });
+  const username = (req.query.username || '').toString().trim();
+  if (!username) return res.status(400).json({ error: 'Add ?username=yourname to the URL' });
+  const user = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  if (!user) return res.status(404).json({ error: `No account found with username "${username}"` });
+  db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
+  res.send(`✅ "${username}" is now an admin. Log out and back in, then visit /admin.html`);
+});
+
 // ---- Static frontend ----
 // Serving /uploads separately (before the general public/ static mount)
 // means avatar files can live on a persistent volume outside the app's own
