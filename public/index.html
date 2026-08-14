@@ -210,6 +210,19 @@
   </div>
 
   <div id="toast-stack" class="toast-stack"></div>
+
+  <!-- PROFILE NAME MODAL — shown once, right after signup (or first login
+       for older accounts), to set the public display name. Separate from
+       the login username, which never changes. -->
+  <div id="profile-name-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h2>Welcome to FarmYARN! 🌾</h2>
+      <p>What should other players call you? This is different from your login username, and you can pick anything you like.</p>
+      <input type="text" id="profile-name-input" maxlength="20" placeholder="Your profile name">
+      <div class="modal-error" id="profile-name-error"></div>
+      <button class="btn btn-primary" id="profile-name-submit" style="width:100%">Let's go!</button>
+    </div>
+  </div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>

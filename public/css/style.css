@@ -572,6 +572,39 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
 .tool-icon { font-size: 20px; }
 .tool-label { font-size: 10px; font-weight: 800; font-family: 'Baloo 2', cursive; }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20,15,8,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+.modal-card {
+  background: var(--cream);
+  border: 5px solid var(--wood);
+  border-radius: var(--radius-panel);
+  padding: 22px;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 10px 0 rgba(94,59,31,0.35), 0 20px 40px rgba(0,0,0,0.3);
+}
+.modal-card h2 { margin: 0 0 8px; font-family: 'Baloo 2', cursive; color: var(--wood-dark); }
+.modal-card p { margin: 0 0 14px; font-size: 13px; color: var(--ink-soft); }
+.modal-card input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 2px solid var(--cream-dark);
+  border-radius: 10px;
+  font-size: 16px;
+  margin-bottom: 6px;
+  font-family: inherit;
+}
+.modal-error { color: #c0392b; font-size: 12px; min-height: 16px; margin-bottom: 8px; }
+
 /* ---- Side panel ---- */
 .side-panel {
   position: fixed;

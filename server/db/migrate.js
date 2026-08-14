@@ -15,6 +15,7 @@ function migrate(db) {
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
+    display_name TEXT, -- separate public-facing name; NULL until the player sets one (first set is free, changes after cost Premium Points)
     password_hash TEXT NOT NULL,
     avatar TEXT DEFAULT 'default',
     gender TEXT NOT NULL DEFAULT 'male', -- 'male' | 'female' — controls the character's base look
@@ -249,6 +250,9 @@ function migrate(db) {
 // (CREATE TABLE IF NOT EXISTS doesn't retroactively add new columns).
 function addColumnsIfMissing(db) {
   const existingCols = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
+  if (!existingCols.includes('display_name')) {
+    db.exec('ALTER TABLE users ADD COLUMN display_name TEXT');
+  }
   if (!existingCols.includes('gender')) {
     db.exec("ALTER TABLE users ADD COLUMN gender TEXT NOT NULL DEFAULT 'male'");
   }

@@ -505,8 +505,14 @@ class FarmGame {
     // fetch, so crop progress/readiness can be estimated every frame between
     // fetches instead of freezing until the next API call comes back.
     this._serverTimeOffset = farm.serverTime - Date.now() / 1000;
-    this._centerCamera();
+    // Only snap the camera (and re-place the character) on an ACTUAL farm
+    // switch (first load, or now viewing a different player's farm) —
+    // every plow/plant/water/harvest action re-fetches this same farm's
+    // data too, and re-centering on every one of those was yanking the
+    // zoom/pan back to default mid-play any time the player had manually
+    // zoomed or panned. The camera should only move when the player moves it.
     if (isNewFarm) {
+      this._centerCamera();
       // place the farmer near the farmhouse (or farm center as a fallback)
       const home = (farm.objects || []).find((o) => o.item_id === 'farmhouse');
       const tx = home ? home.grid_x + 1 : Math.floor(farm.width / 2);

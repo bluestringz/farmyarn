@@ -101,6 +101,7 @@ function publicUser(user) {
   return {
     id: user.id,
     username: user.username,
+    displayName: user.display_name || null,
     avatar: user.avatar,
     gender: user.gender,
     equippedOutfit: user.equipped_outfit,

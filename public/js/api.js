@@ -63,6 +63,7 @@ const Api = (() => {
     post: (path, body) => request('POST', path, body),
     del: (path) => request('DELETE', path),
     uploadAvatar,
+    setDisplayName: (name) => request('POST', '/api/player/display-name', { name }),
 
     // Auth
     register: (username, password, gender) => request('POST', '/api/auth/register', { username, password, gender }),

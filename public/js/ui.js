@@ -107,7 +107,7 @@ const UI = (() => {
     stove: 'Tap it to cook harvested crops into food — eating food restores the Energy you need to plow/plant/water.',
   };
 
-  function renderShop(catalog, activeCategory, player, onBuy, onCategoryChange, onDye) {
+  function renderShop(catalog, activeCategory, player, onBuy, onCategoryChange, onDye, onChangeName) {
     const body = panelBody();
     const categories = [
       { key: 'crops', label: 'Seeds' },
@@ -157,7 +157,18 @@ const UI = (() => {
         <div class="dye-row">${dyeSwatches}</div>
       ` : '';
 
-      body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">Costumes cost 💎 Premium Points, not coins — owned outfits can be re-worn for free.</p><div class="shop-grid">${cards}</div>${dyeSection}`;
+      const changeNameSection = `
+        <div class="panel-section-title">Change your profile name</div>
+        <div class="shop-card" style="width:100%; max-width:none;">
+          <div class="shop-icon">✏️</div>
+          <div class="shop-name">Currently: ${player.displayName || player.username}</div>
+          <input type="text" id="shop-change-name-input" maxlength="20" placeholder="New profile name" style="width:100%; box-sizing:border-box; padding:8px 10px; border:2px solid var(--cream-dark); border-radius:8px; margin:6px 0; font-family:inherit;">
+          <div class="shop-price">💎 200</div>
+          <button id="shop-change-name-btn" ${(player.premiumCurrency || 0) < 200 ? 'disabled' : ''}>Change Name</button>
+        </div>
+      `;
+
+      body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">Costumes cost 💎 Premium Points, not coins — owned outfits can be re-worn for free.</p><div class="shop-grid">${cards}</div>${dyeSection}${changeNameSection}`;
 
       body.querySelectorAll('canvas[data-preview-outfit]').forEach((canvas) => {
         const outfit = items.find((o) => o.id === canvas.dataset.previewOutfit);
@@ -166,12 +177,21 @@ const UI = (() => {
       body.querySelectorAll('.shop-tab').forEach((btn) => {
         btn.addEventListener('click', () => onCategoryChange(btn.dataset.cat));
       });
-      body.querySelectorAll('.shop-card button').forEach((btn) => {
+      body.querySelectorAll('.shop-card button[data-item]').forEach((btn) => {
         btn.addEventListener('click', () => onBuy('outfits', btn.dataset.item));
       });
       body.querySelectorAll('.dye-swatch').forEach((btn) => {
         btn.addEventListener('click', () => onDye(btn.dataset.color));
       });
+      const changeNameBtn = body.querySelector('#shop-change-name-btn');
+      if (changeNameBtn) {
+        changeNameBtn.addEventListener('click', () => {
+          const input = body.querySelector('#shop-change-name-input');
+          const name = input.value.trim();
+          if (!name) { toast('Enter a new name first.'); return; }
+          onChangeName(name);
+        });
+      }
       return;
     }
 

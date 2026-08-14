@@ -78,6 +78,39 @@
 
   // ---------------- Game boot ----------------
 
+  function promptForProfileName() {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('profile-name-modal');
+      const input = document.getElementById('profile-name-input');
+      const errEl = document.getElementById('profile-name-error');
+      const submitBtn = document.getElementById('profile-name-submit');
+      errEl.textContent = '';
+      input.value = '';
+      modal.classList.remove('hidden');
+      input.focus();
+
+      const submit = async () => {
+        const name = input.value.trim();
+        if (!name) { errEl.textContent = 'Please enter a name.'; return; }
+        try {
+          const res = await Api.setDisplayName(name);
+          state.me.displayName = res.displayName;
+          if (res.premiumCurrency !== undefined) state.me.premiumCurrency = res.premiumCurrency;
+          renderTopbar();
+          modal.classList.add('hidden');
+          submitBtn.removeEventListener('click', submit);
+          input.removeEventListener('keydown', onKeydown);
+          resolve();
+        } catch (err) {
+          errEl.textContent = err.message;
+        }
+      };
+      const onKeydown = (e) => { if (e.key === 'Enter') submit(); };
+      submitBtn.addEventListener('click', submit);
+      input.addEventListener('keydown', onKeydown);
+    });
+  }
+
   async function bootGame() {
     document.getElementById('auth-screen').classList.add('hidden');
     document.getElementById('game-screen').classList.remove('hidden');
@@ -93,6 +126,7 @@
     window.GameCatalog = state.catalog;
 
     await refreshPlayer();
+    if (!state.me.displayName) await promptForProfileName();
     connectSocket(); // must exist before loadOwnFarm() so the first space:join isn't dropped
     await loadOwnFarm();
     initToolbar();
@@ -121,7 +155,7 @@
 
   function renderTopbar() {
     const m = state.me;
-    document.getElementById('player-name').textContent = m.username;
+    document.getElementById('player-name').textContent = m.displayName || m.username;
     document.getElementById('stat-coins').textContent = m.coins;
     document.getElementById('stat-premium').textContent = m.premiumCurrency || 0;
     document.getElementById('stat-energy').textContent = `${m.energy ?? 0}/${m.maxEnergy ?? 20}`;
@@ -830,6 +864,17 @@
         renderTopbar();
         await refreshPlayer();
         UI.toast('Dyed!');
+        await renderShopPanel('outfits');
+      } catch (err) {
+        UI.toast(err.message);
+      }
+    }, async (name) => {
+      try {
+        const res = await Api.setDisplayName(name);
+        state.me.displayName = res.displayName;
+        state.me.premiumCurrency = res.premiumCurrency;
+        renderTopbar();
+        UI.toast(res.wasFree ? 'Name set!' : 'Name changed! 💎 200 spent.');
         await renderShopPanel('outfits');
       } catch (err) {
         UI.toast(err.message);

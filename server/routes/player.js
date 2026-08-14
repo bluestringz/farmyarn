@@ -61,6 +61,32 @@ module.exports = function playerRoutes(db) {
     });
   });
 
+  const DISPLAY_NAME_CHANGE_COST = 200; // Premium Points, after the first free set
+
+  // POST /api/player/display-name { name } — the public-facing name shown
+  // in the game, separate from the login username. Setting it for the
+  // very first time (display_name is still NULL, e.g. right after signup)
+  // is free; every change after that costs Premium Points.
+  router.post('/display-name', (req, res) => {
+    const name = (req.body && req.body.name || '').toString().trim();
+    if (!name) return res.status(400).json({ error: 'Enter a name' });
+    if (name.length > 20) return res.status(400).json({ error: 'Keep it under 20 characters' });
+
+    const user = db.prepare('SELECT id, display_name, premium_currency FROM users WHERE id = ?').get(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const isFirstTime = !user.display_name;
+    if (!isFirstTime) {
+      if ((user.premium_currency || 0) < DISPLAY_NAME_CHANGE_COST) {
+        return res.status(400).json({ error: `Changing your name costs 💎 ${DISPLAY_NAME_CHANGE_COST} — you have ${user.premium_currency || 0}` });
+      }
+      db.prepare('UPDATE users SET premium_currency = premium_currency - ? WHERE id = ?').run(DISPLAY_NAME_CHANGE_COST, req.userId);
+    }
+    db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run(name, req.userId);
+    const updated = db.prepare('SELECT premium_currency FROM users WHERE id = ?').get(req.userId);
+    res.json({ ok: true, displayName: name, wasFree: isFirstTime, premiumCurrency: updated.premium_currency });
+  });
+
   router.get('/me', (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
