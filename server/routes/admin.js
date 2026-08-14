@@ -2,7 +2,9 @@ const express = require('express');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const multer = require('multer');
 const { grantRewards, addInventory } = require('../lib/gameLogic');
+const { DB_PATH } = require('../db/migrate');
 
 module.exports = function adminRoutes(db, onlineUsers) {
   const router = express.Router();
@@ -24,6 +26,39 @@ module.exports = function adminRoutes(db, onlineUsers) {
       fs.unlink(tmpPath, () => {});
       res.status(500).json({ error: 'Backup failed: ' + err.message });
     }
+  });
+
+  const restoreUpload = multer({ dest: os.tmpdir(), limits: { fileSize: 200 * 1024 * 1024 } });
+
+  // POST /api/admin/restore — upload a .db backup file to restore from.
+  // Doesn't touch the live database immediately (a connection is open on
+  // it right now, and swapping the file out from under that is how you
+  // get corruption) — instead it's staged as a "pending restore" that
+  // getDb() picks up and swaps in the next time the server starts, which
+  // is the only moment it's fully safe to do. You still need to restart
+  // the service (e.g. via Railway's dashboard) afterward for it to apply.
+  router.post('/restore', (req, res) => {
+    restoreUpload.single('backup')(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+      // Quick sanity check: every real SQLite file starts with this exact
+      // 16-byte header — catches "wrong file" mistakes before they ever
+      // reach the pending-restore slot.
+      const header = Buffer.alloc(16);
+      const fd = fs.openSync(req.file.path, 'r');
+      fs.readSync(fd, header, 0, 16, 0);
+      fs.closeSync(fd);
+      if (header.toString('utf8', 0, 15) !== 'SQLite format 3') {
+        fs.unlink(req.file.path, () => {});
+        return res.status(400).json({ error: "That doesn't look like a valid SQLite backup file." });
+      }
+
+      const pendingPath = DB_PATH + '.restore-pending';
+      fs.copyFileSync(req.file.path, pendingPath);
+      fs.unlink(req.file.path, () => {});
+      res.json({ ok: true, message: 'Backup staged — restart the server for it to take effect.' });
+    });
   });
 
   router.get('/players', (req, res) => {

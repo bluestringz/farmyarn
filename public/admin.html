@@ -37,6 +37,12 @@
       <button id="backup-btn">⬇️ Download Database Backup</button>
       <span id="backup-status" style="margin-left:10px; font-size:12px; color:#8a5a34;"></span>
     </p>
+    <hr style="border:none;border-top:1px solid #e0d0a8;margin:14px 0;">
+    <p style="font-weight:700;margin-bottom:4px;">⚠️ Restore from backup</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">This REPLACES all current data with whatever's in the file you upload — anything saved after that backup was made will be lost. After uploading, you still need to manually restart the server (Railway dashboard → your service → Restart) for it to take effect.</p>
+    <input type="file" id="restore-file-input" accept=".db">
+    <button id="restore-btn" style="background:#c0392b">Upload & Stage Restore</button>
+    <span id="restore-status" style="margin-left:10px; font-size:12px; color:#8a5a34;"></span>
   </div>
 
   <div class="card">
@@ -195,6 +201,30 @@ document.getElementById('backup-btn').addEventListener('click', async () => {
     a.remove();
     URL.revokeObjectURL(url);
     statusEl.textContent = 'Downloaded! Keep it somewhere safe.';
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+});
+
+document.getElementById('restore-btn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('restore-status');
+  const fileInput = document.getElementById('restore-file-input');
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) { statusEl.textContent = 'Choose a .db file first.'; return; }
+  if (!confirm('This will REPLACE all current data once the server restarts. Are you sure?')) return;
+
+  statusEl.textContent = 'Uploading...';
+  try {
+    const form = new FormData();
+    form.append('backup', file);
+    const res = await fetch('/api/admin/restore', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + TOKEN },
+      body: form,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((data && data.error) || 'Restore upload failed');
+    statusEl.textContent = '✅ ' + data.message;
   } catch (err) {
     statusEl.textContent = 'Error: ' + err.message;
   }

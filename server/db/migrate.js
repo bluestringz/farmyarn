@@ -473,6 +473,30 @@ function getDb() {
   const fs = require('fs');
   const dir = path.dirname(DB_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  // If an admin uploaded a backup via the admin panel's Restore feature,
+  // it's waiting here as a "pending" file rather than having overwritten
+  // the live DB directly — swapping it in only at startup (before any
+  // connection is open) is the one moment this can never corrupt anything.
+  // The previous live file is kept as a .pre-restore-backup safety net.
+  const pendingRestorePath = DB_PATH + '.restore-pending';
+  if (fs.existsSync(pendingRestorePath)) {
+    if (fs.existsSync(DB_PATH)) {
+      fs.copyFileSync(DB_PATH, DB_PATH + '.pre-restore-backup');
+    }
+    // journal_mode is WAL (see migrate() below), which means recent writes
+    // can still be sitting in a `-wal` sidecar file rather than the main
+    // .db file yet. Swapping the main file alone but leaving the OLD
+    // database's stale -wal/-shm behind meant SQLite replayed that old,
+    // stale WAL into the freshly-restored file on open — silently undoing
+    // the restore back to the pre-restore state. Both must go.
+    for (const suffix of ['-wal', '-shm']) {
+      try { fs.unlinkSync(DB_PATH + suffix); } catch (e) { /* fine if it didn't exist */ }
+    }
+    fs.renameSync(pendingRestorePath, DB_PATH);
+    console.log('Restored database from an uploaded backup (previous live file saved as .pre-restore-backup).');
+  }
+
   const db = new Database(DB_PATH);
   migrate(db);
   return db;
