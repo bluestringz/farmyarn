@@ -33,6 +33,10 @@
 <div id="admin-app" style="display:none;">
   <div class="card">
     <div class="stat-row" id="stats"></div>
+    <p style="margin-top:12px;">
+      <button id="backup-btn">⬇️ Download Database Backup</button>
+      <span id="backup-status" style="margin-left:10px; font-size:12px; color:#8a5a34;"></span>
+    </p>
   </div>
 
   <div class="card">
@@ -170,6 +174,31 @@ async function loadPlayers(q) {
     });
   });
 }
+
+document.getElementById('backup-btn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('backup-status');
+  statusEl.textContent = 'Preparing backup...';
+  try {
+    const res = await fetch('/api/admin/backup', { headers: { Authorization: 'Bearer ' + TOKEN } });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error((data && data.error) || 'Backup failed');
+    }
+    const blob = await res.blob();
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `farmyarn-backup-${dateStamp}.db`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    statusEl.textContent = 'Downloaded! Keep it somewhere safe.';
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+});
 
 document.getElementById('search-btn').addEventListener('click', () => loadPlayers(document.getElementById('search-input').value));
 

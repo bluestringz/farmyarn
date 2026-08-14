@@ -1,8 +1,30 @@
 const express = require('express');
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { grantRewards, addInventory } = require('../lib/gameLogic');
 
 module.exports = function adminRoutes(db, onlineUsers) {
   const router = express.Router();
+
+  // GET /api/admin/backup — downloads a full, consistent snapshot of the
+  // live database as a .db file. Uses better-sqlite3's built-in backup()
+  // (not just copying the raw file), which is safe to run while the
+  // server keeps reading/writing — it won't hand back a half-written or
+  // corrupted copy the way a naive file copy could.
+  router.get('/backup', async (req, res) => {
+    const tmpPath = path.join(os.tmpdir(), `farmyarn-backup-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+    try {
+      await db.backup(tmpPath);
+      const dateStamp = new Date().toISOString().slice(0, 10);
+      res.download(tmpPath, `farmyarn-backup-${dateStamp}.db`, (err) => {
+        fs.unlink(tmpPath, () => {}); // clean up the temp copy either way
+      });
+    } catch (err) {
+      fs.unlink(tmpPath, () => {});
+      res.status(500).json({ error: 'Backup failed: ' + err.message });
+    }
+  });
 
   router.get('/players', (req, res) => {
     const q = (req.query.q || '').toString().trim();
