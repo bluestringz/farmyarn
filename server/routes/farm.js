@@ -3,17 +3,12 @@ const {
   nowSec, resolveCropStates, grantRewards, addInventory, notify,
   resolveEnergy, spendEnergy, addEnergy, xpProgress,
 } = require('../lib/gameLogic');
+const {
+  INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
+  ENTERABLE_BUILDING_DIMENSIONS, isEnterableBuildingType, locationForBuilding,
+} = require('../lib/interiorSpaces');
 
 const WATER_COST = 1; // coins per self-watering (smallest whole-coin stand-in for ~0.3 gold)
-const INTERIOR_WIDTH = 6;
-const INTERIOR_HEIGHT = 4;
-// Kept in sync with shop.js's INTERIOR_SPACES — each enterable building has
-// its own small themed room, addressed by a distinct `location` value.
-const INTERIOR_SPACES = {
-  house: { location: 'indoor', width: INTERIOR_WIDTH, height: INTERIOR_HEIGHT, buildingId: 'farmhouse' },
-  coop: { location: 'indoor_coop', width: 4, height: 3, buildingId: 'chicken_coop' },
-  barn: { location: 'indoor_barn', width: 5, height: 3, buildingId: 'cow_barn' },
-};
 
 module.exports = function farmRoutes(db, io) {
   const router = express.Router();
@@ -76,12 +71,35 @@ module.exports = function farmRoutes(db, io) {
   // GET /api/farm/me/interior?space=house|coop|barn - the interior of one
   // of the player's enterable buildings (defaults to the house for
   // backward compatibility with older clients).
+  // GET /api/farm/me/interior?space=house — the house (singleton).
+  // GET /api/farm/me/interior?buildingId=<farm_objects.id> — any other
+  // enterable building (coop/barn/cow_barn); each specific building placed
+  // has its own separate room, not shared with others of the same type.
   router.get('/me/interior', (req, res) => {
     const farm = getOwnFarm(req.userId);
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
-    const space = INTERIOR_SPACES[req.query.space] || INTERIOR_SPACES.house;
-    const objects = db.prepare('SELECT * FROM farm_objects WHERE farm_id = ? AND location = ?').all(farm.id, space.location);
-    res.json({ width: space.width, height: space.height, location: space.location, objects, serverTime: nowSec() });
+
+    const buildingId = parseInt(req.query.buildingId, 10);
+    if (buildingId) {
+      const building = db.prepare("SELECT * FROM farm_objects WHERE id = ? AND farm_id = ? AND object_type = 'building'")
+        .get(buildingId, farm.id);
+      if (!building) return res.status(404).json({ error: 'Building not found on your farm' });
+      if (!isEnterableBuildingType(building.item_id)) {
+        return res.status(400).json({ error: 'That building has no interior to enter' });
+      }
+      const dims = ENTERABLE_BUILDING_DIMENSIONS[building.item_id];
+      const location = locationForBuilding(building.id);
+      const objects = db.prepare('SELECT * FROM farm_objects WHERE farm_id = ? AND location = ?').all(farm.id, location);
+      return res.json({
+        width: dims.width, height: dims.height, location,
+        buildingType: building.item_id, buildingId: building.id,
+        objects, serverTime: nowSec(),
+      });
+    }
+
+    // Default / ?space=house — the singleton house interior.
+    const objects = db.prepare('SELECT * FROM farm_objects WHERE farm_id = ? AND location = ?').all(farm.id, HOUSE_LOCATION);
+    res.json({ width: INTERIOR_WIDTH, height: INTERIOR_HEIGHT, location: HOUSE_LOCATION, buildingType: 'farmhouse', objects, serverTime: nowSec() });
   });
 
   // ---- PLOW (also doubles as UNDO PLOW: tapping an already-plowed, empty

@@ -1,0 +1,51 @@
+// Enterable-building interiors, shared between farm.js (fetching a room's
+// contents) and shop.js (validating what gets placed inside one).
+//
+// The house is a singleton — there's only ever one farmhouse per farm — so
+// it keeps the simple fixed `location = 'indoor'` value it always had.
+// Every OTHER enterable building (coop, barn, cow barn) now gets its own
+// SEPARATE interior per physical building placed: two chicken coops on the
+// same farm are two independent rooms, not one shared coop-shaped room.
+// That room's `location` is `indoor:<farm_objects.id>` — unique per building.
+
+const INTERIOR_WIDTH = 6;
+const INTERIOR_HEIGHT = 4;
+const HOUSE_LOCATION = 'indoor';
+
+// Room size for each enterable building type (besides the house).
+const ENTERABLE_BUILDING_DIMENSIONS = {
+  chicken_coop: { width: 4, height: 3 },
+  cow_barn: { width: 5, height: 3 },
+  barn: { width: 4, height: 3 },
+};
+
+// Which animal types are allowed to live inside each building type — a
+// chicken coop is for chickens, not cows grazing indoors.
+const BUILDING_ALLOWED_ANIMALS = {
+  chicken_coop: ['chicken'],
+  cow_barn: ['cow'],
+  barn: ['pig', 'sheep'],
+};
+
+function isEnterableBuildingType(itemId) {
+  return Object.prototype.hasOwnProperty.call(ENTERABLE_BUILDING_DIMENSIONS, itemId);
+}
+
+function locationForBuilding(buildingObjectId) {
+  return `indoor:${buildingObjectId}`;
+}
+
+// Given a location string, returns the farm_objects.id it refers to, or
+// null if this isn't a per-building indoor location (e.g. it's the house,
+// or plain 'outdoor').
+function buildingIdFromLocation(location) {
+  if (typeof location !== 'string') return null;
+  const match = location.match(/^indoor:(\d+)$/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+module.exports = {
+  INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
+  ENTERABLE_BUILDING_DIMENSIONS, BUILDING_ALLOWED_ANIMALS,
+  isEnterableBuildingType, locationForBuilding, buildingIdFromLocation,
+};

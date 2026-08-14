@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const { signToken } = require('../middleware/auth');
-const { initFarmTiles, nowSec, MAX_ENERGY } = require('../lib/gameLogic');
+const { initFarmTiles, nowSec, MAX_ENERGY, isReservedName } = require('../lib/gameLogic');
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
@@ -26,6 +26,9 @@ module.exports = function authRoutes(db) {
       }
       if (!USERNAME_RE.test(username)) {
         return res.status(400).json({ error: 'Username must be 3-20 characters: letters, numbers, underscore' });
+      }
+      if (isReservedName(username)) {
+        return res.status(400).json({ error: 'That username is reserved and cannot be used.' });
       }
       if (password.length < 8) {
         return res.status(400).json({ error: 'Password must be at least 8 characters' });
@@ -134,6 +137,7 @@ function publicUser(user) {
     coins: user.coins,
     premiumCurrency: user.premium_currency,
     energy: user.energy,
+    isResting: !!user.is_resting,
     maxEnergy: MAX_ENERGY,
     isAdmin: !!user.is_admin,
   };

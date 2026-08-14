@@ -1,24 +1,24 @@
 const express = require('express');
 const { grantRewards, addInventory, nowSec } = require('../lib/gameLogic');
+const {
+  INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
+  ENTERABLE_BUILDING_DIMENSIONS, BUILDING_ALLOWED_ANIMALS,
+  isEnterableBuildingType, buildingIdFromLocation,
+} = require('../lib/interiorSpaces');
 
-const INTERIOR_WIDTH = 6;
-const INTERIOR_HEIGHT = 4;
 const DYE_COST = 25;
 const DYE_PALETTE = ['#c0392b', '#e8a527', '#4f8f2e', '#3d8fe0', '#8e44ad', '#e05a7e', '#4a3521', '#f4f4f4'];
 
-// Enterable building interiors — the house was the only one of these for a
-// long time (hence the plain 'indoor' location value it still uses), but
-// the chicken coop and cow barn now work the same way: each is its own
-// small themed room, addressed by a distinct `location` value so their
-// furniture/placement never collides with the house's.
-const INTERIOR_SPACES = {
-  house: { location: 'indoor', width: INTERIOR_WIDTH, height: INTERIOR_HEIGHT, buildingId: 'farmhouse' },
-  coop: { location: 'indoor_coop', width: 4, height: 3, buildingId: 'chicken_coop' },
-  barn: { location: 'indoor_barn', width: 5, height: 3, buildingId: 'cow_barn' },
-};
-function interiorBoundsFor(location) {
-  const space = Object.values(INTERIOR_SPACES).find((s) => s.location === location);
-  return space ? { width: space.width, height: space.height } : { width: INTERIOR_WIDTH, height: INTERIOR_HEIGHT };
+// Given a `location` value ('outdoor', 'indoor', or 'indoor:<buildingId>'),
+// returns { width, height } for placement/overlap bounds-checking.
+function interiorBoundsFor(db, farmId, location) {
+  if (location === HOUSE_LOCATION) return { width: INTERIOR_WIDTH, height: INTERIOR_HEIGHT };
+  const buildingId = buildingIdFromLocation(location);
+  if (buildingId) {
+    const building = db.prepare('SELECT item_id FROM farm_objects WHERE id = ? AND farm_id = ?').get(buildingId, farmId);
+    if (building && ENTERABLE_BUILDING_DIMENSIONS[building.item_id]) return ENTERABLE_BUILDING_DIMENSIONS[building.item_id];
+  }
+  return { width: INTERIOR_WIDTH, height: INTERIOR_HEIGHT };
 }
 
 module.exports = function shopRoutes(db) {
@@ -134,23 +134,39 @@ module.exports = function shopRoutes(db) {
   });
 
   // POST /api/shop/place-object  { category, itemId, x, y, rotation, location }
-  // Consumes 1 owned (already-bought) unit from inventory and places it on the farm.
-  // location: 'outdoor' (default) or one of the enterable-building interior
-  // values from INTERIOR_SPACES ('indoor' for the house, 'indoor_coop',
-  // 'indoor_barn') — each bounded by its own room size instead of the
-  // farm's outdoor width/height.
+  // Consumes 1 owned (already-bought) unit from inventory and places it on
+  // the farm. location: 'outdoor' (default), 'indoor' (the house), or
+  // 'indoor:<buildingId>' for a specific coop/barn/cow_barn's own room.
   router.post('/place-object', (req, res) => {
     const { category, itemId, x, y, rotation, location } = req.body || {};
     if (!['building', 'decoration', 'animal', 'interior'].includes(category)) {
       return res.status(400).json({ error: 'Invalid category' });
     }
-    const validIndoorLocations = new Set(Object.values(INTERIOR_SPACES).map((s) => s.location));
-    const loc = validIndoorLocations.has(location) ? location : 'outdoor';
+
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+
+    // Figure out which room `location` actually refers to (if any), and —
+    // for a per-building room — which building it belongs to, so animal
+    // placements can be checked against what that specific building allows.
+    let loc = 'outdoor';
+    let penBuildingItemId = null; // set only if `location` is a real animal-pen room
+    if (location === HOUSE_LOCATION) {
+      loc = HOUSE_LOCATION;
+    } else {
+      const buildingId = buildingIdFromLocation(location);
+      if (buildingId) {
+        const building = db.prepare("SELECT * FROM farm_objects WHERE id = ? AND farm_id = ? AND object_type = 'building'")
+          .get(buildingId, farm.id);
+        if (building && isEnterableBuildingType(building.item_id)) {
+          loc = location;
+          penBuildingItemId = building.item_id;
+        }
+      }
+    }
     const isIndoor = loc !== 'outdoor';
-    // Animals can go inside the coop/barn (that's the whole point of those
-    // buildings) but not the house — everywhere else indoors still only
-    // takes furniture ('interior' category).
-    const isAnimalPen = loc === INTERIOR_SPACES.coop.location || loc === INTERIOR_SPACES.barn.location;
+    const allowedAnimalsHere = penBuildingItemId ? (BUILDING_ALLOWED_ANIMALS[penBuildingItemId] || []) : [];
+    const isAnimalPen = allowedAnimalsHere.length > 0;
     const categoryAllowedIndoors = category === 'interior' || (isAnimalPen && category === 'animal');
     if (isIndoor && !categoryAllowedIndoors) {
       return res.status(400).json({ error: isAnimalPen ? 'Only furniture and animals can be placed here' : 'Only interior items can be placed indoors' });
@@ -158,9 +174,9 @@ module.exports = function shopRoutes(db) {
     if (!isIndoor && category === 'interior') {
       return res.status(400).json({ error: 'Interior items can only be placed indoors' });
     }
-
-    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
-    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    if (category === 'animal' && isAnimalPen && !allowedAnimalsHere.includes(itemId)) {
+      return res.status(400).json({ error: `This building only houses: ${allowedAnimalsHere.join(', ')}` });
+    }
 
     const def = lookupDefSync(db, category, itemId);
     if (!def) return res.status(400).json({ error: 'Unknown item' });
@@ -172,7 +188,7 @@ module.exports = function shopRoutes(db) {
     }
 
     const w = def.width || 1, h = def.height || 1;
-    const bounds = isIndoor ? interiorBoundsFor(loc) : { width: farm.width, height: farm.height };
+    const bounds = isIndoor ? interiorBoundsFor(db, farm.id, loc) : { width: farm.width, height: farm.height };
     const boundsW = bounds.width, boundsH = bounds.height;
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + w > boundsW || y + h > boundsH) {
       return res.status(400).json({ error: 'Placement out of bounds' });
@@ -222,7 +238,7 @@ module.exports = function shopRoutes(db) {
     const def = lookupDefSync(db, obj.object_type, obj.item_id);
     const w = def.width || 1, h = def.height || 1;
     const isIndoor = obj.location !== 'outdoor';
-    const bounds = isIndoor ? interiorBoundsFor(obj.location) : { width: farm.width, height: farm.height };
+    const bounds = isIndoor ? interiorBoundsFor(db, farm.id, obj.location) : { width: farm.width, height: farm.height };
     const boundsW = bounds.width, boundsH = bounds.height;
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + w > boundsW || y + h > boundsH) {
       return res.status(400).json({ error: 'Placement out of bounds' });
@@ -246,6 +262,9 @@ module.exports = function shopRoutes(db) {
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
     const obj = db.prepare('SELECT * FROM farm_objects WHERE id = ? AND farm_id = ?').get(req.params.id, farm.id);
     if (!obj) return res.status(404).json({ error: 'Object not found on your farm' });
+    if (obj.item_id === 'farmhouse') {
+      return res.status(400).json({ error: "Your house can't be removed — it's the one building every farm needs." });
+    }
     db.prepare('DELETE FROM farm_objects WHERE id = ?').run(obj.id);
     res.json({ ok: true });
   });
@@ -378,4 +397,3 @@ function lookupDefSync(db, type, itemId) {
 
 module.exports.INTERIOR_WIDTH = INTERIOR_WIDTH;
 module.exports.INTERIOR_HEIGHT = INTERIOR_HEIGHT;
-module.exports.INTERIOR_SPACES = INTERIOR_SPACES;

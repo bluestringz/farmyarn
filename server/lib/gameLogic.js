@@ -87,25 +87,29 @@ function notify(db, userId, type, message) {
   db.prepare(`INSERT INTO notifications (user_id, type, message) VALUES (?, ?, ?)`).run(userId, type, message);
 }
 
-// Energy has a max of 20, and slowly regenerates on its own (1 point every
-// 15 minutes) so a player is never fully stuck — but the fast way back up
-// is cooking + eating food at a stove, which restores a chunk at once.
+// Energy has a max of 1000, and slowly regenerates on its own (1 point
+// every 3 minutes) so a player is never fully stuck — sitting/lying on a
+// chair or bed (see startResting/stopResting) regenerates faster (1 point
+// every 2 minutes) while active, and cooking + eating food at a stove
+// restores a chunk at once for an immediate boost.
 // resolveEnergy() lazily "catches up" a user's stored energy based on how
 // long it's been since energy_updated_at, the same pattern crops use for
 // growth — no background job needed, it just settles on read.
 const MAX_ENERGY = 1000;
-const ENERGY_REGEN_SECONDS = 3 * 60; // 1 point per 3 minutes
+const ENERGY_REGEN_SECONDS = 3 * 60; // 1 point per 3 minutes, normal
+const ENERGY_REGEN_SECONDS_RESTING = 2 * 60; // 1 point per 2 minutes, while resting
 
 function resolveEnergy(db, userId) {
-  const user = db.prepare('SELECT energy, energy_updated_at FROM users WHERE id = ?').get(userId);
+  const user = db.prepare('SELECT energy, energy_updated_at, is_resting FROM users WHERE id = ?').get(userId);
   if (!user) return null;
+  const regenSeconds = user.is_resting ? ENERGY_REGEN_SECONDS_RESTING : ENERGY_REGEN_SECONDS;
   const elapsed = nowSec() - (user.energy_updated_at || nowSec());
-  const regen = Math.floor(elapsed / ENERGY_REGEN_SECONDS);
+  const regen = Math.floor(elapsed / regenSeconds);
   if (regen <= 0 || user.energy >= MAX_ENERGY) return user.energy;
   const newEnergy = Math.min(MAX_ENERGY, user.energy + regen);
   // Only "spend" the regen time that was actually used, so partial progress
   // toward the next point isn't lost/reset.
-  const usedSeconds = regen * ENERGY_REGEN_SECONDS;
+  const usedSeconds = regen * regenSeconds;
   db.prepare('UPDATE users SET energy = ?, energy_updated_at = ? WHERE id = ?')
     .run(newEnergy, (user.energy_updated_at || nowSec()) + usedSeconds, userId);
   return newEnergy;
@@ -119,17 +123,53 @@ function spendEnergy(db, userId, amount) {
   return true;
 }
 
+// Start/stop resting (sitting on a chair, lying on a bed) — always resolve
+// energy FIRST at the OLD rate before flipping is_resting, so the elapsed
+// time before the switch is credited at the rate that actually applied
+// during it, not retroactively at the new rate.
+function startResting(db, userId) {
+  resolveEnergy(db, userId);
+  db.prepare('UPDATE users SET is_resting = 1 WHERE id = ?').run(userId);
+}
+
+function stopResting(db, userId) {
+  resolveEnergy(db, userId);
+  db.prepare('UPDATE users SET is_resting = 0 WHERE id = ?').run(userId);
+}
+
 // Adds energy (from eating food), capped at MAX_ENERGY. Does not touch
 // energy_updated_at's regen bookkeeping beyond resolving first, so idle
 // regen still resumes correctly afterward.
 function addEnergy(db, userId, amount) {
   const current = resolveEnergy(db, userId) || 0;
   const next = Math.min(MAX_ENERGY, current + amount);
-  db.prepare('UPDATE users SET energy = ? WHERE id = ?').run(next, userId);
+  db.prepare('UPDATE users SET energy = ?, energy_updated_at = ? WHERE id = ?').run(next, userId);
   return next;
+}
+
+// Blocks players from taking on names that impersonate staff/authority —
+// used for both the login username (registration) and the public display
+// name (first-time set + paid changes). Two tiers:
+//  - longer, unambiguous phrases are blocked as a plain substring anywhere
+//    in the name, since a real username is very unlikely to contain them
+//    by coincidence (nobody's legitimately named "xAdminX" or "TeamOfficial").
+//  - short strings (gm, mod, dev, staff, owner, sys) are only blocked as
+//    the WHOLE name (optionally with trailing digits, e.g. "gm99") because
+//    matching them as a bare substring would false-positive on ordinary
+//    names that just happen to contain those letters (e.g. "Kingman").
+const RESERVED_NAME_SUBSTRINGS = [
+  'admin', 'administrator', 'gamemaster', 'moderator', 'official', 'farmyarn', 'support',
+];
+const RESERVED_NAME_EXACT = ['gm', 'mod', 'dev', 'staff', 'owner', 'sys'];
+
+function isReservedName(name) {
+  const normalized = (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (RESERVED_NAME_SUBSTRINGS.some((term) => normalized.includes(term))) return true;
+  return RESERVED_NAME_EXACT.some((term) => new RegExp(`^${term}\\d*$`).test(normalized));
 }
 
 module.exports = {
   nowSec, xpForLevel, levelForXp, xpProgress, initFarmTiles, resolveCropStates,
   grantRewards, addInventory, notify, resolveEnergy, spendEnergy, addEnergy, MAX_ENERGY,
+  isReservedName, startResting, stopResting,
 };

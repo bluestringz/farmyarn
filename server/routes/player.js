@@ -3,7 +3,7 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
-const { grantRewards, resolveEnergy, nowSec, xpProgress } = require('../lib/gameLogic');
+const { grantRewards, resolveEnergy, nowSec, xpProgress, isReservedName, startResting, stopResting } = require('../lib/gameLogic');
 const { publicUser } = require('./auth');
 
 const DAILY_REWARDS = [
@@ -71,6 +71,19 @@ module.exports = function playerRoutes(db) {
   // POST /api/player/change-password { currentPassword, newPassword }
   // Works for both regular players and admins (an admin is just a user
   // with is_admin=1) — same endpoint, no separate "admin password" concept.
+  // POST /api/player/rest — sit on a chair or lie on a bed to regenerate
+  // energy faster (see startResting/stopResting in gameLogic.js).
+  router.post('/rest', (req, res) => {
+    startResting(db, req.userId);
+    res.json({ ok: true, resting: true, energy: resolveEnergy(db, req.userId) });
+  });
+
+  // POST /api/player/stop-rest — get up; energy regen returns to normal.
+  router.post('/stop-rest', (req, res) => {
+    stopResting(db, req.userId);
+    res.json({ ok: true, resting: false, energy: resolveEnergy(db, req.userId) });
+  });
+
   router.post('/change-password', async (req, res) => {
     const { currentPassword, newPassword } = req.body || {};
     if (typeof newPassword !== 'string' || newPassword.length < 6) {
@@ -91,6 +104,7 @@ module.exports = function playerRoutes(db) {
     const name = (req.body && req.body.name || '').toString().trim();
     if (!name) return res.status(400).json({ error: 'Enter a name' });
     if (name.length > 20) return res.status(400).json({ error: 'Keep it under 20 characters' });
+    if (isReservedName(name)) return res.status(400).json({ error: 'That name is reserved and cannot be used.' });
 
     const user = db.prepare('SELECT id, display_name, premium_currency FROM users WHERE id = ?').get(req.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });

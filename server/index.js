@@ -70,7 +70,15 @@ app.get('/api/bootstrap-admin', (req, res) => {
 // local development where UPLOADS_DIR isn't set.
 const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'public', 'uploads');
 app.use('/uploads', express.static(uploadsDir));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// No-cache on the app's own HTML/CSS/JS — express.static's defaults leave
+// enough caching wiggle room that some browsers (especially on mobile)
+// kept serving an old cached copy of index.html/main.js after a fresh
+// deploy, which looked exactly like "the new feature isn't there" even
+// though the server had the updated file the whole time. Uploaded avatars
+// (above) don't need this — those are genuinely fine to cache long-term.
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'),
+}));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));

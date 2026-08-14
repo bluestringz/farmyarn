@@ -23,6 +23,14 @@
 
   const ACTION_ICON = { plow: '🚜', unplow: '↩️', plant: '🌱', water: '💧', harvest: '🧺', build: '🏗️', collect: '🧺', decorate: '🖼️' };
 
+  // Kept in sync with server/lib/interiorSpaces.js's BUILDING_ALLOWED_ANIMALS
+  // — used here only for quick client-side UX (which animals to even show
+  // in the picker); the server is what actually enforces this.
+  const BUILDING_ALLOWED_ANIMALS = { chicken_coop: ['chicken'], cow_barn: ['cow'], barn: ['pig', 'sheep'] };
+  function isAnimalPenBuilding() {
+    return !!(state.interiorSpace && BUILDING_ALLOWED_ANIMALS[state.interiorSpace.buildingType]);
+  }
+
   // ---------------- Auth screen wiring ----------------
 
   function initAuthScreen() {
@@ -182,7 +190,7 @@
     document.getElementById('player-name').textContent = m.displayName || m.username;
     document.getElementById('stat-coins').textContent = m.coins;
     document.getElementById('stat-premium').textContent = m.premiumCurrency || 0;
-    document.getElementById('stat-energy').textContent = `${m.energy ?? 0}/${m.maxEnergy ?? 20}`;
+    document.getElementById('stat-energy').textContent = `${m.energy ?? 0}/${m.maxEnergy ?? 20}${m.isResting ? ' 💤' : ''}`;
     const xp = m.xpProgress;
     document.getElementById('xp-bar-label').textContent = `Lvl ${xp.level}`;
     document.getElementById('avatar-level-badge').textContent = xp.level;
@@ -279,22 +287,35 @@
   // (kept as-is since a lot of existing "restrict farm tools while inside"
   // checks already key off it) — this just tracks which specific one, for
   // API calls and exit routing.
-  async function enterInterior(space, bannerId) {
+  // Which enterable building the player is currently inside, if any:
+  // { buildingType: 'house'|'chicken_coop'|'cow_barn'|'barn', buildingId }
+  // (buildingId is null for the house, since it's a singleton). state.inHouse
+  // stays true for ALL of these (a lot of existing "restrict farm tools
+  // while inside" checks already key off it) — this tracks the specifics.
+  async function enterInterior(opts, bannerId) {
     if (state.viewingUserId) { UI.toast("You can't go inside a friend's building yet"); return; }
-    const interior = await Api.myInterior(space);
+    const interior = await Api.myInterior(opts);
     game.setInteriorMode(interior);
     state.inHouse = true;
-    state.interiorSpace = space;
+    state.interiorSpace = { buildingType: interior.buildingType, buildingId: interior.buildingId || null, location: interior.location };
     leaveCurrentSpace(); // interiors are private — no shared presence
     clearPendingPlacement();
     setTool(null);
+    if (bannerId === 'coop-banner') {
+      const label = { chicken_coop: 'Inside the chicken coop', cow_barn: 'Inside the cow barn', barn: 'Inside the barn' };
+      document.getElementById('pen-banner-text').textContent = label[interior.buildingType] || 'Inside the building';
+    }
     document.getElementById(bannerId).classList.remove('hidden');
     document.getElementById('visiting-banner').classList.add('hidden');
   }
 
-  async function enterHouse() { await enterInterior('house', 'house-banner'); }
-  async function enterCoop() { await enterInterior('coop', 'coop-banner'); }
-  async function enterBarn() { await enterInterior('barn', 'barn-banner'); }
+  async function enterHouse() { await enterInterior({ space: 'house' }, 'house-banner'); }
+  async function enterBuilding(obj) {
+    // Chicken coop, cow barn, and (plain) barn all use the same generic
+    // per-building-instance room now — each specific building placed gets
+    // its own separate interior (see server/lib/interiorSpaces.js).
+    await enterInterior({ buildingId: obj.id }, 'coop-banner');
+  }
 
   async function openSiloPanel() {
     const inv = await Api.inventory();
@@ -326,20 +347,30 @@
   }
 
   async function exitHouse() {
+    // Leaving means you're not on the furniture anymore either — stop the
+    // faster regen rate rather than leave it silently running forever.
+    if (state.me.isResting) {
+      try {
+        const res = await Api.stopResting();
+        state.me.isResting = res.resting;
+        state.me.energy = res.energy;
+        renderTopbar();
+      } catch (err) { /* non-critical — don't block leaving over this */ }
+    }
     game.exitInteriorMode();
     state.inHouse = false;
-    const space = state.interiorSpace;
     state.interiorSpace = null;
     clearPendingPlacement();
     setTool(null);
     document.getElementById('house-banner').classList.add('hidden');
     document.getElementById('coop-banner').classList.add('hidden');
-    document.getElementById('barn-banner').classList.add('hidden');
     await loadOwnFarm(); // rejoins the outdoor farm space
   }
 
   async function refreshInterior() {
-    const interior = await Api.myInterior(state.interiorSpace);
+    if (!state.interiorSpace) return;
+    const opts = state.interiorSpace.buildingId ? { buildingId: state.interiorSpace.buildingId } : { space: 'house' };
+    const interior = await Api.myInterior(opts);
     game.setInteriorMode(interior);
   }
 
@@ -361,7 +392,7 @@
       if (tool === 'decorate') { setTool(state.tool === 'decorate' ? null : 'decorate'); return; }
       if (tool === 'remove') { setTool(state.tool === 'remove' ? null : 'remove'); return; }
       if (tool === 'move') { setTool(state.tool === 'move' ? null : 'move'); return; }
-      if (tool === 'feed' && (state.interiorSpace === 'coop' || state.interiorSpace === 'barn')) {
+      if (tool === 'feed' && isAnimalPenBuilding()) {
         setTool(state.tool === 'feed' ? null : 'feed');
         return;
       }
@@ -461,11 +492,15 @@
       }
     });
     // The coop and barn are pens, not just decor rooms — animals bought
-    // from the Shop can be placed inside them the same way furniture can.
-    if (state.interiorSpace === 'coop' || state.interiorSpace === 'barn') {
+    // from the Shop can be placed inside them (only the ones that specific
+    // building allows — the server enforces this, this is just so the
+    // picker doesn't even show a cow as an option inside a chicken coop).
+    if (isAnimalPenBuilding()) {
+      const allowed = BUILDING_ALLOWED_ANIMALS[state.interiorSpace.buildingType] || [];
       inv.forEach((row) => {
         if (row.item_id.startsWith('animal_') && row.quantity > 0) {
           const itemId = row.item_id.slice('animal_'.length);
+          if (!allowed.includes(itemId)) return;
           const def = findDef('animal', itemId);
           if (def) owned.push({ ...def, _cat: 'animal', _owned: row.quantity });
         }
@@ -473,8 +508,8 @@
     }
     if (!owned.length) {
       picker.classList.add('hidden');
-      const hint = (state.interiorSpace === 'coop' || state.interiorSpace === 'barn')
-        ? "You don't own any furniture or animals yet — buy some from the Shop!"
+      const hint = isAnimalPenBuilding()
+        ? `You don't own any furniture or (${(BUILDING_ALLOWED_ANIMALS[state.interiorSpace.buildingType] || []).join('/')}) animals yet — buy some from the Shop!`
         : "You don't own any furniture yet — buy some from the Shop's Interior tab!";
       UI.toast(hint);
       return;
@@ -536,14 +571,14 @@
     document.getElementById('placement-bar').classList.add('hidden');
   }
 
-  // Maps the current interior space name to the `location` value the
-  // backend's farm_objects rows actually use — kept in one place so
-  // confirmPlacement (and anything else needing it) can't drift out of
-  // sync with the coop/barn's own distinct room from the house's.
+  // Maps the current interior space to the `location` value the backend's
+  // farm_objects rows actually use — kept in one place so confirmPlacement
+  // (and anything else needing it) can't drift out of sync. Each specific
+  // coop/barn/cow_barn building has its own room now (indoor:<buildingId>);
+  // only the house is still the plain fixed 'indoor' value.
   function locationForCurrentSpace() {
     if (!state.inHouse) return 'outdoor';
-    if (state.interiorSpace === 'coop') return 'indoor_coop';
-    if (state.interiorSpace === 'barn') return 'indoor_barn';
+    if (state.interiorSpace && state.interiorSpace.buildingId) return `indoor:${state.interiorSpace.buildingId}`;
     return 'indoor'; // house (also the safe default for older sessions)
   }
 
@@ -657,6 +692,10 @@
 
   async function handleObjectClick(obj) {
     if (state.tool === 'remove') {
+      if (obj.item_id === 'farmhouse') {
+        UI.toast("Your house can't be removed — it's the one building every farm needs.");
+        return;
+      }
       const label = obj.item_id.replace(/_/g, ' ');
       if (!confirm(`Remove this ${label}?`)) return;
       try {
@@ -691,6 +730,30 @@
       return;
     }
 
+    // Sit on a chair or lie on a bed to regenerate energy faster — a plain
+    // tap (no tool active) on either piece of furniture toggles it.
+    const REST_FURNITURE = new Set(['bed', 'chair']);
+    if (state.inHouse && !state.tool && obj.object_type === 'interior' && REST_FURNITURE.has(obj.item_id) && !state.viewingUserId) {
+      try {
+        if (state.me.isResting) {
+          const res = await Api.stopResting();
+          state.me.isResting = res.resting;
+          state.me.energy = res.energy;
+          UI.toast('You got up.');
+        } else {
+          game.walkTo(obj.grid_x, obj.grid_y, null);
+          const res = await Api.startResting();
+          state.me.isResting = res.resting;
+          state.me.energy = res.energy;
+          UI.toast(obj.item_id === 'bed' ? 'Lying down — energy regenerates faster. Tap again to get up.' : 'Sitting down — energy regenerates faster. Tap again to get up.');
+        }
+        renderTopbar();
+      } catch (err) {
+        UI.toast(err.message);
+      }
+      return;
+    }
+
     if (!state.inHouse && obj.item_id === 'farmhouse' && obj.object_type === 'building' && !state.viewingUserId
         && state.tool !== 'build' && state.tool !== 'plow' && state.tool !== 'plant' && state.tool !== 'harvest'
         && state.tool !== 'move' && state.tool !== 'remove') {
@@ -698,17 +761,11 @@
       return;
     }
 
-    if (!state.inHouse && obj.item_id === 'chicken_coop' && obj.object_type === 'building' && !state.viewingUserId
+    const ENTERABLE_PEN_BUILDINGS = new Set(['chicken_coop', 'cow_barn', 'barn']);
+    if (!state.inHouse && ENTERABLE_PEN_BUILDINGS.has(obj.item_id) && obj.object_type === 'building' && !state.viewingUserId
         && state.tool !== 'build' && state.tool !== 'plow' && state.tool !== 'plant' && state.tool !== 'harvest'
         && state.tool !== 'move' && state.tool !== 'remove') {
-      await enterCoop();
-      return;
-    }
-
-    if (!state.inHouse && obj.item_id === 'cow_barn' && obj.object_type === 'building' && !state.viewingUserId
-        && state.tool !== 'build' && state.tool !== 'plow' && state.tool !== 'plant' && state.tool !== 'harvest'
-        && state.tool !== 'move' && state.tool !== 'remove') {
-      await enterBarn();
+      await enterBuilding(obj);
       return;
     }
 
@@ -1069,7 +1126,6 @@
     document.getElementById('visiting-return-btn').addEventListener('click', loadOwnFarm);
     document.getElementById('house-exit-btn').addEventListener('click', exitHouse);
     document.getElementById('coop-exit-btn').addEventListener('click', exitHouse);
-    document.getElementById('barn-exit-btn').addEventListener('click', exitHouse);
     document.getElementById('market-exit-btn').addEventListener('click', exitMarket);
     document.getElementById('daily-reward-btn').addEventListener('click', claimDailyReward);
     refreshNotifBadge();

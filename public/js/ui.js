@@ -55,13 +55,13 @@ const UI = (() => {
     pumpkin: 'The ultimate crop — 2 full days to grow, huge payout when harvested.',
     // buildings
     farmhouse: 'Your home — given free at signup. Walk in to decorate the inside.',
-    barn: 'Storage building — mainly a farm centerpiece and level-up milestone.',
+    barn: 'Tap to go inside — houses Pigs and Sheep. Each barn you build has its own separate room.',
     silo: 'Tap it to turn wheat into animal feed — feed your animals here before you can collect from them.',
     well: 'Classic farm decoration — a water source for the homestead look.',
     market_stall: 'A rentable stall in the shared Marketplace — sell goods to other players.',
     storage_shed: 'Extra storage building for your farm.',
-    chicken_coop: 'A farm building for the coop-and-barn look. Chickens aren\'t required to live inside it (yet) — buy one anytime.',
-    cow_barn: 'A farm building for the coop-and-barn look. Cows aren\'t required to live inside it (yet) — buy one anytime.',
+    chicken_coop: 'Tap to go inside — houses Chickens only. Each coop you build has its own separate room.',
+    cow_barn: 'Tap to go inside — houses Cows only. Each cow barn you build has its own separate room.',
     workshop: 'Crafting-flavored building — mainly a farm centerpiece for now.',
     // decorations
     fence: 'Blocks walking — fences auto-connect to neighboring fence tiles, and you can route your farm paths around them.',
@@ -97,9 +97,9 @@ const UI = (() => {
     // interiors (house furniture)
     rug: 'Floor decoration for your house interior.',
     table: 'Dining table for your house interior.',
-    chair: 'Seating for your house interior.',
+    chair: 'Tap it while indoors to sit — regenerates Energy faster while seated.',
     cabinet: 'Storage furniture for your house interior.',
-    bed: 'Where your farmer sleeps — house interior furniture.',
+    bed: 'Tap it while indoors to lie down — regenerates Energy faster while resting.',
     potted_plant: 'Small decorative plant for your house interior.',
     painting: 'Wall art for your house interior.',
     fireplace: 'Cozy centerpiece for your house interior.',

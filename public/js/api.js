@@ -65,6 +65,8 @@ const Api = (() => {
     uploadAvatar,
     setDisplayName: (name) => request('POST', '/api/player/display-name', { name }),
     changePassword: (currentPassword, newPassword) => request('POST', '/api/player/change-password', { currentPassword, newPassword }),
+    startResting: () => request('POST', '/api/player/rest'),
+    stopResting: () => request('POST', '/api/player/stop-rest'),
     forgotPassword: (username, message) => request('POST', '/api/auth/forgot-password', { username, message }),
 
     // Auth
@@ -84,7 +86,13 @@ const Api = (() => {
     // Farm
     myFarm: () => request('GET', '/api/farm/me'),
     viewFarm: (userId) => request('GET', `/api/farm/${userId}`),
-    myInterior: (space) => request('GET', `/api/farm/me/interior${space ? `?space=${space}` : ''}`),
+    myInterior: (opts) => {
+      const params = new URLSearchParams();
+      if (opts && opts.buildingId) params.set('buildingId', opts.buildingId);
+      else if (opts && opts.space) params.set('space', opts.space);
+      const qs = params.toString();
+      return request('GET', `/api/farm/me/interior${qs ? `?${qs}` : ''}`);
+    },
     plow: (x, y) => request('POST', '/api/farm/plow', { x, y }),
     plant: (x, y, cropType) => request('POST', '/api/farm/plant', { x, y, cropType }),
     water: (x, y, ownerId) => request('POST', '/api/farm/water', { x, y, ownerId }),

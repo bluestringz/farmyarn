@@ -30,6 +30,7 @@ function migrate(db) {
     is_admin INTEGER NOT NULL DEFAULT 0,
     is_banned INTEGER NOT NULL DEFAULT 0,
     suspended_until INTEGER, -- unix timestamp; NULL = not suspended. Temporary, unlike is_banned (permanent).
+    is_resting INTEGER NOT NULL DEFAULT 0, -- sitting/lying on furniture — regenerates energy faster while true
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     last_login INTEGER
   );
@@ -263,6 +264,9 @@ function addColumnsIfMissing(db) {
   if (!existingCols.includes('suspended_until')) {
     db.exec('ALTER TABLE users ADD COLUMN suspended_until INTEGER');
   }
+  if (!existingCols.includes('is_resting')) {
+    db.exec('ALTER TABLE users ADD COLUMN is_resting INTEGER NOT NULL DEFAULT 0');
+  }
   if (!existingCols.includes('display_name')) {
     db.exec('ALTER TABLE users ADD COLUMN display_name TEXT');
   }
@@ -309,6 +313,28 @@ function addColumnsIfMissing(db) {
   // baseline; anyone who has already spent energy under the new system
   // (which can be anywhere from 0-1000) is left alone.
   db.exec('UPDATE users SET energy = 1000 WHERE energy <= 20');
+
+  // One-time migration: coop/barn interiors used to be ONE shared room per
+  // farm regardless of how many physical coop/barn buildings existed
+  // (location='indoor_coop' / 'indoor_barn'). Now each specific building
+  // has its own separate room (location='indoor:<farm_objects.id>') — see
+  // server/lib/interiorSpaces.js. Anything still sitting at the old shared
+  // locations gets moved into the farm's first matching building so
+  // nothing already placed gets silently orphaned/unreachable. Safe to
+  // re-run: once migrated, nothing is left at the old location values, so
+  // this is a no-op on every subsequent server start.
+  const oldCoopFurniture = db.prepare("SELECT DISTINCT farm_id FROM farm_objects WHERE location = 'indoor_coop'").all();
+  const oldBarnFurniture = db.prepare("SELECT DISTINCT farm_id FROM farm_objects WHERE location = 'indoor_barn'").all();
+  const migrateOldRoom = db.transaction((farmId, oldLocation, buildingItemId) => {
+    const building = db.prepare("SELECT id FROM farm_objects WHERE farm_id = ? AND item_id = ? AND object_type = 'building' ORDER BY id LIMIT 1")
+      .get(farmId, buildingItemId);
+    if (!building) return; // no matching building left on this farm — leave as-is rather than guess
+    db.prepare('UPDATE farm_objects SET location = ? WHERE farm_id = ? AND location = ?')
+      .run(`indoor:${building.id}`, farmId, oldLocation);
+  });
+  for (const row of oldCoopFurniture) migrateOldRoom(row.farm_id, 'indoor_coop', 'chicken_coop');
+  for (const row of oldBarnFurniture) migrateOldRoom(row.farm_id, 'indoor_barn', 'cow_barn');
+
   // Seed (or top up) the fixed marketplace stalls — 20 rentable stalls total.
   // Uses INSERT OR IGNORE so it's safe to bump the count later and re-run
   // against a database that already has the original 12.
