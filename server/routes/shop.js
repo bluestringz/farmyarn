@@ -1,0 +1,381 @@
+const express = require('express');
+const { grantRewards, addInventory, nowSec } = require('../lib/gameLogic');
+
+const INTERIOR_WIDTH = 6;
+const INTERIOR_HEIGHT = 4;
+const DYE_COST = 25;
+const DYE_PALETTE = ['#c0392b', '#e8a527', '#4f8f2e', '#3d8fe0', '#8e44ad', '#e05a7e', '#4a3521', '#f4f4f4'];
+
+// Enterable building interiors — the house was the only one of these for a
+// long time (hence the plain 'indoor' location value it still uses), but
+// the chicken coop and cow barn now work the same way: each is its own
+// small themed room, addressed by a distinct `location` value so their
+// furniture/placement never collides with the house's.
+const INTERIOR_SPACES = {
+  house: { location: 'indoor', width: INTERIOR_WIDTH, height: INTERIOR_HEIGHT, buildingId: 'farmhouse' },
+  coop: { location: 'indoor_coop', width: 4, height: 3, buildingId: 'chicken_coop' },
+  barn: { location: 'indoor_barn', width: 5, height: 3, buildingId: 'cow_barn' },
+};
+function interiorBoundsFor(location) {
+  const space = Object.values(INTERIOR_SPACES).find((s) => s.location === location);
+  return space ? { width: space.width, height: space.height } : { width: INTERIOR_WIDTH, height: INTERIOR_HEIGHT };
+}
+
+module.exports = function shopRoutes(db) {
+  const router = express.Router();
+
+  // GET /api/shop/catalog - everything purchasable, grouped by category
+  router.get('/catalog', (req, res) => {
+    const crops = db.prepare('SELECT * FROM crop_types ORDER BY required_level, seed_cost').all();
+    // Farmhouse is granted free at registration and is not re-purchasable —
+    // exclude it from the buildable list so players can't place duplicates.
+    const buildings = db.prepare("SELECT * FROM building_types ORDER BY required_level, cost").all();
+    const decorations = db.prepare('SELECT * FROM decoration_types ORDER BY required_level, cost').all();
+    const animals = db.prepare('SELECT * FROM animal_types ORDER BY required_level, cost').all();
+    const items = db.prepare('SELECT * FROM item_types ORDER BY sell_price').all();
+    const outfits = db.prepare('SELECT * FROM outfit_types ORDER BY required_level, cost').all();
+    const interiors = db.prepare('SELECT * FROM interior_types ORDER BY required_level, cost').all();
+    res.json({ crops, buildings, decorations, animals, items, outfits, interiors, dyePalette: DYE_PALETTE, dyeCost: DYE_COST });
+  });
+
+  // POST /api/shop/buy-seed  { cropType, quantity } — seeds must be bought here first;
+  // they land in the player's inventory (as `seed_<cropType>`) and are consumed one at a
+  // time when planting.
+  router.post('/buy-seed', (req, res) => {
+    const { cropType, quantity } = req.body || {};
+    const qty = parseInt(quantity, 10) || 1;
+    if (qty < 1 || qty > 99) return res.status(400).json({ error: 'Invalid quantity' });
+
+    const crop = db.prepare('SELECT * FROM crop_types WHERE id = ?').get(cropType);
+    if (!crop) return res.status(400).json({ error: 'Unknown crop type' });
+
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
+    if (user.level < crop.required_level) return res.status(400).json({ error: `Requires level ${crop.required_level}` });
+    const totalCost = crop.seed_cost * qty;
+    if (user.coins < totalCost) return res.status(400).json({ error: 'Not enough coins' });
+
+    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(totalCost, req.userId);
+    addInventory(db, req.userId, `seed_${cropType}`, qty);
+
+    const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+    res.json({ ok: true, cropType, quantity: qty, coinsSpent: totalCost, coins: updated.coins });
+  });
+
+  // POST /api/shop/buy-outfit  { outfitId } — buys (if not already owned) and equips immediately
+  router.post('/buy-outfit', (req, res) => {
+    const { outfitId } = req.body || {};
+    const outfit = db.prepare('SELECT * FROM outfit_types WHERE id = ?').get(outfitId);
+    if (!outfit) return res.status(400).json({ error: 'Unknown outfit' });
+
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
+    if (outfit.gender !== 'unisex' && outfit.gender !== user.gender) {
+      return res.status(400).json({ error: `This outfit is styled for ${outfit.gender} characters` });
+    }
+    if (user.level < outfit.required_level) return res.status(400).json({ error: `Requires level ${outfit.required_level}` });
+
+    const alreadyOwned = db.prepare('SELECT 1 FROM owned_outfits WHERE user_id = ? AND outfit_id = ?').get(req.userId, outfitId);
+    if (!alreadyOwned) {
+      // Costumes are bought with Premium Points, not coins — that's what
+      // actually gives them collector value instead of being just another
+      // thing gold buys. Points are topped up by an admin for now (see
+      // /api/admin/players/:id/give-premium).
+      if ((user.premium_currency || 0) < outfit.cost) {
+        return res.status(400).json({ error: `Not enough Premium Points — need ${outfit.cost}, have ${user.premium_currency || 0}` });
+      }
+      db.prepare('UPDATE users SET premium_currency = premium_currency - ? WHERE id = ?').run(outfit.cost, req.userId);
+      db.prepare('INSERT INTO owned_outfits (user_id, outfit_id) VALUES (?, ?)').run(req.userId, outfitId);
+    }
+    // Switching outfits clears any custom dye — dye is a per-shirt tint, not a permanent trait.
+    db.prepare('UPDATE users SET equipped_outfit = ?, dye_color = NULL WHERE id = ?').run(outfitId, req.userId);
+
+    const updated = db.prepare('SELECT coins, premium_currency FROM users WHERE id = ?').get(req.userId);
+    res.json({ ok: true, outfitId, purchased: !alreadyOwned, coins: updated.coins, premiumCurrency: updated.premium_currency });
+  });
+
+  // POST /api/shop/dye  { color } — recolors the shirt of the currently equipped outfit
+  router.post('/dye', (req, res) => {
+    const { color } = req.body || {};
+    if (!DYE_PALETTE.includes(color)) return res.status(400).json({ error: 'Unknown dye color' });
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
+    if (user.coins < DYE_COST) return res.status(400).json({ error: `Dyeing costs ${DYE_COST} coins` });
+    db.prepare('UPDATE users SET coins = coins - ?, dye_color = ? WHERE id = ?').run(DYE_COST, color, req.userId);
+    const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+    res.json({ ok: true, dyeColor: color, coins: updated.coins });
+  });
+
+  // POST /api/shop/buy-placeable  { category: 'building'|'decoration'|'animal'|'interior', itemId, quantity }
+  // Buys N units into the player's inventory (as `${category}_${itemId}`), same pattern as
+  // seeds. Placement is a separate step (place-object) — this is what makes the Build tool
+  // only show things you've actually bought, instead of paying at placement time.
+  router.post('/buy-placeable', (req, res) => {
+    const { category, itemId, quantity } = req.body || {};
+    if (!['building', 'decoration', 'animal', 'interior'].includes(category)) {
+      return res.status(400).json({ error: 'Invalid category' });
+    }
+    if (category === 'building' && itemId === 'farmhouse') {
+      return res.status(400).json({ error: 'You already have a farmhouse — it was placed for free when you registered.' });
+    }
+    const qty = parseInt(quantity, 10) || 1;
+    if (qty < 1 || qty > 99) return res.status(400).json({ error: 'Invalid quantity' });
+
+    const def = lookupDefSync(db, category, itemId);
+    if (!def) return res.status(400).json({ error: 'Unknown item' });
+
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
+    if (user.level < def.required_level) return res.status(400).json({ error: `Requires level ${def.required_level}` });
+    const totalCost = def.cost * qty;
+    if (user.coins < totalCost) return res.status(400).json({ error: 'Not enough coins' });
+
+    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(totalCost, req.userId);
+    addInventory(db, req.userId, `${category}_${itemId}`, qty);
+
+    const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+    res.json({ ok: true, category, itemId, quantity: qty, coinsSpent: totalCost, coins: updated.coins });
+  });
+
+  // POST /api/shop/place-object  { category, itemId, x, y, rotation, location }
+  // Consumes 1 owned (already-bought) unit from inventory and places it on the farm.
+  // location: 'outdoor' (default) or one of the enterable-building interior
+  // values from INTERIOR_SPACES ('indoor' for the house, 'indoor_coop',
+  // 'indoor_barn') — each bounded by its own room size instead of the
+  // farm's outdoor width/height.
+  router.post('/place-object', (req, res) => {
+    const { category, itemId, x, y, rotation, location } = req.body || {};
+    if (!['building', 'decoration', 'animal', 'interior'].includes(category)) {
+      return res.status(400).json({ error: 'Invalid category' });
+    }
+    const validIndoorLocations = new Set(Object.values(INTERIOR_SPACES).map((s) => s.location));
+    const loc = validIndoorLocations.has(location) ? location : 'outdoor';
+    const isIndoor = loc !== 'outdoor';
+    // Animals can go inside the coop/barn (that's the whole point of those
+    // buildings) but not the house — everywhere else indoors still only
+    // takes furniture ('interior' category).
+    const isAnimalPen = loc === INTERIOR_SPACES.coop.location || loc === INTERIOR_SPACES.barn.location;
+    const categoryAllowedIndoors = category === 'interior' || (isAnimalPen && category === 'animal');
+    if (isIndoor && !categoryAllowedIndoors) {
+      return res.status(400).json({ error: isAnimalPen ? 'Only furniture and animals can be placed here' : 'Only interior items can be placed indoors' });
+    }
+    if (!isIndoor && category === 'interior') {
+      return res.status(400).json({ error: 'Interior items can only be placed indoors' });
+    }
+
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+
+    const def = lookupDefSync(db, category, itemId);
+    if (!def) return res.status(400).json({ error: 'Unknown item' });
+
+    const invItemId = `${category}_${itemId}`;
+    const invRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, invItemId);
+    if (!invRow || invRow.quantity < 1) {
+      return res.status(400).json({ error: `You don't own a ${def.name} to place — buy one from the Shop first` });
+    }
+
+    const w = def.width || 1, h = def.height || 1;
+    const bounds = isIndoor ? interiorBoundsFor(loc) : { width: farm.width, height: farm.height };
+    const boundsW = bounds.width, boundsH = bounds.height;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + w > boundsW || y + h > boundsH) {
+      return res.status(400).json({ error: 'Placement out of bounds' });
+    }
+    const blocking = findOverlap(db, farm.id, loc, x, y, w, h);
+    if (blocking) {
+      return res.status(400).json({
+        error: `That spot already has a ${blocking.def ? blocking.def.name : blocking.object.item_id} on it (at ${blocking.object.grid_x},${blocking.object.grid_y}) — remove it first or pick a different spot.`,
+      });
+    }
+
+    db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(invRow.id);
+
+    // Growable decorations (currently just trees) start life as a sapling —
+    // state stores the growth timer as JSON, mirroring how crops track
+    // planted_at/growth_end_at, just folded into the freeform state column
+    // since farm_objects is shared by many non-growable object types too.
+    let state = null;
+    if (category === 'decoration' && def.growable) {
+      const t = nowSec();
+      state = JSON.stringify({ plantedAt: t, growthEndAt: t + def.growth_seconds, watered: 0 });
+    }
+
+    const info = db.prepare(`
+      INSERT INTO farm_objects (farm_id, object_type, item_id, location, grid_x, grid_y, rotation, state, last_collected_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(farm.id, category, itemId, loc, x, y, rotation || 0, state, nowSec());
+
+    res.json({ ok: true, objectId: info.lastInsertRowid });
+  });
+
+  // POST /api/shop/move-object  { objectId, x, y, rotation }
+  router.post('/move-object', (req, res) => {
+    const { objectId, x, y, rotation } = req.body || {};
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+
+    const obj = db.prepare('SELECT * FROM farm_objects WHERE id = ? AND farm_id = ?').get(objectId, farm.id);
+    if (!obj) return res.status(404).json({ error: 'Object not found on your farm' });
+    if (obj.object_type === 'building') {
+      return res.status(400).json({ error: "Buildings can't be moved — remove and re-place them instead." });
+    }
+    if (obj.item_id === 'tree') {
+      return res.status(400).json({ error: "A planted tree can't be moved — chop it down and plant a new one instead." });
+    }
+
+    const def = lookupDefSync(db, obj.object_type, obj.item_id);
+    const w = def.width || 1, h = def.height || 1;
+    const isIndoor = obj.location !== 'outdoor';
+    const bounds = isIndoor ? interiorBoundsFor(obj.location) : { width: farm.width, height: farm.height };
+    const boundsW = bounds.width, boundsH = bounds.height;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + w > boundsW || y + h > boundsH) {
+      return res.status(400).json({ error: 'Placement out of bounds' });
+    }
+    const blocking = findOverlap(db, farm.id, obj.location, x, y, w, h, objectId);
+    if (blocking) {
+      return res.status(400).json({
+        error: `That spot already has a ${blocking.def ? blocking.def.name : blocking.object.item_id} on it (at ${blocking.object.grid_x},${blocking.object.grid_y}) — remove it first or pick a different spot.`,
+      });
+    }
+
+    db.prepare('UPDATE farm_objects SET grid_x = ?, grid_y = ?, rotation = ?, updated_at = ? WHERE id = ?')
+      .run(x, y, rotation ?? obj.rotation, nowSec(), objectId);
+    res.json({ ok: true });
+  });
+
+  // DELETE /api/shop/object/:id - remove any object the OWNER placed (fixes mistaken placements;
+  // not a refund system, just removal).
+  router.delete('/object/:id', (req, res) => {
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    const obj = db.prepare('SELECT * FROM farm_objects WHERE id = ? AND farm_id = ?').get(req.params.id, farm.id);
+    if (!obj) return res.status(404).json({ error: 'Object not found on your farm' });
+    db.prepare('DELETE FROM farm_objects WHERE id = ?').run(obj.id);
+    res.json({ ok: true });
+  });
+
+  // Wheat-to-feed conversion at the Silo — 2 wheat per chicken feed, scaling
+  // up for bigger animals. Matches "no feeds = no eggs": collecting from an
+  // animal now requires having fed it since its last collection.
+  const FEED_RECIPES = {
+    chicken: { wheatCost: 2, feedItemId: 'chicken_feed' },
+    sheep: { wheatCost: 4, feedItemId: 'sheep_feed' },
+    pig: { wheatCost: 5, feedItemId: 'pig_feed' },
+    cow: { wheatCost: 6, feedItemId: 'cow_feed' },
+  };
+
+  // POST /api/shop/craft-feed { animalType, quantity } — requires owning a
+  // Silo building; consumes wheat from inventory, produces matching feed.
+  router.post('/craft-feed', (req, res) => {
+    const { animalType, quantity } = req.body || {};
+    const qty = parseInt(quantity, 10);
+    if (!qty || qty < 1) return res.status(400).json({ error: 'Invalid quantity' });
+    const recipe = FEED_RECIPES[animalType];
+    if (!recipe) return res.status(400).json({ error: 'Unknown animal type' });
+
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    const silo = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND item_id = 'silo'").get(farm.id);
+    if (!silo) return res.status(400).json({ error: 'You need a Silo on your farm to make feed' });
+
+    const wheatNeeded = recipe.wheatCost * qty;
+    const wheatRow = db.prepare("SELECT * FROM inventory WHERE user_id = ? AND item_id = 'wheat'").get(req.userId);
+    if (!wheatRow || wheatRow.quantity < wheatNeeded) {
+      return res.status(400).json({ error: `Not enough wheat — need ${wheatNeeded}, have ${wheatRow ? wheatRow.quantity : 0}` });
+    }
+
+    db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(wheatNeeded, wheatRow.id);
+    addInventory(db, req.userId, recipe.feedItemId, qty);
+    res.json({ ok: true, feedItemId: recipe.feedItemId, quantity: qty, wheatSpent: wheatNeeded });
+  });
+
+  // POST /api/shop/feed-animal { objectId } — consumes 1 matching feed,
+  // and is required at least once since the animal's last collection
+  // before you're allowed to collect from it again.
+  router.post('/feed-animal', (req, res) => {
+    const { objectId } = req.body || {};
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+
+    const obj = db.prepare("SELECT * FROM farm_objects WHERE id = ? AND farm_id = ? AND object_type = 'animal'").get(objectId, farm.id);
+    if (!obj) return res.status(404).json({ error: 'Animal not found on your farm' });
+    const recipe = FEED_RECIPES[obj.item_id];
+    if (!recipe) return res.status(400).json({ error: "This animal doesn't need feed" });
+
+    // Feeding only unlocks ONE collection — can't stack up feedings ahead
+    // of time. Blocked until the animal is actually collected from again
+    // (which resets last_collected_at, making a past lastFed "stale").
+    let state = {};
+    try { state = obj.state ? JSON.parse(obj.state) : {}; } catch (e) { state = {}; }
+    const last = obj.last_collected_at || obj.created_at;
+    if (state.lastFed && state.lastFed >= last) {
+      return res.status(400).json({ error: 'Already fed — wait for it to be ready and collect first.' });
+    }
+
+    const feedRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, recipe.feedItemId);
+    if (!feedRow || feedRow.quantity < 1) {
+      return res.status(400).json({ error: `No ${recipe.feedItemId.replace('_', ' ')} in your Bag — make some at the Silo first` });
+    }
+
+    db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(feedRow.id);
+    state.lastFed = nowSec();
+    db.prepare('UPDATE farm_objects SET state = ? WHERE id = ?').run(JSON.stringify(state), obj.id);
+    res.json({ ok: true });
+  });
+
+  // POST /api/shop/collect-animal { objectId }
+  router.post('/collect-animal', (req, res) => {
+    const { objectId } = req.body || {};
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+
+    const obj = db.prepare('SELECT * FROM farm_objects WHERE id = ? AND farm_id = ? AND object_type = ?')
+      .get(objectId, farm.id, 'animal');
+    if (!obj) return res.status(404).json({ error: 'Animal not found on your farm' });
+
+    const animalType = db.prepare('SELECT * FROM animal_types WHERE id = ?').get(obj.item_id);
+    const last = obj.last_collected_at || obj.created_at;
+    const readyAt = last + animalType.production_seconds;
+    if (nowSec() < readyAt) return res.status(400).json({ error: 'Not ready yet' });
+
+    if (FEED_RECIPES[obj.item_id]) {
+      let state = {};
+      try { state = obj.state ? JSON.parse(obj.state) : {}; } catch (e) { state = {}; }
+      if (!state.lastFed || state.lastFed < last) {
+        return res.status(400).json({ error: 'Feed this animal before collecting — no feed, no product!' });
+      }
+    }
+
+    db.prepare('UPDATE farm_objects SET last_collected_at = ? WHERE id = ?').run(nowSec(), obj.id);
+    addInventory(db, req.userId, animalType.product_item_id, 1);
+    const reward = grantRewards(db, req.userId, { coins: 0, xp: 1 });
+
+    res.json({ ok: true, product: animalType.product_item_id, reward });
+  });
+
+  return router;
+};
+
+// Returns the blocking object (with its def attached) if the given footprint
+// overlaps something already there, or null if the spot is clear.
+function findOverlap(db, farmId, location, x, y, w, h, excludeId) {
+  const objects = db.prepare(
+    'SELECT * FROM farm_objects WHERE farm_id = ? AND location = ?' + (excludeId ? ' AND id != ?' : '')
+  ).all(...(excludeId ? [farmId, location, excludeId] : [farmId, location]));
+  for (const o of objects) {
+    const def = lookupDefSync(db, o.object_type, o.item_id);
+    const ow = def ? def.width || 1 : 1;
+    const oh = def ? def.height || 1 : 1;
+    const overlap = x < o.grid_x + ow && x + w > o.grid_x && y < o.grid_y + oh && y + h > o.grid_y;
+    if (overlap) return { object: o, def };
+  }
+  return null;
+}
+
+function lookupDefSync(db, type, itemId) {
+  const table = type === 'building' ? 'building_types'
+    : type === 'decoration' ? 'decoration_types'
+    : type === 'animal' ? 'animal_types'
+    : 'interior_types';
+  return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(itemId);
+}
+
+module.exports.INTERIOR_WIDTH = INTERIOR_WIDTH;
+module.exports.INTERIOR_HEIGHT = INTERIOR_HEIGHT;
+module.exports.INTERIOR_SPACES = INTERIOR_SPACES;
