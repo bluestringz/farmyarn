@@ -357,6 +357,7 @@
         renderTopbar();
       } catch (err) { /* non-critical — don't block leaving over this */ }
     }
+    game.setRestPose(null);
     game.exitInteriorMode();
     state.inHouse = false;
     state.interiorSpace = null;
@@ -613,6 +614,14 @@
   // ---------------- Tile / object interaction ----------------
 
   async function handleTileClick(x, y) {
+    // Tapping anywhere to walk means getting up off the furniture —
+    // fire-and-forget the server call so the faster resting regen rate
+    // doesn't stay active after the character has visually stood up.
+    if (state.me && state.me.isResting) {
+      state.me.isResting = false;
+      Api.stopResting().then((res) => { state.me.energy = res.energy; renderTopbar(); }).catch(() => {});
+      renderTopbar();
+    }
     if (state.tool === 'move' && state.pendingPlacement && state.pendingPlacement.movingObjectId) {
       // Already holding something picked up with the Move tool — subsequent
       // taps just slide the ghost to the new spot; Confirm in the
@@ -739,9 +748,11 @@
           const res = await Api.stopResting();
           state.me.isResting = res.resting;
           state.me.energy = res.energy;
+          game.setRestPose(null);
           UI.toast('You got up.');
         } else {
-          game.walkTo(obj.grid_x, obj.grid_y, null);
+          const pose = obj.item_id === 'bed' ? 'lie' : 'sit';
+          game.setRestPose(pose, obj.grid_x, obj.grid_y);
           const res = await Api.startResting();
           state.me.isResting = res.resting;
           state.me.energy = res.energy;
@@ -749,6 +760,7 @@
         }
         renderTopbar();
       } catch (err) {
+        game.setRestPose(null);
         UI.toast(err.message);
       }
       return;

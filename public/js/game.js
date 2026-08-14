@@ -172,6 +172,7 @@ class FarmGame {
       shirtColor: '#5a8fc9', pantsColor: '#3f6a9c', hatColor: '#e0b060', style: 'overalls',
       outfitKey: 'classic', // which sprite set to draw — see public/assets/characters/
       chatText: null, chatTimer: 0,
+      restPose: null, // null | 'sit' | 'lie' — see setRestPose()
     };
 
     // Other players sharing the same space (farm visit or the Marketplace
@@ -360,6 +361,11 @@ class FarmGame {
 
   walkTo(tileX, tileY, actionGlyph) {
     const c = this._character;
+    // Moving inherently means getting up off whatever furniture — clear
+    // the faked sitting/lying pose so it doesn't try to combine with the
+    // walk animation. main.js's rest-toggle handler independently calls
+    // stop-rest on the server side; this just keeps the visual in sync.
+    if (c.restPose) c.restPose = null;
     const startTileX = Math.floor(c.x / TILE), startTileY = Math.floor(c.y / TILE);
     // Pathfinding (fence/building collision) only applies to the outdoor
     // farm — the Marketplace and house interior use their own grids
@@ -396,6 +402,20 @@ class FarmGame {
     const c = this._character;
     c.actionGlyph = glyph;
     c.actionTimer = 0.7;
+  }
+
+  // Sitting on a chair / lying on a bed (see main.js's rest-toggle) — pass
+  // null to stand back up. tileX/tileY snap the character exactly onto the
+  // furniture so the faked pose lines up with it instead of floating.
+  setRestPose(pose, tileX, tileY) {
+    const c = this._character;
+    c.restPose = pose;
+    if (pose && tileX !== undefined && tileY !== undefined) {
+      const wx = tileX * TILE + TILE / 2, wy = tileY * TILE + TILE / 2;
+      c.x = wx; c.y = wy; c.targetX = wx; c.targetY = wy;
+      c.path = []; c.moving = false;
+      c.facingDir = 'down';
+    }
   }
 
   // A little watering-can-tips-and-sprinkles animation over a specific
@@ -1063,6 +1083,48 @@ class FarmGame {
       ctx.fillStyle = tint;
       ctx.fillRect(0, 0, rect.width, rect.height);
       ctx.restore();
+
+      // Lamp posts punch a warm circle of light out of the darkness around
+      // them — drawn here (screen space, after the dark tint) rather than
+      // as part of the lamp's own world-space drawing, since the glow
+      // needs to sit ON TOP of the darkening overlay to actually push it
+      // back, not underneath it where the tint would just cover it again.
+      const isFullNight = hour >= 19 || hour < 5;
+      if (isFullNight && this.farm && this.farm.objects) {
+        for (const obj of this.farm.objects) {
+          if (obj.object_type !== 'decoration' || obj.item_id !== 'lamp') continue;
+          const worldX = (obj.grid_x + 0.5) * TILE;
+          const worldY = (obj.grid_y + 0.55) * TILE; // roughly where the lamp's glass/bulb sits
+          const sx = worldX * this.camera.scale + this.camera.x;
+          const sy = worldY * this.camera.scale + this.camera.y;
+          const radius = TILE * 2.2 * this.camera.scale;
+          if (sx < -radius || sx > rect.width + radius || sy < -radius || sy > rect.height + radius) continue; // off-screen, skip
+
+          ctx.save();
+          ctx.globalCompositeOperation = 'destination-out';
+          const punch = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
+          punch.addColorStop(0, 'rgba(0,0,0,0.85)');
+          punch.addColorStop(0.6, 'rgba(0,0,0,0.4)');
+          punch.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = punch;
+          ctx.beginPath();
+          ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          // A soft warm tint on top of the punched-through hole, so the lit
+          // area reads as lamplight rather than just "less dark".
+          ctx.save();
+          const warmGlow = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 0.7);
+          warmGlow.addColorStop(0, 'rgba(255,221,136,0.30)');
+          warmGlow.addColorStop(1, 'rgba(255,221,136,0)');
+          ctx.fillStyle = warmGlow;
+          ctx.beginPath();
+          ctx.arc(sx, sy, radius * 0.7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
     }
 
     if (isChristmasSeason) {
@@ -1611,20 +1673,49 @@ class FarmGame {
     ctx.fill();
 
     const img = getSprite(spriteKeyFor(c.gender, c.facingDir, c.walkFrame, c.moving, c.outfitKey));
-    if (img && img.complete && img.naturalWidth > 0) {
-      const displayHeight = TILE * 1.45;
-      const displayWidth = displayHeight * (img.naturalWidth / img.naturalHeight);
-      ctx.save();
+    if (!img || !img.complete || img.naturalWidth <= 0) return;
+    const displayHeight = TILE * 1.45;
+    const displayWidth = displayHeight * (img.naturalWidth / img.naturalHeight);
+
+    // No dedicated sitting/lying sprite art exists — these fake the pose by
+    // transforming the normal standing sprite: lying rotates it onto its
+    // side and flattens/shrinks it a bit (like sinking into a mattress),
+    // sitting just shrinks and drops it a bit (like sinking into a seat)
+    // without the rotation. Good enough to read as "resting" at a glance.
+    ctx.save();
+    if (c.restPose === 'lie') {
+      ctx.translate(cx, groundY + c.bob - TILE * 0.18);
+      ctx.rotate(-Math.PI / 2);
+      ctx.scale(0.8, 0.68);
+      ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
+    } else if (c.restPose === 'sit') {
+      ctx.translate(cx, groundY + c.bob + TILE * 0.16);
+      ctx.scale(0.9, 0.72);
+      ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
+    } else {
       ctx.translate(cx, groundY + c.bob);
       ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
-      ctx.restore();
     }
+    ctx.restore();
   }
 
   _drawCharacterOverlay() {
     const ctx = this.ctx;
     const c = this._character;
     const cx = c.x, groundY = c.y + TILE * 0.28;
+
+    // A small floating "zzz" while resting reinforces the pose regardless
+    // of how well the (rotated/squashed, not hand-drawn) fake pose reads
+    // on its own — gently bobs so it doesn't look like a static sticker.
+    if (c.restPose) {
+      const bob = Math.sin(performance.now() / 500) * 3;
+      ctx.save();
+      ctx.font = '16px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('💤', cx + 14, groundY - 58 + bob);
+      ctx.restore();
+    }
 
     // action icon bounce
     if (c.actionGlyph && c.actionTimer > 0) {
