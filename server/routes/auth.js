@@ -98,6 +98,25 @@ module.exports = function authRoutes(db) {
     }
   });
 
+  // POST /api/auth/forgot-password { username, message } — no login needed
+  // (that's the whole point). Doesn't reveal whether the username exists —
+  // always responds the same way — so this can't be used to check which
+  // usernames are registered. Files a request an admin can see and act on
+  // from the admin panel's mailbox instead of sending any real email.
+  router.post('/forgot-password', (req, res) => {
+    const { username, message } = req.body || {};
+    if (typeof username !== 'string' || !username.trim()) {
+      return res.status(400).json({ error: 'Enter your username' });
+    }
+    const user = db.prepare('SELECT id FROM users WHERE username = ?').get(username.trim());
+    if (user) {
+      db.prepare('INSERT INTO password_reset_requests (user_id, message) VALUES (?, ?)')
+        .run(user.id, (message || '').toString().slice(0, 300) || null);
+    }
+    // Same response whether or not the account exists.
+    res.json({ ok: true, message: "If that account exists, it's been flagged for an admin to help you reset your password." });
+  });
+
   return router;
 };
 

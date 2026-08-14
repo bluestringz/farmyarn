@@ -46,10 +46,23 @@
   </div>
 
   <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">Your admin account password</p>
+    <input id="own-current-password" type="password" placeholder="Current password">
+    <input id="own-new-password" type="password" placeholder="New password (min 6 chars)">
+    <button id="own-password-btn">Change My Password</button>
+    <span id="own-password-status" style="margin-left:10px; font-size:12px; color:#8a5a34;"></span>
+  </div>
+
+  <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">📬 Password Reset Requests <span id="mailbox-badge"></span></p>
+    <div id="mailbox-list"></div>
+  </div>
+
+  <div class="card">
     <input id="search-input" placeholder="Search username...">
     <button id="search-btn">Search</button>
     <table id="players-table">
-      <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Lvl</th><th>Coins</th><th>Premium Points</th><th>Status</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Lvl / XP</th><th>Energy</th><th>Coins</th><th>Premium Points</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -65,6 +78,13 @@ async function api(method, path, body) {
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error((data && data.error) || 'Request failed');
   return data;
+}
+
+// The password-reset "message" field is free text a player typed — must be
+// escaped before going into innerHTML, or a malicious message could run a
+// script in an ADMIN's browser session (which holds an admin auth token).
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 document.getElementById('admin-login-btn').addEventListener('click', async () => {
@@ -86,6 +106,7 @@ async function showApp() {
   document.getElementById('admin-app').style.display = 'block';
   await loadStats();
   await loadPlayers();
+  await loadMailbox();
 }
 
 async function loadStats() {
@@ -97,6 +118,51 @@ async function loadStats() {
     <div class="stat-box"><b>${s.totalCrops}</b><br>Growing crops</div>
     <div class="stat-box"><b>${s.activeToday}</b><br>Active today</div>
   `;
+  const badge = document.getElementById('mailbox-badge');
+  badge.textContent = s.pendingPasswordRequests > 0 ? `(${s.pendingPasswordRequests} pending)` : '';
+  badge.style.color = s.pendingPasswordRequests > 0 ? '#c0392b' : '#8a5a34';
+}
+
+async function loadMailbox() {
+  const rows = await api('GET', '/api/admin/password-requests');
+  const list = document.getElementById('mailbox-list');
+  const pending = rows.filter(r => r.status === 'pending');
+  if (!pending.length) {
+    list.innerHTML = '<p style="font-size:13px;color:#8a5a34;">No pending requests.</p>';
+    return;
+  }
+  list.innerHTML = pending.map(r => `
+    <div style="background:#fff; border:2px solid #e0d0a8; border-radius:10px; padding:10px; margin-bottom:8px;">
+      <b>${escapeHtml(r.username)}</b> <span style="font-size:11px;color:#8a5a34;">— requested ${new Date(r.created_at * 1000).toLocaleString()}</span>
+      ${r.message ? `<p style="margin:4px 0;font-size:13px;">"${escapeHtml(r.message)}"</p>` : ''}
+      <input type="password" class="new-pw-for-request" data-request-for="${r.id}" placeholder="New password for ${escapeHtml(r.username)}" style="width:220px">
+      <button data-resolve-request="${r.id}">Set Password & Resolve</button>
+      <button data-dismiss-request="${r.id}" style="background:#999">Dismiss</button>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('button[data-resolve-request]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const input = document.querySelector(`input[data-request-for="${btn.dataset.resolveRequest}"]`);
+      const newPassword = input.value;
+      if (!newPassword || newPassword.length < 6) return alert('Enter a new password (min 6 characters).');
+      try {
+        await api('POST', `/api/admin/password-requests/${btn.dataset.resolveRequest}/resolve`, { newPassword });
+        alert('Password updated. Let the player know their new password.');
+        await loadMailbox();
+        await loadStats();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+  });
+  list.querySelectorAll('button[data-dismiss-request]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await api('POST', `/api/admin/password-requests/${btn.dataset.dismissRequest}/dismiss`);
+      await loadMailbox();
+      await loadStats();
+    });
+  });
 }
 
 function statusLabel(u) {
@@ -113,7 +179,16 @@ async function loadPlayers(q) {
   tbody.innerHTML = rows.map(u => `
     <tr>
       <td>${u.online ? '🟢' : '⚪'}</td>
-      <td>${u.id}</td><td>${u.username}</td><td>${u.level}</td>
+      <td>${u.id}</td><td>${u.username}</td>
+      <td>
+        Lvl ${u.level}
+        <input type="number" class="level-input" data-level-for="${u.id}" value="${u.level}" style="width:50px" min="1">
+        <button data-set-level="${u.id}">Set</button>
+      </td>
+      <td>
+        <input type="number" class="energy-input" data-energy-for="${u.id}" value="${u.energy ?? ''}" style="width:60px" min="0">
+        <button data-set-energy="${u.id}">Set</button>
+      </td>
       <td>
         <input type="number" class="coins-input" data-coins-for="${u.id}" value="${u.coins}" style="width:80px">
         <button data-set-coins="${u.id}">Set</button>
@@ -132,6 +207,24 @@ async function loadPlayers(q) {
       </td>
     </tr>`).join('');
 
+  tbody.querySelectorAll('button[data-set-level]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const input = document.querySelector(`input[data-level-for="${btn.dataset.setLevel}"]`);
+      const level = parseInt(input.value, 10);
+      if (!Number.isFinite(level) || level < 1) return alert('Enter a valid level.');
+      await api('POST', `/api/admin/players/${btn.dataset.setLevel}/set-level`, { level });
+      loadPlayers(document.getElementById('search-input').value);
+    });
+  });
+  tbody.querySelectorAll('button[data-set-energy]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const input = document.querySelector(`input[data-energy-for="${btn.dataset.setEnergy}"]`);
+      const energy = parseInt(input.value, 10);
+      if (!Number.isFinite(energy) || energy < 0) return alert('Enter a valid energy amount.');
+      await api('POST', `/api/admin/players/${btn.dataset.setEnergy}/set-energy`, { energy });
+      loadPlayers(document.getElementById('search-input').value);
+    });
+  });
   tbody.querySelectorAll('button[data-set-coins]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const input = document.querySelector(`input[data-coins-for="${btn.dataset.setCoins}"]`);
@@ -230,13 +323,29 @@ document.getElementById('restore-btn').addEventListener('click', async () => {
   }
 });
 
+document.getElementById('own-password-btn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('own-password-status');
+  const currentPassword = document.getElementById('own-current-password').value;
+  const newPassword = document.getElementById('own-new-password').value;
+  statusEl.textContent = '';
+  try {
+    await api('POST', '/api/player/change-password', { currentPassword, newPassword });
+    document.getElementById('own-current-password').value = '';
+    document.getElementById('own-new-password').value = '';
+    statusEl.textContent = '✅ Password changed!';
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+});
+
 document.getElementById('search-btn').addEventListener('click', () => loadPlayers(document.getElementById('search-input').value));
 
-// Refresh online status + stats periodically without needing a manual
-// search — online/offline changes as people connect/disconnect live.
+// Refresh online status + stats + mailbox periodically without needing a
+// manual search — online/offline and new requests change live.
 setInterval(() => {
   loadStats().catch(() => {});
   loadPlayers(document.getElementById('search-input').value).catch(() => {});
+  loadMailbox().catch(() => {});
 }, 15000);
 
 if (TOKEN) showApp().catch(() => { localStorage.removeItem('fy_admin_token'); });

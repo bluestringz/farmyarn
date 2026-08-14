@@ -74,6 +74,30 @@
         errEl.textContent = err.message;
       }
     });
+
+    document.getElementById('forgot-password-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('forgot-password-username').value = document.getElementById('login-username').value;
+      document.getElementById('forgot-password-message').value = '';
+      document.getElementById('forgot-password-error').textContent = '';
+      document.getElementById('forgot-password-modal').classList.remove('hidden');
+    });
+    document.getElementById('forgot-password-cancel').addEventListener('click', () => {
+      document.getElementById('forgot-password-modal').classList.add('hidden');
+    });
+    document.getElementById('forgot-password-submit').addEventListener('click', async () => {
+      const username = document.getElementById('forgot-password-username').value.trim();
+      const message = document.getElementById('forgot-password-message').value.trim();
+      const errEl = document.getElementById('forgot-password-error');
+      if (!username) { errEl.textContent = 'Enter your username.'; return; }
+      try {
+        const res = await Api.forgotPassword(username, message);
+        document.getElementById('forgot-password-modal').classList.add('hidden');
+        alert(res.message);
+      } catch (err) {
+        errEl.textContent = err.message;
+      }
+    });
   }
 
   // ---------------- Game boot ----------------
@@ -1019,6 +1043,28 @@
     });
     document.getElementById('friends-btn').addEventListener('click', openFriends);
     document.getElementById('notif-btn').addEventListener('click', openNotifications);
+    document.getElementById('settings-btn').addEventListener('click', () => {
+      document.getElementById('settings-current-password').value = '';
+      document.getElementById('settings-new-password').value = '';
+      document.getElementById('account-settings-error').textContent = '';
+      document.getElementById('account-settings-modal').classList.remove('hidden');
+    });
+    document.getElementById('account-settings-cancel').addEventListener('click', () => {
+      document.getElementById('account-settings-modal').classList.add('hidden');
+    });
+    document.getElementById('account-settings-submit').addEventListener('click', async () => {
+      const currentPassword = document.getElementById('settings-current-password').value;
+      const newPassword = document.getElementById('settings-new-password').value;
+      const errEl = document.getElementById('account-settings-error');
+      errEl.textContent = '';
+      try {
+        await Api.changePassword(currentPassword, newPassword);
+        document.getElementById('account-settings-modal').classList.add('hidden');
+        UI.toast('Password changed!');
+      } catch (err) {
+        errEl.textContent = err.message;
+      }
+    });
     document.getElementById('side-panel-close').addEventListener('click', UI.closePanel);
     document.getElementById('visiting-return-btn').addEventListener('click', loadOwnFarm);
     document.getElementById('house-exit-btn').addEventListener('click', exitHouse);
@@ -1059,7 +1105,12 @@
       onSearch: (q) => Api.searchUsers(q),
       onRequest: async (userId) => { await Api.requestFriend(userId); UI.toast('Friend request sent!'); openFriends(); },
       onRespond: async (requestId, accept) => { await Api.respondFriend(requestId, accept); UI.toast(accept ? 'Friend added!' : 'Request declined'); openFriends(); },
-      onRemove: async (userId) => { await Api.removeFriend(userId); UI.toast('Removed'); openFriends(); },
+      onRemove: async (userId) => {
+        if (!confirm('Remove this friend? You can send a new friend request later if you change your mind.')) return;
+        await Api.removeFriend(userId);
+        UI.toast('Removed');
+        openFriends();
+      },
       onVisit: async (userId) => { UI.closePanel(); await loadFarm(parseInt(userId, 10)); },
     });
   }

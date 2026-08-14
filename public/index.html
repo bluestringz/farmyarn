@@ -31,6 +31,7 @@
       </label>
       <button type="submit" class="btn btn-primary">Log in</button>
       <p class="auth-error" id="login-error"></p>
+      <p style="text-align:center; margin-top:6px;"><a href="#" id="forgot-password-link" style="font-size:12px;">Forgot your password?</a></p>
     </form>
 
     <form id="register-form" class="auth-form hidden">
@@ -87,6 +88,7 @@
       <button class="icon-btn" id="music-toggle-btn" title="Music">🔊</button>
       <button class="icon-btn" id="notif-btn" title="Notifications">🔔<span class="badge hidden" id="notif-badge">0</span></button>
       <button class="icon-btn" id="friends-btn" title="Friends">👥</button>
+      <button class="icon-btn" id="settings-btn" title="Account Settings">⚙️</button>
       <button class="icon-btn" id="home-btn" title="My Farm">🏡</button>
       <button class="icon-btn" id="logout-btn" title="Log out">🚪</button>
     </div>
@@ -221,6 +223,37 @@
       <input type="text" id="profile-name-input" maxlength="20" placeholder="Your profile name">
       <div class="modal-error" id="profile-name-error"></div>
       <button class="btn btn-primary" id="profile-name-submit" style="width:100%">Let's go!</button>
+    </div>
+  </div>
+
+  <!-- FORGOT PASSWORD MODAL — shown from the login screen. Doesn't send a
+       real email; it files a request an admin can see and act on from the
+       admin panel's mailbox (see /admin.html). -->
+  <div id="forgot-password-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h2>Forgot your password?</h2>
+      <p>Enter your username and (optionally) a note to help an admin recognize you. An admin will reset your password and let you know your new one.</p>
+      <input type="text" id="forgot-password-username" placeholder="Your username">
+      <input type="text" id="forgot-password-message" maxlength="300" placeholder="Optional note (e.g. how to reach you)">
+      <div class="modal-error" id="forgot-password-error"></div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="forgot-password-cancel" style="flex:1">Cancel</button>
+        <button class="btn btn-primary" id="forgot-password-submit" style="flex:1">Send request</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACCOUNT SETTINGS MODAL — change password while logged in. -->
+  <div id="account-settings-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h2>Change Password</h2>
+      <input type="password" id="settings-current-password" placeholder="Current password" autocomplete="current-password">
+      <input type="password" id="settings-new-password" placeholder="New password (min 6 characters)" autocomplete="new-password">
+      <div class="modal-error" id="account-settings-error"></div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="account-settings-cancel" style="flex:1">Cancel</button>
+        <button class="btn btn-primary" id="account-settings-submit" style="flex:1">Save</button>
+      </div>
     </div>
   </div>
 </div>

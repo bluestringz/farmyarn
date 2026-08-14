@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
 const { grantRewards, resolveEnergy, nowSec, xpProgress } = require('../lib/gameLogic');
@@ -67,6 +68,25 @@ module.exports = function playerRoutes(db) {
   // in the game, separate from the login username. Setting it for the
   // very first time (display_name is still NULL, e.g. right after signup)
   // is free; every change after that costs Premium Points.
+  // POST /api/player/change-password { currentPassword, newPassword }
+  // Works for both regular players and admins (an admin is just a user
+  // with is_admin=1) — same endpoint, no separate "admin password" concept.
+  router.post('/change-password', async (req, res) => {
+    const { currentPassword, newPassword } = req.body || {};
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const ok = await bcrypt.compare(currentPassword || '', user.password_hash);
+    if (!ok) return res.status(400).json({ error: 'Current password is incorrect' });
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, req.userId);
+    res.json({ ok: true });
+  });
+
   router.post('/display-name', (req, res) => {
     const name = (req.body && req.body.name || '').toString().trim();
     if (!name) return res.status(400).json({ error: 'Enter a name' });

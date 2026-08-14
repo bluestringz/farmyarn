@@ -218,6 +218,15 @@ function migrate(db) {
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
 
+  CREATE TABLE IF NOT EXISTS password_reset_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message TEXT, -- optional note from the player explaining who they are / how to verify them
+    status TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'resolved'
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    resolved_at INTEGER
+  );
+
   CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     from_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

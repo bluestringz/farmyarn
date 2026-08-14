@@ -3,7 +3,8 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const multer = require('multer');
-const { grantRewards, addInventory } = require('../lib/gameLogic');
+const bcrypt = require('bcryptjs');
+const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY } = require('../lib/gameLogic');
 const { DB_PATH } = require('../db/migrate');
 
 module.exports = function adminRoutes(db, onlineUsers) {
@@ -63,7 +64,7 @@ module.exports = function adminRoutes(db, onlineUsers) {
 
   router.get('/players', (req, res) => {
     const q = (req.query.q || '').toString().trim();
-    const cols = 'id, username, level, xp, coins, premium_currency, is_admin, is_banned, suspended_until, created_at, last_login';
+    const cols = 'id, username, level, xp, energy, coins, premium_currency, is_admin, is_banned, suspended_until, created_at, last_login';
     const rows = q
       ? db.prepare(`SELECT ${cols} FROM users WHERE username LIKE ? ORDER BY id DESC LIMIT 100`).all(`%${q}%`)
       : db.prepare(`SELECT ${cols} FROM users ORDER BY id DESC LIMIT 100`).all();
@@ -99,6 +100,33 @@ module.exports = function adminRoutes(db, onlineUsers) {
     if (!user) return res.status(404).json({ error: 'User not found' });
     db.prepare('UPDATE users SET coins = ? WHERE id = ?').run(coins, user.id);
     res.json({ ok: true, coins });
+  });
+
+  // POST /api/admin/players/:id/set-energy { energy } — sets the EXACT
+  // energy value, capped at MAX_ENERGY.
+  router.post('/players/:id/set-energy', (req, res) => {
+    const energy = parseInt(req.body && req.body.energy, 10);
+    if (!Number.isFinite(energy) || energy < 0) return res.status(400).json({ error: 'energy must be a non-negative number' });
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const capped = Math.min(MAX_ENERGY, energy);
+    db.prepare('UPDATE users SET energy = ?, energy_updated_at = ? WHERE id = ?').run(capped, nowSec(), user.id);
+    res.json({ ok: true, energy: capped });
+  });
+
+  // POST /api/admin/players/:id/set-level { level } — level IS also a
+  // stored column (kept in sync with xp by grantRewards() during normal
+  // play — see gameLogic.js), so setting it here has to update both: XP to
+  // that level's floor, and the level column itself, or the two would
+  // disagree until the player's next XP-earning action re-synced it.
+  router.post('/players/:id/set-level', (req, res) => {
+    const level = parseInt(req.body && req.body.level, 10);
+    if (!Number.isFinite(level) || level < 1) return res.status(400).json({ error: 'level must be 1 or higher' });
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const xp = xpForLevel(level);
+    db.prepare('UPDATE users SET xp = ?, level = ? WHERE id = ?').run(xp, level, user.id);
+    res.json({ ok: true, level, xp });
   });
 
   // POST /api/admin/players/:id/give-premium { amount } — top up a
@@ -161,7 +189,46 @@ module.exports = function adminRoutes(db, onlineUsers) {
     const totalCrops = db.prepare('SELECT COUNT(*) as c FROM crops').get().c;
     const activeToday = db.prepare(`SELECT COUNT(*) as c FROM users WHERE last_login > strftime('%s','now') - 86400`).get().c;
     const onlineNow = onlineUsers.size;
-    res.json({ totalUsers, totalFarms, totalCrops, activeToday, onlineNow });
+    const pendingPasswordRequests = db.prepare(`SELECT COUNT(*) as c FROM password_reset_requests WHERE status = 'pending'`).get().c;
+    res.json({ totalUsers, totalFarms, totalCrops, activeToday, onlineNow, pendingPasswordRequests });
+  });
+
+  // GET /api/admin/password-requests — the "mailbox": pending (and a few
+  // recent resolved) password-reset requests, newest first.
+  router.get('/password-requests', (req, res) => {
+    const rows = db.prepare(`
+      SELECT prr.id, prr.message, prr.status, prr.created_at, prr.resolved_at,
+             u.id AS userId, u.username
+      FROM password_reset_requests prr
+      JOIN users u ON u.id = prr.user_id
+      ORDER BY (prr.status = 'pending') DESC, prr.created_at DESC
+      LIMIT 100
+    `).all();
+    res.json(rows);
+  });
+
+  // POST /api/admin/password-requests/:id/resolve { newPassword } — sets
+  // the requesting player's password and marks the request handled.
+  router.post('/password-requests/:id/resolve', async (req, res) => {
+    const request = db.prepare('SELECT * FROM password_reset_requests WHERE id = ?').get(req.params.id);
+    if (!request) return res.status(404).json({ error: 'Request not found' });
+    const newPassword = (req.body && req.body.newPassword || '').toString();
+    if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, request.user_id);
+    db.prepare(`UPDATE password_reset_requests SET status = 'resolved', resolved_at = ? WHERE id = ?`)
+      .run(nowSec(), request.id);
+    res.json({ ok: true });
+  });
+
+  // POST /api/admin/password-requests/:id/dismiss — mark handled without
+  // changing the password (e.g. it was spam, or handled another way).
+  router.post('/password-requests/:id/dismiss', (req, res) => {
+    const info = db.prepare(`UPDATE password_reset_requests SET status = 'resolved', resolved_at = ? WHERE id = ?`)
+      .run(nowSec(), req.params.id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Request not found' });
+    res.json({ ok: true });
   });
 
   return router;
