@@ -800,10 +800,19 @@ button { font-family: inherit; cursor: pointer; }
     gap: 4px;
     padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
     -webkit-overflow-scrolling: touch;
+    /* 13 buttons never fit in one row on a phone, and relying on a
+       horizontal swipe to reach the rest wasn't obvious/reliable enough —
+       wrap onto multiple rows instead so every tool is visible up front
+       with no scrolling needed at all. */
+    flex-wrap: wrap;
+    overflow-x: visible;
+    justify-content: center;
+    max-height: 96px;
+    overflow-y: auto;
   }
-  .tool-btn { min-width: 46px; padding: 5px 7px; }
-  .tool-icon { font-size: 17px; }
-  .tool-label { font-size: 9px; }
+  .tool-btn { min-width: 44px; flex: 0 1 auto; padding: 4px 6px; }
+  .tool-icon { font-size: 16px; }
+  .tool-label { font-size: 8px; }
 
   .chat-box { width: 60vw; max-height: 190px; bottom: 68px; }
   .chat-log { min-height: 60px; max-height: 100px; }
@@ -824,4 +833,36 @@ button { font-family: inherit; cursor: pointer; }
   .stat-pill span:not(.stat-icon) { display: none; } /* icon-only pills to save space */
   .stat-pill.coins span { display: inline; } /* keep the coin count visible, it matters most */
   .daily-btn { padding: 4px 6px; }
+}
+
+/* Phone landscape — the constraint flips from width to HEIGHT here (often
+   only 350-420px tall), and the topbar + toolbar were sized for portrait,
+   so together they were eating most of the screen and squeezing the actual
+   farm view into a tiny strip. Shrink both bars aggressively and drop
+   anything non-essential so the game view gets the room back. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .topbar { padding: 3px 8px; gap: 8px; }
+  .avatar-badge { width: 26px; height: 26px; font-size: 13px; }
+  .avatar-level-badge { font-size: 8px; padding: 1px 3px; bottom: -2px; right: -2px; }
+  .xp-bar-track { width: 50px; height: 9px; }
+  .xp-bar-label { font-size: 8px; }
+  .player-name { font-size: 11px; }
+  .player-meta { line-height: 1.1; }
+  .stat-pill { padding: 2px 5px; font-size: 10px; gap: 2px; }
+  .topbar-stats { gap: 4px; }
+  .topbar-actions { gap: 3px; }
+  .icon-btn { width: 24px; height: 24px; font-size: 11px; }
+
+  .toolbar {
+    padding: 3px 6px calc(3px + env(safe-area-inset-bottom));
+    gap: 3px;
+  }
+  .tool-btn { min-width: 36px; padding: 3px 5px; }
+  .tool-icon { font-size: 14px; }
+  .tool-label { display: none; } /* icon-only — labels cost too much vertical room here */
+
+  .chat-box { max-height: 110px; bottom: 56px; }
+  .chat-log { min-height: 30px; max-height: 50px; }
+
+  .visiting-banner, .house-banner, .market-banner { padding: 3px 8px; font-size: 11px; }
 }
