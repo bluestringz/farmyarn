@@ -1313,9 +1313,14 @@
       document.getElementById('chat-fab').classList.remove('hidden');
     });
 
-    // Deliberately NOT loading chat history here — global chat only shows
-    // messages that arrive from this point forward (via the socket), so a
-    // fresh login doesn't dump the whole server's past conversation on you.
+    // Load recent global chat history on every page load (refresh included)
+    // — it only actually clears when you log out (a fresh login always
+    // re-fetches from the server, same as this), not just from reloading
+    // the page while still signed in.
+    Api.globalChatHistory().then((rows) => {
+      rows.forEach((msg) => appendChatMessage(msg, 'global', false));
+      scrollChatToBottom();
+    }).catch(() => { /* history is a nice-to-have, don't block chat working without it */ });
   }
 
   async function populateWhisperTargets() {
