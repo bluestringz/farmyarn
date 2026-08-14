@@ -122,9 +122,9 @@ const Api = (() => {
     marketplace: () => request('GET', '/api/marketplace'),
     rentStall: (stallId) => request('POST', '/api/marketplace/rent', { stallId }),
     listStall: (itemId, quantity, price) => request('POST', '/api/marketplace/list', { itemId, quantity, price }),
-    cancelListing: () => request('POST', '/api/marketplace/cancel-listing'),
+    removeListing: (listingId) => request('POST', '/api/marketplace/remove-listing', { listingId }),
     leaveStall: () => request('POST', '/api/marketplace/leave'),
-    buyFromStall: (stallId, quantity) => request('POST', '/api/marketplace/buy', { stallId, quantity }),
+    buyFromStall: (listingId, quantity) => request('POST', '/api/marketplace/buy', { listingId, quantity }),
 
     // Friends
     searchUsers: (q) => request('GET', `/api/friends/search?q=${encodeURIComponent(q)}`),

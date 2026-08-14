@@ -69,7 +69,7 @@ const UI = (() => {
     flower: 'Purely decorative flower bed to brighten up your farm.',
     bush: 'Purely decorative shrub for landscaping your farm.',
     hay_bale: 'Purely decorative — classic farm scenery.',
-    bench: 'Purely decorative seating for your farm.',
+    bench: 'Tap it while outdoors to sit — regenerates Energy faster while seated, just like a chair indoors.',
     lamp: 'Purely decorative lamp post.',
     sign: 'Purely decorative sign — rotate it to face any direction.',
     path: 'Walkable paved ground tile — lay these down as a proper walkway.',
@@ -351,11 +351,16 @@ const UI = (() => {
     const nameFor = (id) => {
       const crop = catalog.crops.find((c) => c.id === id);
       if (crop) return crop.name;
+      if (id.startsWith('seed_')) {
+        const cropForSeed = catalog.crops.find((c) => c.id === id.slice(5));
+        if (cropForSeed) return `${cropForSeed.name} Seeds`;
+      }
       const item = (catalog.items || []).find((i) => i.id === id);
       return item ? item.name : id;
     };
 
     let html = '';
+    const listings = stall.listings || [];
 
     if (!stall.renterId) {
       html = `
@@ -377,26 +382,26 @@ const UI = (() => {
             <div class="row-sub">Rented until ${new Date(stall.rentedUntil * 1000).toLocaleString()}</div>
           </div>
         </div>`;
-      if (stall.listing) {
-        html += `
+      if (listings.length) {
+        html += '<div class="panel-section-title">Currently listed</div>';
+        html += listings.map((l) => `
           <div class="list-row">
             <div class="row-icon">🏷️</div>
             <div class="row-main">
-              <div class="row-title">${nameFor(stall.listing.itemId)} × ${stall.listing.quantity}</div>
-              <div class="row-sub">🪙 ${stall.listing.price} each</div>
+              <div class="row-title">${nameFor(l.itemId)} × ${l.quantity}</div>
+              <div class="row-sub">🪙 ${l.price} each</div>
             </div>
-            <div class="row-actions"><button class="secondary" id="mkt-cancel-listing">Cancel listing</button></div>
-          </div>`;
-      } else {
-        html += `
-          <div class="panel-section-title">List something for sale</div>
-          <div id="mkt-list-form" class="mkt-form">
-            <select id="mkt-list-item"></select>
-            <input id="mkt-list-qty" type="number" min="1" placeholder="Quantity">
-            <input id="mkt-list-price" type="number" min="1" placeholder="Price each (coins)">
-            <button id="mkt-list-submit">List for sale</button>
-          </div>`;
+            <div class="row-actions"><button class="secondary" data-remove-listing="${l.id}">Remove</button></div>
+          </div>`).join('');
       }
+      html += `
+        <div class="panel-section-title">List something for sale</div>
+        <div id="mkt-list-form" class="mkt-form">
+          <select id="mkt-list-item"></select>
+          <input id="mkt-list-qty" type="number" min="1" placeholder="Quantity">
+          <input id="mkt-list-price" type="number" min="1" placeholder="Price each (coins)">
+          <button id="mkt-list-submit">List for sale</button>
+        </div>`;
       html += `<button class="btn btn-small" id="mkt-leave" style="width:100%;margin-top:8px;background:var(--barn-red);color:#fff;">Leave this stall</button>`;
     } else {
       html = `
@@ -407,19 +412,19 @@ const UI = (() => {
             <div class="row-sub">Lvl ${stall.renterLevel}</div>
           </div>
         </div>`;
-      if (stall.listing) {
-        html += `
+      if (listings.length) {
+        html += listings.map((l) => `
           <div class="list-row">
             <div class="row-icon">🏷️</div>
             <div class="row-main">
-              <div class="row-title">${nameFor(stall.listing.itemId)} × ${stall.listing.quantity} available</div>
-              <div class="row-sub">🪙 ${stall.listing.price} each</div>
+              <div class="row-title">${nameFor(l.itemId)} × ${l.quantity} available</div>
+              <div class="row-sub">🪙 ${l.price} each</div>
             </div>
           </div>
           <div class="mkt-form">
-            <input id="mkt-buy-qty" type="number" min="1" max="${stall.listing.quantity}" value="1">
-            <button id="mkt-buy-submit">Buy</button>
-          </div>`;
+            <input type="number" class="mkt-buy-qty" data-buy-qty-for="${l.id}" min="1" max="${l.quantity}" value="1">
+            <button data-buy-listing="${l.id}">Buy</button>
+          </div>`).join('');
       } else {
         html += `<div class="empty-state">Nothing for sale here right now.</div>`;
       }
@@ -429,23 +434,29 @@ const UI = (() => {
 
     const rentBtn = document.getElementById('mkt-rent-btn');
     if (rentBtn) rentBtn.addEventListener('click', handlers.onRent);
-    const cancelBtn = document.getElementById('mkt-cancel-listing');
-    if (cancelBtn) cancelBtn.addEventListener('click', handlers.onCancelListing);
     const leaveBtn = document.getElementById('mkt-leave');
     if (leaveBtn) leaveBtn.addEventListener('click', handlers.onLeave);
 
-    const buySubmit = document.getElementById('mkt-buy-submit');
-    if (buySubmit) {
-      buySubmit.addEventListener('click', () => {
-        const qty = parseInt(document.getElementById('mkt-buy-qty').value, 10) || 1;
-        handlers.onBuy(qty);
+    body.querySelectorAll('button[data-remove-listing]').forEach((btn) => {
+      btn.addEventListener('click', () => handlers.onRemoveListing(btn.dataset.removeListing));
+    });
+    body.querySelectorAll('button[data-buy-listing]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const qtyInput = body.querySelector(`input[data-buy-qty-for="${btn.dataset.buyListing}"]`);
+        const qty = qtyInput ? parseInt(qtyInput.value, 10) || 1 : 1;
+        handlers.onBuy(btn.dataset.buyListing, qty);
       });
-    }
+    });
 
     const listForm = document.getElementById('mkt-list-form');
     if (listForm) {
       handlers.getInventory().then((inv) => {
-        const sellable = inv.filter((r) => !r.item_id.startsWith('seed_') &&
+        // Seeds ARE sellable here — this is the one place they can be sold
+        // at all (the Shop won't buy them back, on purpose, so they hold
+        // real value — see server/routes/farm.js's /sell route). Only
+        // placeable-category items (buildings/decorations/animals/interior)
+        // are excluded, since those go through Build/Decorate, not selling.
+        const sellable = inv.filter((r) =>
           !['building_', 'decoration_', 'animal_', 'interior_'].some((p) => r.item_id.startsWith(p)));
         const select = document.getElementById('mkt-list-item');
         select.innerHTML = sellable.map((r) => `<option value="${r.item_id}">${nameFor(r.item_id)} (have ${r.quantity})</option>`).join('')

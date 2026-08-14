@@ -405,13 +405,18 @@ class FarmGame {
   }
 
   // Sitting on a chair / lying on a bed (see main.js's rest-toggle) — pass
-  // null to stand back up. tileX/tileY snap the character exactly onto the
-  // furniture so the faked pose lines up with it instead of floating.
+  // null to stand back up. tileX/tileY are the CENTER of the furniture's
+  // footprint in tile units (already includes the +width/2 from main.js,
+  // not a raw grid_x/grid_y corner), so this multiplies straight by TILE
+  // with no extra +TILE/2 — that offset is only right for a plain corner
+  // coordinate, and double-applying it here is what pushed the anchor
+  // (and so the whole faked lying pose) off to one side of multi-tile
+  // furniture like the 2-wide bed.
   setRestPose(pose, tileX, tileY) {
     const c = this._character;
     c.restPose = pose;
     if (pose && tileX !== undefined && tileY !== undefined) {
-      const wx = tileX * TILE + TILE / 2, wy = tileY * TILE + TILE / 2;
+      const wx = tileX * TILE, wy = tileY * TILE;
       c.x = wx; c.y = wy; c.targetX = wx; c.targetY = wy;
       c.path = []; c.moving = false;
       c.facingDir = 'down';
@@ -1084,11 +1089,19 @@ class FarmGame {
       ctx.fillRect(0, 0, rect.width, rect.height);
       ctx.restore();
 
-      // Lamp posts punch a warm circle of light out of the darkness around
-      // them — drawn here (screen space, after the dark tint) rather than
-      // as part of the lamp's own world-space drawing, since the glow
-      // needs to sit ON TOP of the darkening overlay to actually push it
-      // back, not underneath it where the tint would just cover it again.
+      // Lamp posts push the darkness back a bit around them — drawn here
+      // (screen space, after the dark tint) rather than as part of the
+      // lamp's own world-space drawing, since it needs to sit ON TOP of
+      // the darkening overlay to actually cut into it.
+      //
+      // Kept deliberately subtle: earlier this used a much bigger radius
+      // PLUS a second separate additive warm-glow layer on top of the
+      // punch-through — fine for one isolated lamp, but with several
+      // lamps anywhere near each other the additive layers stacked on
+      // top of each other every time their circles overlapped, turning
+      // into solid blown-out white blobs instead of a soft glow. Now it's
+      // a single pass, smaller, and capped low enough that even several
+      // overlapping lamps can't blow out past a gentle warm dimming.
       const isFullNight = hour >= 19 || hour < 5;
       if (isFullNight && this.farm && this.farm.objects) {
         for (const obj of this.farm.objects) {
@@ -1097,30 +1110,17 @@ class FarmGame {
           const worldY = (obj.grid_y + 0.55) * TILE; // roughly where the lamp's glass/bulb sits
           const sx = worldX * this.camera.scale + this.camera.x;
           const sy = worldY * this.camera.scale + this.camera.y;
-          const radius = TILE * 2.2 * this.camera.scale;
+          const radius = TILE * 1.1 * this.camera.scale;
           if (sx < -radius || sx > rect.width + radius || sy < -radius || sy > rect.height + radius) continue; // off-screen, skip
 
           ctx.save();
           ctx.globalCompositeOperation = 'destination-out';
           const punch = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
-          punch.addColorStop(0, 'rgba(0,0,0,0.85)');
-          punch.addColorStop(0.6, 'rgba(0,0,0,0.4)');
+          punch.addColorStop(0, 'rgba(0,0,0,0.55)');
           punch.addColorStop(1, 'rgba(0,0,0,0)');
           ctx.fillStyle = punch;
           ctx.beginPath();
           ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-
-          // A soft warm tint on top of the punched-through hole, so the lit
-          // area reads as lamplight rather than just "less dark".
-          ctx.save();
-          const warmGlow = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 0.7);
-          warmGlow.addColorStop(0, 'rgba(255,221,136,0.30)');
-          warmGlow.addColorStop(1, 'rgba(255,221,136,0)');
-          ctx.fillStyle = warmGlow;
-          ctx.beginPath();
-          ctx.arc(sx, sy, radius * 0.7, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
         }
@@ -1222,9 +1222,12 @@ class FarmGame {
       ctx.font = 'bold 11px Nunito, sans-serif';
       ctx.textAlign = 'center';
       const tagY = py - 8;
+      const listings = (data && data.listings) || [];
       let label = 'Empty — for rent';
       if (data && data.renterUsername) {
-        label = data.listing ? `${data.renterUsername}: ${data.listing.quantity} left` : `${data.renterUsername} (no stock)`;
+        if (!listings.length) label = `${data.renterUsername} (no stock)`;
+        else if (listings.length === 1) label = `${data.renterUsername}: ${listings[0].quantity} left`;
+        else label = `${data.renterUsername}: ${listings.length} items`;
       }
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = 'rgba(94,59,31,0.85)';
@@ -1233,10 +1236,14 @@ class FarmGame {
       ctx.fillStyle = '#fff6e3';
       ctx.fillText(label, px + pw / 2, tagY);
 
-      if (data && data.listing) {
+      if (listings.length === 1) {
         ctx.font = 'bold 10px Nunito, sans-serif';
         ctx.fillStyle = '#e8a527';
-        ctx.fillText(`🪙${data.listing.price}`, px + pw / 2, py + ph + 12);
+        ctx.fillText(`🪙${listings[0].price}`, px + pw / 2, py + ph + 12);
+      } else if (listings.length > 1) {
+        ctx.font = 'bold 10px Nunito, sans-serif';
+        ctx.fillStyle = '#e8a527';
+        ctx.fillText('tap to browse', px + pw / 2, py + ph + 12);
       }
     });
   }
@@ -1687,7 +1694,12 @@ class FarmGame {
       ctx.translate(cx, groundY + c.bob - TILE * 0.18);
       ctx.rotate(-Math.PI / 2);
       ctx.scale(0.8, 0.68);
-      ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
+      // Centered vertically (-displayHeight/2, not -displayHeight) so the
+      // rotation swings around the character's MIDDLE, not one end — using
+      // the normal top-anchored offset here put the whole body hanging off
+      // to one side of the anchor once rotated, sticking way out past
+      // whatever furniture it was meant to be centered on.
+      ctx.drawImage(img, -displayWidth / 2, -displayHeight / 2, displayWidth, displayHeight);
     } else if (c.restPose === 'sit') {
       ctx.translate(cx, groundY + c.bob + TILE * 0.16);
       ctx.scale(0.9, 0.72);

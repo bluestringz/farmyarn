@@ -739,10 +739,15 @@
       return;
     }
 
-    // Sit on a chair or lie on a bed to regenerate energy faster — a plain
-    // tap (no tool active) on either piece of furniture toggles it.
-    const REST_FURNITURE = new Set(['bed', 'chair']);
-    if (state.inHouse && !state.tool && obj.object_type === 'interior' && REST_FURNITURE.has(obj.item_id) && !state.viewingUserId) {
+    // Sit on a chair/bench or lie on a bed to regenerate energy faster — a
+    // plain tap (no tool active) on any of them toggles it. Chair/bed are
+    // house furniture (only usable indoors); the bench is an outdoor
+    // decoration, usable out on the farm instead.
+    const REST_INTERIOR = new Set(['bed', 'chair']);
+    const REST_OUTDOOR = new Set(['bench']);
+    const isRestFurniture = (state.inHouse && obj.object_type === 'interior' && REST_INTERIOR.has(obj.item_id))
+      || (!state.inHouse && obj.object_type === 'decoration' && REST_OUTDOOR.has(obj.item_id));
+    if (isRestFurniture && !state.tool && !state.viewingUserId) {
       try {
         if (state.me.isResting) {
           const res = await Api.stopResting();
@@ -752,7 +757,15 @@
           UI.toast('You got up.');
         } else {
           const pose = obj.item_id === 'bed' ? 'lie' : 'sit';
-          game.setRestPose(pose, obj.grid_x, obj.grid_y);
+          // Snap to the CENTER of the furniture's footprint, not its
+          // top-left corner — a bed is 2 tiles wide, so anchoring at
+          // grid_x directly put the character's rotated body hanging half
+          // a tile off one edge instead of centered on the bed. This is in
+          // TILE units already (not world pixels) — see setRestPose.
+          const def = findDef(obj.object_type, obj.item_id);
+          const centerX = obj.grid_x + ((def && def.width) || 1) / 2;
+          const centerY = obj.grid_y + ((def && def.height) || 1) / 2;
+          game.setRestPose(pose, centerX, centerY);
           const res = await Api.startResting();
           state.me.isResting = res.resting;
           state.me.energy = res.energy;
@@ -1069,10 +1082,10 @@
           await renderStallDetailPanel(stallId);
         } catch (err) { UI.toast(err.message); }
       },
-      onCancelListing: async () => {
+      onRemoveListing: async (listingId) => {
         try {
-          await Api.cancelListing();
-          UI.toast('Listing cancelled — items returned to your Bag.');
+          await Api.removeListing(listingId);
+          UI.toast('Listing removed — items returned to your Bag.');
           await renderStallDetailPanel(stallId);
         } catch (err) { UI.toast(err.message); }
       },
@@ -1084,9 +1097,9 @@
           await refreshMarketStalls();
         } catch (err) { UI.toast(err.message); }
       },
-      onBuy: async (quantity) => {
+      onBuy: async (listingId, quantity) => {
         try {
-          const res = await Api.buyFromStall(stallId, quantity);
+          const res = await Api.buyFromStall(listingId, quantity);
           state.me.coins = res.coins;
           renderTopbar();
           UI.toast(`Bought ${res.boughtQuantity} for 🪙${res.totalCost}!`);

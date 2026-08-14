@@ -143,6 +143,20 @@ function migrate(db) {
     listing_quantity INTEGER DEFAULT 0
   );
 
+  -- A stall can carry several different items for sale at once (e.g. wheat
+  -- seeds AND eggs side by side), unlike the old single listing_item_id/
+  -- listing_price/listing_quantity columns on marketplace_stalls above
+  -- (kept, unused going forward, purely so an old row's data isn't lost —
+  -- see the one-time migration in addColumnsIfMissing).
+  CREATE TABLE IF NOT EXISTS marketplace_listings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stall_id INTEGER NOT NULL REFERENCES marketplace_stalls(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+
   -- Per-player state tables --
 
   CREATE TABLE IF NOT EXISTS farm_tiles (
@@ -334,6 +348,25 @@ function addColumnsIfMissing(db) {
   });
   for (const row of oldCoopFurniture) migrateOldRoom(row.farm_id, 'indoor_coop', 'chicken_coop');
   for (const row of oldBarnFurniture) migrateOldRoom(row.farm_id, 'indoor_barn', 'cow_barn');
+
+  // One-time migration: each stall used to hold exactly ONE listing at a
+  // time (the listing_item_id/listing_price/listing_quantity columns on
+  // marketplace_stalls above) — now a stall can carry several different
+  // items via the marketplace_listings table. Move any existing single
+  // listing over so it isn't lost, then clear the old columns so this
+  // doesn't re-run and duplicate it on the next server start.
+  const oldListings = db.prepare('SELECT id, listing_item_id, listing_price, listing_quantity FROM marketplace_stalls WHERE listing_item_id IS NOT NULL').all();
+  if (oldListings.length) {
+    const insertListing = db.prepare('INSERT INTO marketplace_listings (stall_id, item_id, price, quantity) VALUES (?, ?, ?, ?)');
+    const clearOld = db.prepare('UPDATE marketplace_stalls SET listing_item_id = NULL, listing_price = NULL, listing_quantity = 0 WHERE id = ?');
+    const migrateListings = db.transaction(() => {
+      for (const row of oldListings) {
+        insertListing.run(row.id, row.listing_item_id, row.listing_price, row.listing_quantity);
+        clearOld.run(row.id);
+      }
+    });
+    migrateListings();
+  }
 
   // Seed (or top up) the fixed marketplace stalls — 20 rentable stalls total.
   // Uses INSERT OR IGNORE so it's safe to bump the count later and re-run
