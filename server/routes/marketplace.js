@@ -31,7 +31,7 @@ module.exports = function marketplaceRoutes(db) {
   router.get('/', (req, res) => {
     clearExpiredStalls();
     const stalls = db.prepare(`
-      SELECT ms.*, u.username AS renter_username, u.level AS renter_level
+      SELECT ms.*, COALESCE(u.display_name, u.username) AS renter_username, u.level AS renter_level
       FROM marketplace_stalls ms
       LEFT JOIN users u ON u.id = ms.renter_id
       ORDER BY ms.id
@@ -164,7 +164,7 @@ module.exports = function marketplaceRoutes(db) {
       db.prepare('UPDATE marketplace_stalls SET listing_quantity = ? WHERE id = ?').run(remaining, stall.id);
     }
 
-    const buyerName = db.prepare('SELECT username FROM users WHERE id = ?').get(req.userId).username;
+    const buyerName = db.prepare('SELECT COALESCE(display_name, username) AS name FROM users WHERE id = ?').get(req.userId).name;
     notify(db, stall.renter_id, 'market_sale', `${buyerName} bought ${qty}x ${stall.listing_item_id} from your stall for 🪙${totalCost}!`);
 
     const updatedBuyer = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);

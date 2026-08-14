@@ -6,9 +6,10 @@ module.exports = function adminRoutes(db) {
 
   router.get('/players', (req, res) => {
     const q = (req.query.q || '').toString().trim();
+    const cols = 'id, username, level, xp, coins, premium_currency, is_admin, is_banned, suspended_until, created_at, last_login';
     const rows = q
-      ? db.prepare('SELECT id, username, level, xp, coins, premium_currency, is_admin, is_banned, created_at, last_login FROM users WHERE username LIKE ? ORDER BY id DESC LIMIT 100').all(`%${q}%`)
-      : db.prepare('SELECT id, username, level, xp, coins, premium_currency, is_admin, is_banned, created_at, last_login FROM users ORDER BY id DESC LIMIT 100').all();
+      ? db.prepare(`SELECT ${cols} FROM users WHERE username LIKE ? ORDER BY id DESC LIMIT 100`).all(`%${q}%`)
+      : db.prepare(`SELECT ${cols} FROM users ORDER BY id DESC LIMIT 100`).all();
     res.json(rows);
   });
 
@@ -26,6 +27,17 @@ module.exports = function adminRoutes(db) {
     if (!user) return res.status(404).json({ error: 'User not found' });
     const result = grantRewards(db, user.id, { coins, xp });
     res.json({ ok: true, result });
+  });
+
+  // POST /api/admin/players/:id/set-coins { coins } — sets the EXACT coin
+  // balance (unlike /adjust, which only adds/subtracts a delta).
+  router.post('/players/:id/set-coins', (req, res) => {
+    const coins = parseInt(req.body && req.body.coins, 10);
+    if (!Number.isFinite(coins) || coins < 0) return res.status(400).json({ error: 'coins must be a non-negative number' });
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    db.prepare('UPDATE users SET coins = ? WHERE id = ?').run(coins, user.id);
+    res.json({ ok: true, coins });
   });
 
   // POST /api/admin/players/:id/give-premium { amount } — top up a
@@ -51,6 +63,35 @@ module.exports = function adminRoutes(db) {
     const { banned } = req.body || {};
     db.prepare('UPDATE users SET is_banned = ? WHERE id = ?').run(banned ? 1 : 0, req.params.id);
     res.json({ ok: true });
+  });
+
+  // POST /api/admin/players/:id/suspend { days } — temporary block, unlike
+  // ban which is permanent. days=0 (or omitted) lifts an existing suspension.
+  router.post('/players/:id/suspend', (req, res) => {
+    const days = parseFloat(req.body && req.body.days);
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!days || days <= 0) {
+      db.prepare('UPDATE users SET suspended_until = NULL WHERE id = ?').run(user.id);
+      return res.json({ ok: true, suspendedUntil: null });
+    }
+    const until = Math.floor(Date.now() / 1000) + Math.round(days * 86400);
+    db.prepare('UPDATE users SET suspended_until = ? WHERE id = ?').run(until, user.id);
+    res.json({ ok: true, suspendedUntil: until });
+  });
+
+  // DELETE /api/admin/players/:id — permanently removes the account.
+  // Foreign keys are declared ON DELETE CASCADE (and PRAGMA foreign_keys
+  // is ON — see db/migrate.js), so this alone cleans up the farm, crops,
+  // farm_objects, inventory, owned_outfits, friends, notifications, and
+  // chat messages tied to this account. A rented marketplace stall just
+  // goes vacant again (ON DELETE SET NULL) instead of being deleted.
+  router.delete('/players/:id', (req, res) => {
+    const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (req.userId === user.id) return res.status(400).json({ error: "You can't delete your own account from here" });
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+    res.json({ ok: true, deleted: user.username });
   });
 
   router.get('/stats', (req, res) => {

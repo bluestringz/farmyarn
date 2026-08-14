@@ -29,13 +29,14 @@ app.use('/api/', rateLimit({ windowMs: 60 * 1000, max: 600, standardHeaders: tru
 // ---- Routes ----
 app.use('/api/auth', require('./routes/auth')(db));
 
-app.use('/api/farm', requireAuth, require('./routes/farm')(db, io));
-app.use('/api/shop', requireAuth, require('./routes/shop')(db));
-app.use('/api/marketplace', requireAuth, require('./routes/marketplace')(db));
-app.use('/api/friends', requireAuth, require('./routes/friends')(db, io));
-app.use('/api/player', requireAuth, require('./routes/player')(db));
-app.use('/api/chat', requireAuth, require('./routes/chat')(db, io));
-app.use('/api/admin', requireAuth, requireAdmin, require('./routes/admin')(db));
+const auth = requireAuth(db);
+app.use('/api/farm', auth, require('./routes/farm')(db, io));
+app.use('/api/shop', auth, require('./routes/shop')(db));
+app.use('/api/marketplace', auth, require('./routes/marketplace')(db));
+app.use('/api/friends', auth, require('./routes/friends')(db, io));
+app.use('/api/player', auth, require('./routes/player')(db));
+app.use('/api/chat', auth, require('./routes/chat')(db, io));
+app.use('/api/admin', auth, requireAdmin, require('./routes/admin')(db));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: Date.now() }));
 
@@ -87,6 +88,13 @@ io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error('unauthorized'));
     const payload = jwt.verify(token, JWT_SECRET);
+    // Same reasoning as requireAuth in middleware/auth.js — a banned,
+    // suspended, or deleted account shouldn't keep a live socket
+    // connection open just because their token hasn't expired yet.
+    const user = db.prepare('SELECT is_banned, suspended_until FROM users WHERE id = ?').get(payload.sub);
+    if (!user) return next(new Error('unauthorized'));
+    if (user.is_banned) return next(new Error('unauthorized'));
+    if (user.suspended_until && user.suspended_until > Math.floor(Date.now() / 1000)) return next(new Error('unauthorized'));
     socket.userId = payload.sub;
     socket.username = payload.username;
     next();
@@ -168,7 +176,7 @@ io.on('connection', (socket) => {
   });
 });
 
-app.get('/api/presence/:userId', requireAuth, (req, res) => {
+app.get('/api/presence/:userId', auth, (req, res) => {
   res.json({ online: onlineUsers.has(parseInt(req.params.userId, 10)) });
 });
 

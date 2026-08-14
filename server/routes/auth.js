@@ -81,6 +81,10 @@ module.exports = function authRoutes(db) {
       const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
       if (!user) return res.status(401).json({ error: 'Invalid username or password' });
       if (user.is_banned) return res.status(403).json({ error: 'This account has been banned' });
+      if (user.suspended_until && user.suspended_until > nowSec()) {
+        const until = new Date(user.suspended_until * 1000).toLocaleString();
+        return res.status(403).json({ error: `This account is suspended until ${until}` });
+      }
 
       const ok = await bcrypt.compare(password, user.password_hash);
       if (!ok) return res.status(401).json({ error: 'Invalid username or password' });

@@ -29,7 +29,8 @@ module.exports = function chatRoutes(db, io) {
   router.get('/global', (req, res) => {
     const limit = Math.min(100, parseInt(req.query.limit, 10) || 50);
     const rows = db.prepare(`
-      SELECT cm.id, cm.message, cm.created_at, u.id as fromUserId, u.username as fromUsername
+      SELECT cm.id, cm.message, cm.created_at, u.id as fromUserId,
+             COALESCE(u.display_name, u.username) as fromUsername
       FROM chat_messages cm JOIN users u ON u.id = cm.from_user_id
       WHERE cm.to_user_id IS NULL
       ORDER BY cm.created_at DESC, cm.id DESC
@@ -54,7 +55,7 @@ module.exports = function chatRoutes(db, io) {
     const payload = {
       id: info.lastInsertRowid,
       fromUserId: req.userId,
-      fromUsername: user.username,
+      fromUsername: user.display_name || user.username,
       message: trimmed,
       created_at: Math.floor(Date.now() / 1000),
     };
@@ -74,11 +75,11 @@ module.exports = function chatRoutes(db, io) {
     if (!getFriendship(req.userId, targetId)) {
       return res.status(403).json({ error: 'You can only whisper to friends' });
     }
-    const target = db.prepare('SELECT id, username FROM users WHERE id = ?').get(targetId);
+    const target = db.prepare('SELECT id, username, display_name FROM users WHERE id = ?').get(targetId);
     if (!target) return res.status(404).json({ error: 'Player not found' });
 
     const trimmed = message.trim().slice(0, MAX_MESSAGE_LENGTH);
-    const me = db.prepare('SELECT username FROM users WHERE id = ?').get(req.userId);
+    const me = db.prepare('SELECT username, display_name FROM users WHERE id = ?').get(req.userId);
 
     const info = db.prepare('INSERT INTO chat_messages (from_user_id, to_user_id, message) VALUES (?, ?, ?)')
       .run(req.userId, targetId, trimmed);
@@ -86,9 +87,9 @@ module.exports = function chatRoutes(db, io) {
     const payload = {
       id: info.lastInsertRowid,
       fromUserId: req.userId,
-      fromUsername: me.username,
+      fromUsername: me.display_name || me.username,
       toUserId: targetId,
-      toUsername: target.username,
+      toUsername: target.display_name || target.username,
       message: trimmed,
       created_at: Math.floor(Date.now() / 1000),
     };

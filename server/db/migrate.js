@@ -29,6 +29,7 @@ function migrate(db) {
     energy_updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     is_admin INTEGER NOT NULL DEFAULT 0,
     is_banned INTEGER NOT NULL DEFAULT 0,
+    suspended_until INTEGER, -- unix timestamp; NULL = not suspended. Temporary, unlike is_banned (permanent).
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     last_login INTEGER
   );
@@ -250,6 +251,9 @@ function migrate(db) {
 // (CREATE TABLE IF NOT EXISTS doesn't retroactively add new columns).
 function addColumnsIfMissing(db) {
   const existingCols = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
+  if (!existingCols.includes('suspended_until')) {
+    db.exec('ALTER TABLE users ADD COLUMN suspended_until INTEGER');
+  }
   if (!existingCols.includes('display_name')) {
     db.exec('ALTER TABLE users ADD COLUMN display_name TEXT');
   }

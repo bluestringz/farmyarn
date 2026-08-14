@@ -9,7 +9,7 @@ module.exports = function friendsRoutes(db, io) {
     const q = (req.query.q || '').toString().trim();
     if (q.length < 2) return res.json([]);
     const rows = db.prepare(`
-      SELECT id, username, level, avatar FROM users
+      SELECT id, COALESCE(display_name, username) AS username, level, avatar FROM users
       WHERE username LIKE ? AND id != ? AND is_banned = 0
       LIMIT 20
     `).all(`%${q}%`, req.userId);
@@ -19,20 +19,20 @@ module.exports = function friendsRoutes(db, io) {
   // GET /api/friends - list accepted friends + pending requests
   router.get('/', (req, res) => {
     const accepted = db.prepare(`
-      SELECT u.id, u.username, u.level, u.avatar, f.created_at
+      SELECT u.id, COALESCE(u.display_name, u.username) AS username, u.level, u.avatar, f.created_at
       FROM friends f
       JOIN users u ON u.id = (CASE WHEN f.requester_id = ? THEN f.receiver_id ELSE f.requester_id END)
       WHERE f.status = 'accepted' AND (f.requester_id = ? OR f.receiver_id = ?)
     `).all(req.userId, req.userId, req.userId);
 
     const incoming = db.prepare(`
-      SELECT f.id as request_id, u.id, u.username, u.level, u.avatar
+      SELECT f.id as request_id, u.id, COALESCE(u.display_name, u.username) AS username, u.level, u.avatar
       FROM friends f JOIN users u ON u.id = f.requester_id
       WHERE f.receiver_id = ? AND f.status = 'pending'
     `).all(req.userId);
 
     const outgoing = db.prepare(`
-      SELECT f.id as request_id, u.id, u.username, u.level, u.avatar
+      SELECT f.id as request_id, u.id, COALESCE(u.display_name, u.username) AS username, u.level, u.avatar
       FROM friends f JOIN users u ON u.id = f.receiver_id
       WHERE f.requester_id = ? AND f.status = 'pending'
     `).all(req.userId);
@@ -55,9 +55,9 @@ module.exports = function friendsRoutes(db, io) {
     db.prepare(`INSERT INTO friends (requester_id, receiver_id, status) VALUES (?, ?, 'pending')`)
       .run(req.userId, targetId);
 
-    const me = db.prepare('SELECT username FROM users WHERE id = ?').get(req.userId);
-    notify(db, targetId, 'friend_request', `${me.username} sent you a friend request.`);
-    if (io) io.to(`user:${targetId}`).emit('notification', { message: `${me.username} sent you a friend request.` });
+    const me = db.prepare('SELECT COALESCE(display_name, username) AS name FROM users WHERE id = ?').get(req.userId);
+    notify(db, targetId, 'friend_request', `${me.name} sent you a friend request.`);
+    if (io) io.to(`user:${targetId}`).emit('notification', { message: `${me.name} sent you a friend request.` });
 
     res.json({ ok: true });
   });
@@ -71,8 +71,8 @@ module.exports = function friendsRoutes(db, io) {
 
     if (accept) {
       db.prepare(`UPDATE friends SET status = 'accepted' WHERE id = ?`).run(requestId);
-      const me = db.prepare('SELECT username FROM users WHERE id = ?').get(req.userId);
-      notify(db, request.requester_id, 'friend_accept', `${me.username} accepted your friend request.`);
+      const me = db.prepare('SELECT COALESCE(display_name, username) AS name FROM users WHERE id = ?').get(req.userId);
+      notify(db, request.requester_id, 'friend_accept', `${me.name} accepted your friend request.`);
     } else {
       db.prepare('DELETE FROM friends WHERE id = ?').run(requestId);
     }

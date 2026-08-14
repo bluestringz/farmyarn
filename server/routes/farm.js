@@ -27,11 +27,11 @@ module.exports = function farmRoutes(db, io) {
     const tiles = db.prepare('SELECT x, y, state FROM farm_tiles WHERE farm_id = ?').all(farm.id);
     const crops = db.prepare('SELECT * FROM crops WHERE farm_id = ?').all(farm.id);
     const objects = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND location = 'outdoor'").all(farm.id).map(resolveObject);
-    const owner = db.prepare('SELECT id, username, level, avatar FROM users WHERE id = ?').get(farm.owner_id);
+    const owner = db.prepare('SELECT id, username, display_name, level, avatar FROM users WHERE id = ?').get(farm.owner_id);
     return {
       id: farm.id,
       ownerId: farm.owner_id,
-      ownerUsername: owner.username,
+      ownerUsername: owner.display_name || owner.username,
       ownerLevel: owner.level,
       ownerAvatar: owner.avatar,
       farmName: farm.farm_name,
@@ -197,7 +197,8 @@ module.exports = function farmRoutes(db, io) {
         VALUES (?, ?, 'crop', ?, 'water')
       `).run(req.userId, targetOwnerId, crop.id);
       const reward = grantRewards(db, req.userId, { coins: 2, xp: 1 });
-      const visitorName = db.prepare('SELECT username FROM users WHERE id = ?').get(req.userId).username;
+      const visitorRow = db.prepare('SELECT COALESCE(display_name, username) AS name FROM users WHERE id = ?').get(req.userId);
+      const visitorName = visitorRow.name;
       notify(db, targetOwnerId, 'help', `${visitorName} helped water your crop!`);
       emitToUser(io, targetOwnerId, 'notification', { message: `${visitorName} helped water your crop!` });
       return res.json({ ok: true, crop: { x, y, watered: true }, reward });

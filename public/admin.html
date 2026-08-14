@@ -39,7 +39,7 @@
     <input id="search-input" placeholder="Search username...">
     <button id="search-btn">Search</button>
     <table id="players-table">
-      <thead><tr><th>ID</th><th>Username</th><th>Lvl</th><th>XP</th><th>Coins</th><th>Premium Points</th><th>Banned</th><th>Actions</th></tr></thead>
+      <thead><tr><th>ID</th><th>Username</th><th>Lvl</th><th>Coins</th><th>Premium Points</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -88,25 +88,44 @@ async function loadStats() {
   `;
 }
 
+function statusLabel(u) {
+  if (u.is_banned) return '<b style="color:#c0392b">Banned</b>';
+  if (u.suspended_until && u.suspended_until * 1000 > Date.now()) {
+    return '<b style="color:#c98a12">Suspended<br>until ' + new Date(u.suspended_until * 1000).toLocaleDateString() + '</b>';
+  }
+  return 'OK';
+}
+
 async function loadPlayers(q) {
   const rows = await api('GET', '/api/admin/players' + (q ? '?q=' + encodeURIComponent(q) : ''));
   const tbody = document.querySelector('#players-table tbody');
   tbody.innerHTML = rows.map(u => `
     <tr>
-      <td>${u.id}</td><td>${u.username}</td><td>${u.level}</td><td>${u.xp}</td><td>${u.coins}</td>
-      <td>${u.premium_currency || 0}</td>
-      <td>${u.is_banned ? 'Yes' : 'No'}</td>
-      <td class="row-actions">
-        <button data-give-coins="${u.id}">+100 coins</button>
-        <input type="number" class="pp-amount" data-pp-for="${u.id}" value="100" style="width:60px" title="Premium Points amount">
+      <td>${u.id}</td><td>${u.username}</td><td>${u.level}</td>
+      <td>
+        <input type="number" class="coins-input" data-coins-for="${u.id}" value="${u.coins}" style="width:80px">
+        <button data-set-coins="${u.id}">Set</button>
+      </td>
+      <td>
+        <input type="number" class="pp-amount" data-pp-for="${u.id}" value="100" style="width:60px" title="Premium Points to add">
         <button data-give-pp="${u.id}">Give PP</button>
+      </td>
+      <td>${statusLabel(u)}</td>
+      <td class="row-actions">
         <button data-ban="${u.id}" data-state="${u.is_banned ? 0 : 1}">${u.is_banned ? 'Unban' : 'Ban'}</button>
+        <input type="number" class="suspend-days" data-suspend-for="${u.id}" value="3" style="width:50px" title="Days">
+        <button data-suspend="${u.id}">Suspend</button>
+        ${u.suspended_until ? `<button data-unsuspend="${u.id}">Lift</button>` : ''}
+        <button data-delete="${u.id}" data-username="${u.username}" style="background:#c0392b">Delete</button>
       </td>
     </tr>`).join('');
 
-  tbody.querySelectorAll('button[data-give-coins]').forEach(btn => {
+  tbody.querySelectorAll('button[data-set-coins]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await api('POST', `/api/admin/players/${btn.dataset.giveCoins}/adjust`, { coins: 100, xp: 0 });
+      const input = document.querySelector(`input[data-coins-for="${btn.dataset.setCoins}"]`);
+      const coins = parseInt(input.value, 10);
+      if (!Number.isFinite(coins) || coins < 0) return alert('Enter a valid coin amount.');
+      await api('POST', `/api/admin/players/${btn.dataset.setCoins}/set-coins`, { coins });
       loadPlayers(document.getElementById('search-input').value);
     });
   });
@@ -122,6 +141,29 @@ async function loadPlayers(q) {
   tbody.querySelectorAll('button[data-ban]').forEach(btn => {
     btn.addEventListener('click', async () => {
       await api('POST', `/api/admin/players/${btn.dataset.ban}/ban`, { banned: btn.dataset.state === '1' });
+      loadPlayers(document.getElementById('search-input').value);
+    });
+  });
+  tbody.querySelectorAll('button[data-suspend]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const input = document.querySelector(`input[data-suspend-for="${btn.dataset.suspend}"]`);
+      const days = parseFloat(input.value) || 1;
+      await api('POST', `/api/admin/players/${btn.dataset.suspend}/suspend`, { days });
+      loadPlayers(document.getElementById('search-input').value);
+    });
+  });
+  tbody.querySelectorAll('button[data-unsuspend]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await api('POST', `/api/admin/players/${btn.dataset.unsuspend}/suspend`, { days: 0 });
+      loadPlayers(document.getElementById('search-input').value);
+    });
+  });
+  tbody.querySelectorAll('button[data-delete]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.dataset.username;
+      if (!confirm(`Permanently delete "${name}"? This deletes their farm, inventory, everything — it cannot be undone.`)) return;
+      if (prompt(`Type "${name}" to confirm deletion:`) !== name) return alert('Name did not match — cancelled.');
+      await api('DELETE', `/api/admin/players/${btn.dataset.delete}`);
       loadPlayers(document.getElementById('search-input').value);
     });
   });
