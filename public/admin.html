@@ -39,7 +39,7 @@
     <input id="search-input" placeholder="Search username...">
     <button id="search-btn">Search</button>
     <table id="players-table">
-      <thead><tr><th>ID</th><th>Username</th><th>Lvl</th><th>Coins</th><th>Premium Points</th><th>Status</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Lvl</th><th>Coins</th><th>Premium Points</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -82,6 +82,7 @@ async function loadStats() {
   const s = await api('GET', '/api/admin/stats');
   document.getElementById('stats').innerHTML = `
     <div class="stat-box"><b>${s.totalUsers}</b><br>Players</div>
+    <div class="stat-box" style="border-color:#4f8f2e"><b style="color:#4f8f2e">${s.onlineNow}</b><br>Online now</div>
     <div class="stat-box"><b>${s.totalFarms}</b><br>Farms</div>
     <div class="stat-box"><b>${s.totalCrops}</b><br>Growing crops</div>
     <div class="stat-box"><b>${s.activeToday}</b><br>Active today</div>
@@ -101,6 +102,7 @@ async function loadPlayers(q) {
   const tbody = document.querySelector('#players-table tbody');
   tbody.innerHTML = rows.map(u => `
     <tr>
+      <td>${u.online ? '🟢' : '⚪'}</td>
       <td>${u.id}</td><td>${u.username}</td><td>${u.level}</td>
       <td>
         <input type="number" class="coins-input" data-coins-for="${u.id}" value="${u.coins}" style="width:80px">
@@ -170,6 +172,13 @@ async function loadPlayers(q) {
 }
 
 document.getElementById('search-btn').addEventListener('click', () => loadPlayers(document.getElementById('search-input').value));
+
+// Refresh online status + stats periodically without needing a manual
+// search — online/offline changes as people connect/disconnect live.
+setInterval(() => {
+  loadStats().catch(() => {});
+  loadPlayers(document.getElementById('search-input').value).catch(() => {});
+}, 15000);
 
 if (TOKEN) showApp().catch(() => { localStorage.removeItem('fy_admin_token'); });
 </script>

@@ -15,6 +15,10 @@ const db = getDb();
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: process.env.CORS_ORIGIN || '*' } });
+// userId -> Set of socket ids. Declared up here (not down by the rest of
+// the Socket.IO wiring) so it exists in time to hand to the admin routes
+// below, which need it for the online-status column/count.
+const onlineUsers = new Map();
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json({ limit: '256kb' }));
@@ -36,7 +40,7 @@ app.use('/api/marketplace', auth, require('./routes/marketplace')(db));
 app.use('/api/friends', auth, require('./routes/friends')(db, io));
 app.use('/api/player', auth, require('./routes/player')(db));
 app.use('/api/chat', auth, require('./routes/chat')(db, io));
-app.use('/api/admin', auth, requireAdmin, require('./routes/admin')(db));
+app.use('/api/admin', auth, requireAdmin, require('./routes/admin')(db, onlineUsers));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: Date.now() }));
 
@@ -81,7 +85,7 @@ app.use((err, req, res, next) => {
 // ---- Socket.IO: online presence + real-time notifications ----
 // Clients connect with { auth: { token } }; we join a per-user room so we can push
 // targeted events (help notifications, friend requests) without polling.
-const onlineUsers = new Map(); // userId -> Set of socket ids
+// (onlineUsers itself is declared up near the top of the file — see there.)
 
 io.use((socket, next) => {
   try {

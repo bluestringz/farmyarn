@@ -1,7 +1,7 @@
 const express = require('express');
 const { grantRewards, addInventory } = require('../lib/gameLogic');
 
-module.exports = function adminRoutes(db) {
+module.exports = function adminRoutes(db, onlineUsers) {
   const router = express.Router();
 
   router.get('/players', (req, res) => {
@@ -10,6 +10,10 @@ module.exports = function adminRoutes(db) {
     const rows = q
       ? db.prepare(`SELECT ${cols} FROM users WHERE username LIKE ? ORDER BY id DESC LIMIT 100`).all(`%${q}%`)
       : db.prepare(`SELECT ${cols} FROM users ORDER BY id DESC LIMIT 100`).all();
+    // onlineUsers is a live userId -> Set(socketId) map kept by the
+    // Socket.IO connection handling in index.js — a user is "online" here
+    // exactly when they have at least one open connection.
+    rows.forEach((r) => { r.online = onlineUsers.has(r.id); });
     res.json(rows);
   });
 
@@ -99,7 +103,8 @@ module.exports = function adminRoutes(db) {
     const totalFarms = db.prepare('SELECT COUNT(*) as c FROM farms').get().c;
     const totalCrops = db.prepare('SELECT COUNT(*) as c FROM crops').get().c;
     const activeToday = db.prepare(`SELECT COUNT(*) as c FROM users WHERE last_login > strftime('%s','now') - 86400`).get().c;
-    res.json({ totalUsers, totalFarms, totalCrops, activeToday });
+    const onlineNow = onlineUsers.size;
+    res.json({ totalUsers, totalFarms, totalCrops, activeToday, onlineNow });
   });
 
   return router;
