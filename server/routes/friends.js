@@ -10,9 +10,9 @@ module.exports = function friendsRoutes(db, io) {
     if (q.length < 2) return res.json([]);
     const rows = db.prepare(`
       SELECT id, COALESCE(display_name, username) AS username, level, avatar FROM users
-      WHERE username LIKE ? AND id != ? AND is_banned = 0
+      WHERE (display_name LIKE ? OR username LIKE ?) AND id != ? AND is_banned = 0
       LIMIT 20
-    `).all(`%${q}%`, req.userId);
+    `).all(`%${q}%`, `%${q}%`, req.userId);
     res.json(rows);
   });
 

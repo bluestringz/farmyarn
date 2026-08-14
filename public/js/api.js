@@ -91,7 +91,10 @@ const Api = (() => {
       if (opts && opts.buildingId) params.set('buildingId', opts.buildingId);
       else if (opts && opts.space) params.set('space', opts.space);
       const qs = params.toString();
-      return request('GET', `/api/farm/me/interior${qs ? `?${qs}` : ''}`);
+      // Visiting a friend's building (opts.ownerId set) hits their
+      // interior route instead of your own — same query params either way.
+      const base = opts && opts.ownerId ? `/api/farm/${opts.ownerId}/interior` : '/api/farm/me/interior';
+      return request('GET', `${base}${qs ? `?${qs}` : ''}`);
     },
     plow: (x, y) => request('POST', '/api/farm/plow', { x, y }),
     plant: (x, y, cropType) => request('POST', '/api/farm/plant', { x, y, cropType }),

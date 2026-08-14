@@ -40,7 +40,7 @@ app.use('/api/marketplace', auth, require('./routes/marketplace')(db));
 app.use('/api/friends', auth, require('./routes/friends')(db, io));
 app.use('/api/player', auth, require('./routes/player')(db));
 app.use('/api/chat', auth, require('./routes/chat')(db, io));
-app.use('/api/admin', auth, requireAdmin, require('./routes/admin')(db, onlineUsers));
+app.use('/api/admin', auth, requireAdmin, require('./routes/admin')(db, onlineUsers, io));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: Date.now() }));
 

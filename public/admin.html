@@ -54,6 +54,14 @@
   </div>
 
   <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">📢 Send Announcement</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">Broadcasts instantly to every player currently online, and shows up in everyone's Global chat (marked "Announcement") from then on, including anyone who logs in later.</p>
+    <input type="text" id="announce-input" maxlength="500" placeholder="Type your announcement...">
+    <button id="announce-btn">Send to Everyone</button>
+    <span id="announce-status" style="margin-left:10px; font-size:12px; color:#8a5a34;"></span>
+  </div>
+
+  <div class="card">
     <p style="font-weight:700;margin-bottom:4px;">📬 Password Reset Requests <span id="mailbox-badge"></span></p>
     <div id="mailbox-list"></div>
   </div>
@@ -318,6 +326,21 @@ document.getElementById('restore-btn').addEventListener('click', async () => {
     const data = await res.json().catch(() => null);
     if (!res.ok) throw new Error((data && data.error) || 'Restore upload failed');
     statusEl.textContent = '✅ ' + data.message;
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+});
+
+document.getElementById('announce-btn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('announce-status');
+  const input = document.getElementById('announce-input');
+  const message = input.value.trim();
+  if (!message) { statusEl.textContent = 'Type something first.'; return; }
+  statusEl.textContent = 'Sending...';
+  try {
+    await api('POST', '/api/admin/announce', { message });
+    input.value = '';
+    statusEl.textContent = '✅ Sent to everyone!';
   } catch (err) {
     statusEl.textContent = 'Error: ' + err.message;
   }

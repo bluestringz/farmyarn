@@ -403,6 +403,8 @@ button { font-family: inherit; cursor: pointer; }
 .chat-line .chat-username { font-weight: 800; color: var(--wood-dark); }
 .chat-line.whisper { background: rgba(90,143,201,0.15); border-radius: 6px; padding: 3px 6px; }
 .chat-whisper-tag { font-weight: 800; color: #3f6a9c; }
+.chat-line.announcement { background: rgba(232,165,39,0.18); border-radius: 6px; padding: 3px 6px; }
+.chat-announcement-tag { font-weight: 800; color: #b5790f; }
 .chat-input-row {
   display: flex;
   gap: 4px;

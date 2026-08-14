@@ -9,6 +9,7 @@ const {
 } = require('../lib/interiorSpaces');
 
 const WATER_COST = 1; // coins per self-watering (smallest whole-coin stand-in for ~0.3 gold)
+const FRIEND_WATER_COST = 3; // flat coins for helping water a friend's crop, every time
 
 module.exports = function farmRoutes(db, io) {
   const router = express.Router();
@@ -68,22 +69,19 @@ module.exports = function farmRoutes(db, io) {
     res.json(payload);
   });
 
-  // GET /api/farm/me/interior?space=house|coop|barn - the interior of one
-  // of the player's enterable buildings (defaults to the house for
-  // backward compatibility with older clients).
-  // GET /api/farm/me/interior?space=house — the house (singleton).
-  // GET /api/farm/me/interior?buildingId=<farm_objects.id> — any other
-  // enterable building (coop/barn/cow_barn); each specific building placed
-  // has its own separate room, not shared with others of the same type.
-  router.get('/me/interior', (req, res) => {
-    const farm = getOwnFarm(req.userId);
+  // Shared by /me/interior (viewing your own) and /:userId/interior
+  // (visiting someone else's, read-only on the client side) — same rules
+  // either way for WHICH room you can look into, since anyone can already
+  // see a farm's outdoor layout without being friends with the owner.
+  function handleInteriorRequest(req, res, farmOwnerId) {
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(farmOwnerId);
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
 
     const buildingId = parseInt(req.query.buildingId, 10);
     if (buildingId) {
       const building = db.prepare("SELECT * FROM farm_objects WHERE id = ? AND farm_id = ? AND object_type = 'building'")
         .get(buildingId, farm.id);
-      if (!building) return res.status(404).json({ error: 'Building not found on your farm' });
+      if (!building) return res.status(404).json({ error: 'Building not found on that farm' });
       if (!isEnterableBuildingType(building.item_id)) {
         return res.status(400).json({ error: 'That building has no interior to enter' });
       }
@@ -100,6 +98,27 @@ module.exports = function farmRoutes(db, io) {
     // Default / ?space=house — the singleton house interior.
     const objects = db.prepare('SELECT * FROM farm_objects WHERE farm_id = ? AND location = ?').all(farm.id, HOUSE_LOCATION);
     res.json({ width: INTERIOR_WIDTH, height: INTERIOR_HEIGHT, location: HOUSE_LOCATION, buildingType: 'farmhouse', objects, serverTime: nowSec() });
+  }
+
+  // GET /api/farm/me/interior?space=house|coop|barn - the interior of one
+  // of the player's enterable buildings (defaults to the house for
+  // backward compatibility with older clients).
+  // GET /api/farm/me/interior?space=house — the house (singleton).
+  // GET /api/farm/me/interior?buildingId=<farm_objects.id> — any other
+  // enterable building (coop/barn/cow_barn); each specific building placed
+  // has its own separate room, not shared with others of the same type.
+  router.get('/me/interior', (req, res) => {
+    handleInteriorRequest(req, res, req.userId);
+  });
+
+  // GET /api/farm/:userId/interior — same as above but for visiting
+  // someone else's house/coop/barn/cow_barn. Read-only on the client side
+  // (placing/moving/removing furniture and animals stays owner-only,
+  // enforced separately in shop.js) — this route just lets a visitor SEE
+  // what's inside, the same way they can already see the outdoor farm.
+  router.get('/:userId/interior', (req, res) => {
+    const targetId = parseInt(req.params.userId, 10);
+    handleInteriorRequest(req, res, targetId);
   });
 
   // ---- PLOW (also doubles as UNDO PLOW: tapping an already-plowed, empty
@@ -191,6 +210,14 @@ module.exports = function farmRoutes(db, io) {
         SELECT 1 FROM help_actions WHERE visitor_id = ? AND owner_id = ? AND target_type = 'crop' AND target_id = ?
       `).get(req.userId, targetOwnerId, crop.id);
       if (alreadyHelped) return res.status(400).json({ error: 'You already helped with this crop' });
+
+      // Helping costs gold too — flat 3 coins every time, deliberately
+      // more than the 1-coin self-watering cost.
+      const helper = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+      if (helper.coins < FRIEND_WATER_COST) {
+        return res.status(400).json({ error: `Helping water a friend's crop costs ${FRIEND_WATER_COST} coins — not enough coins` });
+      }
+      db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(FRIEND_WATER_COST, req.userId);
     } else {
       // Watering your own crop costs a small amount of coins (our currency is whole
       // coins, so this is the closest whole-number stand-in for "~0.3 gold per water").
@@ -214,12 +241,12 @@ module.exports = function farmRoutes(db, io) {
         INSERT INTO help_actions (visitor_id, owner_id, target_type, target_id, action_type)
         VALUES (?, ?, 'crop', ?, 'water')
       `).run(req.userId, targetOwnerId, crop.id);
-      const reward = grantRewards(db, req.userId, { coins: 2, xp: 1 });
       const visitorRow = db.prepare('SELECT COALESCE(display_name, username) AS name FROM users WHERE id = ?').get(req.userId);
       const visitorName = visitorRow.name;
       notify(db, targetOwnerId, 'help', `${visitorName} helped water your crop!`);
       emitToUser(io, targetOwnerId, 'notification', { message: `${visitorName} helped water your crop!` });
-      return res.json({ ok: true, crop: { x, y, watered: true }, reward });
+      const updatedHelper = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+      return res.json({ ok: true, crop: { x, y, watered: true }, coins: updatedHelper.coins });
     }
 
     const updatedUser = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);

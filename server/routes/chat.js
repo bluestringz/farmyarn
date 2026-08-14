@@ -29,14 +29,21 @@ module.exports = function chatRoutes(db, io) {
   router.get('/global', (req, res) => {
     const limit = Math.min(100, parseInt(req.query.limit, 10) || 50);
     const rows = db.prepare(`
-      SELECT cm.id, cm.message, cm.created_at, u.id as fromUserId,
+      SELECT cm.id, cm.message, cm.created_at, cm.is_announcement, u.id as fromUserId,
              COALESCE(u.display_name, u.username) as fromUsername
       FROM chat_messages cm JOIN users u ON u.id = cm.from_user_id
       WHERE cm.to_user_id IS NULL
       ORDER BY cm.created_at DESC, cm.id DESC
       LIMIT ?
     `).all(limit);
-    res.json(rows.reverse());
+    // Announcements always display as "Announcement", not whichever admin
+    // account happened to send them — matches the live socket payload's
+    // fromUsername in server/routes/admin.js's /announce endpoint.
+    res.json(rows.reverse().map((r) => ({
+      ...r,
+      fromUsername: r.is_announcement ? 'Announcement' : r.fromUsername,
+      isAnnouncement: !!r.is_announcement,
+    })));
   });
 
   // POST /api/chat/global { message } — costs 1 coin, broadcast to everyone connected

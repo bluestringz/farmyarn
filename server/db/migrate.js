@@ -31,6 +31,8 @@ function migrate(db) {
     is_banned INTEGER NOT NULL DEFAULT 0,
     suspended_until INTEGER, -- unix timestamp; NULL = not suspended. Temporary, unlike is_banned (permanent).
     is_resting INTEGER NOT NULL DEFAULT 0, -- sitting/lying on furniture — regenerates energy faster while true
+    friend_water_count INTEGER NOT NULL DEFAULT 0, -- how many times today this player has watered a FRIEND's crop — resets daily, makes each successive help cost more gold
+    friend_water_date TEXT, -- 'YYYY-MM-DD' the count above is for; a new day resets the count to 0
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     last_login INTEGER
   );
@@ -247,6 +249,7 @@ function migrate(db) {
     from_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     to_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, -- NULL = global chat, set = whisper
     message TEXT NOT NULL,
+    is_announcement INTEGER NOT NULL DEFAULT 0, -- sent from the admin panel — shown distinctly, to everyone
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
 
@@ -281,11 +284,21 @@ function addColumnsIfMissing(db) {
   if (!existingCols.includes('is_resting')) {
     db.exec('ALTER TABLE users ADD COLUMN is_resting INTEGER NOT NULL DEFAULT 0');
   }
+  if (!existingCols.includes('friend_water_count')) {
+    db.exec('ALTER TABLE users ADD COLUMN friend_water_count INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!existingCols.includes('friend_water_date')) {
+    db.exec('ALTER TABLE users ADD COLUMN friend_water_date TEXT');
+  }
   if (!existingCols.includes('display_name')) {
     db.exec('ALTER TABLE users ADD COLUMN display_name TEXT');
   }
   if (!existingCols.includes('gender')) {
     db.exec("ALTER TABLE users ADD COLUMN gender TEXT NOT NULL DEFAULT 'male'");
+  }
+  const chatCols = db.prepare("PRAGMA table_info(chat_messages)").all().map((c) => c.name);
+  if (!chatCols.includes('is_announcement')) {
+    db.exec('ALTER TABLE chat_messages ADD COLUMN is_announcement INTEGER NOT NULL DEFAULT 0');
   }
   if (!existingCols.includes('equipped_outfit')) {
     db.exec('ALTER TABLE users ADD COLUMN equipped_outfit TEXT');

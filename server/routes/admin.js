@@ -7,8 +7,34 @@ const bcrypt = require('bcryptjs');
 const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY } = require('../lib/gameLogic');
 const { DB_PATH } = require('../db/migrate');
 
-module.exports = function adminRoutes(db, onlineUsers) {
+module.exports = function adminRoutes(db, onlineUsers, io) {
   const router = express.Router();
+
+  // POST /api/admin/announce { message } — broadcasts to every connected
+  // player immediately (like a global chat message, but visually distinct
+  // and sent by "the admin panel" rather than any specific player account),
+  // and stores it in chat_messages so it also shows up for anyone who's
+  // offline right now when they next open the chat log.
+  router.post('/announce', (req, res) => {
+    const message = (req.body && req.body.message || '').toString().trim();
+    if (!message) return res.status(400).json({ error: 'Enter a message' });
+    if (message.length > 500) return res.status(400).json({ error: 'Keep it under 500 characters' });
+
+    const info = db.prepare('INSERT INTO chat_messages (from_user_id, to_user_id, message, is_announcement) VALUES (?, NULL, ?, 1)')
+      .run(req.userId, message);
+
+    const payload = {
+      id: info.lastInsertRowid,
+      fromUserId: req.userId,
+      fromUsername: 'Announcement',
+      message,
+      isAnnouncement: true,
+      created_at: Math.floor(Date.now() / 1000),
+    };
+    if (io) io.emit('chat:global', payload);
+
+    res.json({ ok: true, message: payload });
+  });
 
   // GET /api/admin/backup — downloads a full, consistent snapshot of the
   // live database as a .db file. Uses better-sqlite3's built-in backup()

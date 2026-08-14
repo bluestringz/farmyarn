@@ -265,9 +265,11 @@
     joinSpace(`farm:${farm.ownerId}`);
     if (farm.isOwner) {
       state.viewingUserId = null;
+      state.viewingUsername = null;
       document.getElementById('visiting-banner').classList.add('hidden');
     } else {
       state.viewingUserId = userId;
+      state.viewingUsername = farm.ownerUsername;
       document.getElementById('visiting-text').textContent = `Visiting ${farm.ownerUsername}'s farm (Lvl ${farm.ownerLevel})`;
       document.getElementById('visiting-banner').classList.remove('hidden');
       setTool(null);
@@ -293,17 +295,29 @@
   // stays true for ALL of these (a lot of existing "restrict farm tools
   // while inside" checks already key off it) — this tracks the specifics.
   async function enterInterior(opts, bannerId) {
-    if (state.viewingUserId) { UI.toast("You can't go inside a friend's building yet"); return; }
-    const interior = await Api.myInterior(opts);
+    // Anyone can walk into a house/coop/barn/cow_barn now, owner or
+    // visitor alike — same as being able to see the outdoor farm already.
+    // Read-only for visitors: state.viewingUserId stays set the whole
+    // time they're inside, and every build/decorate/move/remove/feed
+    // handler already gates on `!state.viewingUserId`, so nothing extra
+    // is needed here to keep it look-but-don't-touch.
+    const fetchOpts = state.viewingUserId ? { ...opts, ownerId: state.viewingUserId } : opts;
+    const interior = await Api.myInterior(fetchOpts);
     game.setInteriorMode(interior);
     state.inHouse = true;
     state.interiorSpace = { buildingType: interior.buildingType, buildingId: interior.buildingId || null, location: interior.location };
     leaveCurrentSpace(); // interiors are private — no shared presence
     clearPendingPlacement();
     setTool(null);
+    const label = { chicken_coop: 'chicken coop', cow_barn: 'cow barn', barn: 'barn', farmhouse: 'house' };
+    const placeName = label[interior.buildingType] || 'building';
+    const bannerText = state.viewingUserId
+      ? `Visiting ${state.viewingUsername || 'a friend'}'s ${placeName} (look only)`
+      : `Inside your ${placeName}`;
     if (bannerId === 'coop-banner') {
-      const label = { chicken_coop: 'Inside the chicken coop', cow_barn: 'Inside the cow barn', barn: 'Inside the barn' };
-      document.getElementById('pen-banner-text').textContent = label[interior.buildingType] || 'Inside the building';
+      document.getElementById('pen-banner-text').textContent = bannerText;
+    } else {
+      document.querySelector(`#${bannerId} span`).textContent = bannerText;
     }
     document.getElementById(bannerId).classList.remove('hidden');
     document.getElementById('visiting-banner').classList.add('hidden');
@@ -365,12 +379,18 @@
     setTool(null);
     document.getElementById('house-banner').classList.add('hidden');
     document.getElementById('coop-banner').classList.add('hidden');
-    await loadOwnFarm(); // rejoins the outdoor farm space
+    // Rejoin whichever outdoor space we actually came from — a visitor
+    // exiting a friend's house/coop/barn belongs back on the FRIEND's
+    // farm, not their own (state.viewingUserId stays set the whole time
+    // they're inside for exactly this reason).
+    if (state.viewingUserId) await loadFarm(state.viewingUserId);
+    else await loadOwnFarm();
   }
 
   async function refreshInterior() {
     if (!state.interiorSpace) return;
     const opts = state.interiorSpace.buildingId ? { buildingId: state.interiorSpace.buildingId } : { space: 'house' };
+    if (state.viewingUserId) opts.ownerId = state.viewingUserId;
     const interior = await Api.myInterior(opts);
     game.setInteriorMode(interior);
   }
@@ -672,8 +692,7 @@
         const res = await Api.water(x, y, ownerId);
         if (res.coins !== undefined) state.me.coins = res.coins;
         if (res.energy !== undefined) state.me.energy = res.energy;
-        if (res.reward) { state.me.coins = res.reward.coins; state.me.xp = res.reward.xp; await refreshPlayer(); }
-        UI.toast('Watered! 💧');
+        UI.toast(ownerId ? 'Helped water! 💧 (cost gold — see your balance)' : 'Watered! 💧');
         game.playAction(ACTION_ICON.water);
         game.playWaterEffect(x, y);
         renderTopbar();
@@ -779,7 +798,7 @@
       return;
     }
 
-    if (!state.inHouse && obj.item_id === 'farmhouse' && obj.object_type === 'building' && !state.viewingUserId
+    if (!state.inHouse && obj.item_id === 'farmhouse' && obj.object_type === 'building'
         && state.tool !== 'build' && state.tool !== 'plow' && state.tool !== 'plant' && state.tool !== 'harvest'
         && state.tool !== 'move' && state.tool !== 'remove') {
       await enterHouse();
@@ -787,7 +806,7 @@
     }
 
     const ENTERABLE_PEN_BUILDINGS = new Set(['chicken_coop', 'cow_barn', 'barn']);
-    if (!state.inHouse && ENTERABLE_PEN_BUILDINGS.has(obj.item_id) && obj.object_type === 'building' && !state.viewingUserId
+    if (!state.inHouse && ENTERABLE_PEN_BUILDINGS.has(obj.item_id) && obj.object_type === 'building'
         && state.tool !== 'build' && state.tool !== 'plow' && state.tool !== 'plant' && state.tool !== 'harvest'
         && state.tool !== 'move' && state.tool !== 'remove') {
       await enterBuilding(obj);
@@ -1357,8 +1376,10 @@
   function appendChatMessage(msg, kind, autoScroll = true) {
     const log = document.getElementById('chat-log');
     const el = document.createElement('div');
-    el.className = `chat-line ${kind}`;
-    if (kind === 'whisper') {
+    el.className = `chat-line ${kind}${msg.isAnnouncement ? ' announcement' : ''}`;
+    if (msg.isAnnouncement) {
+      el.innerHTML = `<span class="chat-announcement-tag">📢 Announcement:</span> ${escapeHtml(msg.message)}`;
+    } else if (kind === 'whisper') {
       const isOutgoing = msg.fromUserId === state.me.id;
       const label = isOutgoing ? `→ ${msg.toUsername}` : `${msg.fromUsername} →`;
       el.innerHTML = `<span class="chat-whisper-tag">${label}</span> ${escapeHtml(msg.message)}`;
