@@ -657,12 +657,6 @@
       game.walkTo(x, y, null);
       return;
     }
-    // Guards against rapid repeat-tapping firing a pile of overlapping
-    // plow/plant/water/harvest requests before the first one even finishes
-    // — that pile is exactly what was blowing through the rate limit
-    // during a fast harvesting spree and made the game feel like it froze.
-    if (state._actionBusy) return;
-    state._actionBusy = true;
     try {
       if (state.tool === 'plow') {
         if (state.viewingUserId || state.inHouse) return;
@@ -713,8 +707,6 @@
       }
     } catch (err) {
       UI.toast(err.message);
-    } finally {
-      state._actionBusy = false;
     }
   }
 
