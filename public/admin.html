@@ -70,7 +70,7 @@
     <input id="search-input" placeholder="Search username...">
     <button id="search-btn">Search</button>
     <table id="players-table">
-      <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Lvl / XP</th><th>Energy</th><th>Coins</th><th>Premium Points</th><th>Status</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Name in Game</th><th>Lvl / XP</th><th>Energy</th><th>Coins</th><th>Premium Points</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -188,6 +188,7 @@ async function loadPlayers(q) {
     <tr>
       <td>${u.online ? '🟢' : '⚪'}</td>
       <td>${u.id}</td><td>${u.username}</td>
+      <td>${u.display_name ? escapeHtml(u.display_name) : '<span style="color:#999">(not set)</span>'}</td>
       <td>
         Lvl ${u.level}
         <input type="number" class="level-input" data-level-for="${u.id}" value="${u.level}" style="width:50px" min="1">

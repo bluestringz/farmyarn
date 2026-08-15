@@ -62,6 +62,8 @@ module.exports = function shopRoutes(db) {
   });
 
   // POST /api/shop/buy-outfit  { outfitId } — buys (if not already owned) and equips immediately
+  const OUTFIT_RENTAL_SECONDS = 7 * 86400; // 7 days per purchase/renewal
+
   router.post('/buy-outfit', (req, res) => {
     const { outfitId } = req.body || {};
     const outfit = db.prepare('SELECT * FROM outfit_types WHERE id = ?').get(outfitId);
@@ -73,23 +75,39 @@ module.exports = function shopRoutes(db) {
     }
     if (user.level < outfit.required_level) return res.status(400).json({ error: `Requires level ${outfit.required_level}` });
 
-    const alreadyOwned = db.prepare('SELECT 1 FROM owned_outfits WHERE user_id = ? AND outfit_id = ?').get(req.userId, outfitId);
-    if (!alreadyOwned) {
-      // Costumes are bought with Premium Points, not coins — that's what
-      // actually gives them collector value instead of being just another
-      // thing gold buys. Points are topped up by an admin for now (see
-      // /api/admin/players/:id/give-premium).
+    const t = Math.floor(Date.now() / 1000);
+    const owned = db.prepare('SELECT * FROM owned_outfits WHERE user_id = ? AND outfit_id = ?').get(req.userId, outfitId);
+    let purchased = false;
+
+    if (outfit.cost === 0) {
+      // The free default outfit — no rental, no expiration, own it once.
+      if (!owned) db.prepare('INSERT INTO owned_outfits (user_id, outfit_id, expires_at) VALUES (?, ?, NULL)').run(req.userId, outfitId);
+    } else {
+      const isActive = owned && owned.expires_at && owned.expires_at > t;
+      // Can't buy/renew while the current rental is still running — has to
+      // actually expire first. No early stacking of extra days.
+      if (isActive) {
+        const daysLeft = Math.ceil((owned.expires_at - t) / 86400);
+        return res.status(400).json({ error: `You already have this costume — it's active for ${daysLeft} more day${daysLeft === 1 ? '' : 's'}` });
+      }
+      const newExpiry = t + OUTFIT_RENTAL_SECONDS;
       if ((user.premium_currency || 0) < outfit.cost) {
         return res.status(400).json({ error: `Not enough Premium Points — need ${outfit.cost}, have ${user.premium_currency || 0}` });
       }
       db.prepare('UPDATE users SET premium_currency = premium_currency - ? WHERE id = ?').run(outfit.cost, req.userId);
-      db.prepare('INSERT INTO owned_outfits (user_id, outfit_id) VALUES (?, ?)').run(req.userId, outfitId);
+      if (owned) {
+        db.prepare('UPDATE owned_outfits SET expires_at = ? WHERE id = ?').run(newExpiry, owned.id);
+      } else {
+        db.prepare('INSERT INTO owned_outfits (user_id, outfit_id, expires_at) VALUES (?, ?, ?)').run(req.userId, outfitId, newExpiry);
+      }
+      purchased = true;
     }
     // Switching outfits clears any custom dye — dye is a per-shirt tint, not a permanent trait.
     db.prepare('UPDATE users SET equipped_outfit = ?, dye_color = NULL WHERE id = ?').run(outfitId, req.userId);
 
     const updated = db.prepare('SELECT coins, premium_currency FROM users WHERE id = ?').get(req.userId);
-    res.json({ ok: true, outfitId, purchased: !alreadyOwned, coins: updated.coins, premiumCurrency: updated.premium_currency });
+    const finalOwned = db.prepare('SELECT expires_at FROM owned_outfits WHERE user_id = ? AND outfit_id = ?').get(req.userId, outfitId);
+    res.json({ ok: true, outfitId, purchased, expiresAt: finalOwned ? finalOwned.expires_at : null, coins: updated.coins, premiumCurrency: updated.premium_currency });
   });
 
   // POST /api/shop/dye  { color } — recolors the shirt of the currently equipped outfit

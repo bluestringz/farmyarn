@@ -90,9 +90,9 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
 
   router.get('/players', (req, res) => {
     const q = (req.query.q || '').toString().trim();
-    const cols = 'id, username, level, xp, energy, coins, premium_currency, is_admin, is_banned, suspended_until, created_at, last_login';
+    const cols = 'id, username, display_name, level, xp, energy, coins, premium_currency, is_admin, is_banned, suspended_until, created_at, last_login';
     const rows = q
-      ? db.prepare(`SELECT ${cols} FROM users WHERE username LIKE ? ORDER BY id DESC LIMIT 100`).all(`%${q}%`)
+      ? db.prepare(`SELECT ${cols} FROM users WHERE username LIKE ? OR display_name LIKE ? ORDER BY id DESC LIMIT 100`).all(`%${q}%`, `%${q}%`)
       : db.prepare(`SELECT ${cols} FROM users ORDER BY id DESC LIMIT 100`).all();
     // onlineUsers is a live userId -> Set(socketId) map kept by the
     // Socket.IO connection handling in index.js — a user is "online" here

@@ -3,7 +3,7 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
-const { grantRewards, resolveEnergy, nowSec, xpProgress, isReservedName, startResting, stopResting } = require('../lib/gameLogic');
+const { grantRewards, resolveEnergy, nowSec, xpProgress, isReservedName, startResting, stopResting, resolveEquippedOutfit } = require('../lib/gameLogic');
 const { publicUser } = require('./auth');
 
 const DAILY_REWARDS = [
@@ -125,6 +125,7 @@ module.exports = function playerRoutes(db) {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
     resolveEnergy(db, req.userId);
+    resolveEquippedOutfit(db, req.userId);
     const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
     res.json({ ...publicUser(fresh), xpProgress: xpProgress(fresh.xp) });
   });
@@ -133,17 +134,29 @@ module.exports = function playerRoutes(db) {
   router.get('/outfits', (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
     const all = db.prepare('SELECT * FROM outfit_types ORDER BY required_level, cost').all();
-    const owned = new Set(
-      db.prepare('SELECT outfit_id FROM owned_outfits WHERE user_id = ?').all(req.userId).map((r) => r.outfit_id)
-    );
-    res.json(all.map((o) => ({ ...o, owned: owned.has(o.id), equipped: o.id === user.equipped_outfit })));
+    const t = Math.floor(Date.now() / 1000);
+    const ownedRows = db.prepare('SELECT outfit_id, expires_at FROM owned_outfits WHERE user_id = ?').all(req.userId);
+    const ownedMap = new Map(ownedRows.map((r) => [r.outfit_id, r.expires_at]));
+    res.json(all.map((o) => {
+      const expiresAt = ownedMap.get(o.id);
+      // NULL expires_at (the free default outfit) never expires; anything
+      // else is only "actively owned" while its rental hasn't run out —
+      // an expired rental shows in the shop like it was never bought, so
+      // it can be re-rented instead of just silently failing to equip.
+      const isOwned = ownedMap.has(o.id) && (expiresAt === null || expiresAt > t);
+      return { ...o, owned: isOwned, equipped: o.id === user.equipped_outfit, expiresAt: expiresAt || null };
+    }));
   });
 
   // POST /api/player/equip-outfit  { outfitId } - switch to an already-owned outfit, free
   router.post('/equip-outfit', (req, res) => {
     const { outfitId } = req.body || {};
-    const owned = db.prepare('SELECT 1 FROM owned_outfits WHERE user_id = ? AND outfit_id = ?').get(req.userId, outfitId);
+    const owned = db.prepare('SELECT * FROM owned_outfits WHERE user_id = ? AND outfit_id = ?').get(req.userId, outfitId);
     if (!owned) return res.status(400).json({ error: "You don't own that outfit yet" });
+    const t = Math.floor(Date.now() / 1000);
+    if (owned.expires_at !== null && owned.expires_at <= t) {
+      return res.status(400).json({ error: 'That costume rental expired — renew it in the Shop to wear it again' });
+    }
     db.prepare('UPDATE users SET equipped_outfit = ? WHERE id = ?').run(outfitId, req.userId);
     res.json({ ok: true, outfitId });
   });

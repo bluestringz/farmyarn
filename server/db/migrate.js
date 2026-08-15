@@ -119,6 +119,7 @@ function migrate(db) {
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     outfit_id TEXT NOT NULL REFERENCES outfit_types(id),
     acquired_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    expires_at INTEGER, -- unix timestamp; NULL = never expires (the free default outfit only — every paid costume gets one)
     UNIQUE(user_id, outfit_id)
   );
 
@@ -300,6 +301,10 @@ function addColumnsIfMissing(db) {
   if (!chatCols.includes('is_announcement')) {
     db.exec('ALTER TABLE chat_messages ADD COLUMN is_announcement INTEGER NOT NULL DEFAULT 0');
   }
+  const ownedOutfitCols = db.prepare("PRAGMA table_info(owned_outfits)").all().map((c) => c.name);
+  if (!ownedOutfitCols.includes('expires_at')) {
+    db.exec('ALTER TABLE owned_outfits ADD COLUMN expires_at INTEGER');
+  }
   if (!existingCols.includes('equipped_outfit')) {
     db.exec('ALTER TABLE users ADD COLUMN equipped_outfit TEXT');
   }
@@ -361,6 +366,19 @@ function addColumnsIfMissing(db) {
   });
   for (const row of oldCoopFurniture) migrateOldRoom(row.farm_id, 'indoor_coop', 'chicken_coop');
   for (const row of oldBarnFurniture) migrateOldRoom(row.farm_id, 'indoor_barn', 'cow_barn');
+
+  // One-time migration: costumes used to be bought once and owned forever
+  // — now every paid costume (anything except the free classic_overalls
+  // default) is a 7-day rental instead (see /api/shop/buy-outfit). Anyone
+  // who already owned a paid costume before this change gets a one-time
+  // 7-day grace period starting now, rather than instantly losing access
+  // to something they already paid for under the old permanent-ownership
+  // rules. Only touches rows that don't already have an expiration set,
+  // so this is a no-op on every subsequent server start.
+  db.prepare(`
+    UPDATE owned_outfits SET expires_at = ? + (7 * 86400)
+    WHERE expires_at IS NULL AND outfit_id != 'classic_overalls'
+  `).run(Math.floor(Date.now() / 1000));
 
   // One-time migration: each stall used to hold exactly ONE listing at a
   // time (the listing_item_id/listing_price/listing_quantity columns on
@@ -514,16 +532,16 @@ function seedContent(db) {
   // look) since there's no artwork for them yet, rather than pretending.
   const outfits = [
     { id: 'classic_overalls', name: 'Classic Farmer', cost: 0,   required_level: 1, gender: 'unisex', shirt_color: '#4f8fd6', pants_color: '#3f5f8a', hat_color: '#e0b060', style: 'shirt', sprite_key: 'classic' },
-    { id: 'green_flannel',    name: 'Green Flannel',   cost: 150, required_level: 1, gender: 'unisex', shirt_color: '#4f7c3a', pants_color: '#3f5f8a', hat_color: '#e0b060', style: 'shirt', sprite_key: 'green' },
-    { id: 'red_flannel',      name: 'Red Flannel',      cost: 150, required_level: 2, gender: 'male',   shirt_color: '#c0392b', pants_color: '#4a3521', hat_color: '#e0b060', style: 'shirt', sprite_key: 'classic' },
-    { id: 'blue_dungarees',   name: 'Blue Dungarees',   cost: 150, required_level: 2, gender: 'male',   shirt_color: '#f4f4f4', pants_color: '#4066a8', hat_color: '#e0b060', style: 'overalls', sprite_key: 'classic' },
-    { id: 'meadow_dress',     name: 'Meadow Dress',     cost: 150, required_level: 2, gender: 'female', shirt_color: '#e05a7e', pants_color: '#e05a7e', hat_color: '#e0b060', style: 'dress', sprite_key: 'classic' },
+    { id: 'green_flannel',    name: 'Green Flannel',   cost: 25, required_level: 1, gender: 'unisex', shirt_color: '#4f7c3a', pants_color: '#3f5f8a', hat_color: '#e0b060', style: 'shirt', sprite_key: 'green' },
+    { id: 'red_flannel',      name: 'Red Flannel',      cost: 25, required_level: 2, gender: 'male',   shirt_color: '#c0392b', pants_color: '#4a3521', hat_color: '#e0b060', style: 'shirt', sprite_key: 'classic' },
+    { id: 'blue_dungarees',   name: 'Blue Dungarees',   cost: 25, required_level: 2, gender: 'male',   shirt_color: '#f4f4f4', pants_color: '#4066a8', hat_color: '#e0b060', style: 'overalls', sprite_key: 'classic' },
+    { id: 'meadow_dress',     name: 'Meadow Dress',     cost: 25, required_level: 2, gender: 'female', shirt_color: '#e05a7e', pants_color: '#e05a7e', hat_color: '#e0b060', style: 'dress', sprite_key: 'classic' },
     { id: 'sunflower_dress',  name: 'Sunflower Dress',  cost: 180, required_level: 3, gender: 'female', shirt_color: '#f4c95d', pants_color: '#f4c95d', hat_color: '#e0b060', style: 'dress', sprite_key: 'classic' },
     { id: 'straw_worker',     name: 'Straw Worker Set', cost: 220, required_level: 3, gender: 'unisex', shirt_color: '#7a9c5a', pants_color: '#5e5140', hat_color: '#c9a13c', style: 'overalls', sprite_key: 'classic' },
     { id: 'harvest_gold',     name: 'Harvest Gold Vest', cost: 300, required_level: 5, gender: 'unisex', shirt_color: '#e8a527', pants_color: '#4a3521', hat_color: '#8a5a34', style: 'shirt', sprite_key: 'classic' },
-    { id: 'gentleman_suit',   name: 'Gentleman / Gentlewoman', cost: 260, required_level: 4, gender: 'unisex', shirt_color: '#fdf6e8', pants_color: '#4a3521', hat_color: '#6b4423', style: 'shirt', sprite_key: 'gentleman' },
-    { id: 'winter_coat',      name: 'Winter Coat',      cost: 260, required_level: 4, gender: 'unisex', shirt_color: '#2b4a7a', pants_color: '#2b4a7a', hat_color: '#2b4a7a', style: 'shirt', sprite_key: 'winter' },
-    { id: 'festival_yukata',  name: 'Festival Yukata',   cost: 260, required_level: 4, gender: 'unisex', shirt_color: '#1e2f5c', pants_color: '#1e2f5c', hat_color: '#c0392b', style: 'shirt', sprite_key: 'festival' },
+    { id: 'gentleman_suit',   name: 'Gentleman / Gentlewoman', cost: 25, required_level: 4, gender: 'unisex', shirt_color: '#fdf6e8', pants_color: '#4a3521', hat_color: '#6b4423', style: 'shirt', sprite_key: 'gentleman' },
+    { id: 'winter_coat',      name: 'Winter Coat',      cost: 25, required_level: 4, gender: 'unisex', shirt_color: '#2b4a7a', pants_color: '#2b4a7a', hat_color: '#2b4a7a', style: 'shirt', sprite_key: 'winter' },
+    { id: 'festival_yukata',  name: 'Festival Yukata',   cost: 25, required_level: 4, gender: 'unisex', shirt_color: '#1e2f5c', pants_color: '#1e2f5c', hat_color: '#c0392b', style: 'shirt', sprite_key: 'festival' },
   ];
   const txOutfits = db.transaction((rows) => rows.forEach((r) => upsertOutfit.run(r)));
   txOutfits(outfits);

@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const { signToken } = require('../middleware/auth');
-const { initFarmTiles, nowSec, MAX_ENERGY, isReservedName } = require('../lib/gameLogic');
+const { initFarmTiles, nowSec, MAX_ENERGY, isReservedName, resolveEquippedOutfit } = require('../lib/gameLogic');
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
@@ -93,8 +93,10 @@ module.exports = function authRoutes(db) {
       if (!ok) return res.status(401).json({ error: 'Invalid username or password' });
 
       db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(nowSec(), user.id);
-      const token = signToken(user);
-      return res.json({ token, user: publicUser(user) });
+      resolveEquippedOutfit(db, user.id);
+      const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+      const token = signToken(fresh);
+      return res.json({ token, user: publicUser(fresh) });
     } catch (err) {
       console.error('login error', err);
       return res.status(500).json({ error: 'Login failed' });

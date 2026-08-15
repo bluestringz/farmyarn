@@ -160,6 +160,24 @@ function stopResting(db, userId) {
   db.prepare('UPDATE users SET is_resting = 0 WHERE id = ?').run(userId);
 }
 
+// Costumes are 7-day rentals (see /api/shop/buy-outfit) — if whatever's
+// currently equipped has quietly expired since it was last checked, this
+// snaps the player back to the free classic_overalls default rather than
+// leaving them wearing a costume their record shows they no longer have
+// active. Called lazily wherever a fresh user row is about to be sent to
+// the client (login, /me), the same "settle it on read" pattern energy
+// and crop growth already use.
+function resolveEquippedOutfit(db, userId) {
+  const user = db.prepare('SELECT equipped_outfit FROM users WHERE id = ?').get(userId);
+  if (!user || !user.equipped_outfit || user.equipped_outfit === 'classic_overalls') return;
+  const owned = db.prepare('SELECT expires_at FROM owned_outfits WHERE user_id = ? AND outfit_id = ?').get(userId, user.equipped_outfit);
+  const t = nowSec();
+  const stillActive = owned && (owned.expires_at === null || owned.expires_at > t);
+  if (!stillActive) {
+    db.prepare("UPDATE users SET equipped_outfit = 'classic_overalls', dye_color = NULL WHERE id = ?").run(userId);
+  }
+}
+
 // Adds energy (from eating food), capped at MAX_ENERGY. Does not touch
 // energy_updated_at's regen bookkeeping beyond resolving first, so idle
 // regen still resumes correctly afterward.
@@ -194,5 +212,5 @@ function isReservedName(name) {
 module.exports = {
   nowSec, xpForLevel, levelForXp, xpProgress, initFarmTiles, resolveCropStates,
   grantRewards, addInventory, notify, resolveEnergy, spendEnergy, addEnergy, MAX_ENERGY,
-  isReservedName, startResting, stopResting,
+  isReservedName, startResting, stopResting, resolveEquippedOutfit,
 };

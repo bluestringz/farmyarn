@@ -135,15 +135,24 @@ const UI = (() => {
         const owned = item.owned;
         const equipped = item.equipped;
         const affordable = (player.premiumCurrency || 0) >= item.cost;
+        const isRental = item.cost > 0; // the free classic_overalls never expires
+        let expiryLine = '';
+        if (isRental && item.expiresAt) {
+          const daysLeft = Math.max(0, Math.ceil((item.expiresAt * 1000 - Date.now()) / 86400000));
+          expiryLine = owned
+            ? `<div class="shop-level">Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}</div>`
+            : `<div class="shop-level" style="color:#c0392b">Rental expired</div>`;
+        }
         return `
           <div class="shop-card">
             <canvas class="outfit-preview" width="70" height="90" data-preview-outfit="${item.id}"></canvas>
             <div class="shop-name">${item.name}</div>
-            <div class="shop-price">${owned ? 'Owned' : `💎 ${item.cost}`}</div>
+            <div class="shop-price">${isRental ? `💎 ${item.cost} / 7 days` : 'Free'}</div>
+            ${expiryLine}
             ${locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}
             ${ITEM_DESCRIPTIONS[item.id] ? `<div class="shop-desc">${ITEM_DESCRIPTIONS[item.id]}</div>` : ''}
-            <button data-item="${item.id}" ${(locked || (!owned && !affordable) || equipped) ? 'disabled' : ''}>
-              ${equipped ? 'Equipped' : owned ? 'Wear' : locked ? 'Locked' : 'Buy & Wear'}
+            <button data-item="${item.id}" ${(locked || (!owned && !affordable) || (equipped && owned)) ? 'disabled' : ''}>
+              ${equipped && owned ? 'Equipped' : owned ? 'Wear' : locked ? 'Locked' : isRental ? 'Rent (7 days)' : 'Wear'}
             </button>
           </div>`;
       }).join('') || `<div class="empty-state">Nothing here yet.</div>`;
@@ -159,7 +168,7 @@ const UI = (() => {
         </div>
       `;
 
-      body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">Costumes cost 💎 Premium Points, not coins — owned outfits can be re-worn for free.</p><div class="shop-grid">${cards}</div>${changeNameSection}`;
+      body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">Costumes are 7-day rentals paid in 💎 Premium Points — renewing early adds the days on top of what you have left instead of resetting the clock.</p><div class="shop-grid">${cards}</div>${changeNameSection}`;
 
       body.querySelectorAll('canvas[data-preview-outfit]').forEach((canvas) => {
         const outfit = items.find((o) => o.id === canvas.dataset.previewOutfit);
