@@ -326,7 +326,21 @@ module.exports = function farmRoutes(db, io) {
 
     resolveCropStates(db, farm.id);
     const crop = db.prepare('SELECT * FROM crops WHERE farm_id = ? AND tile_x = ? AND tile_y = ?').get(farm.id, x, y);
-    if (!crop || crop.state !== 'ready') return res.status(400).json({ error: 'Nothing ready to harvest' });
+    if (!crop) return res.status(400).json({ error: 'Nothing ready to harvest' });
+
+    // A dead (never watered in time) or withered (grown but left too long
+    // un-harvested) crop just gets cleared away — no yield, no energy
+    // spent (there's nothing to actually harvest, just cleanup).
+    if (crop.state === 'dead' || crop.state === 'withered') {
+      db.prepare('DELETE FROM crops WHERE id = ?').run(crop.id);
+      db.prepare('UPDATE farm_tiles SET state = ? WHERE farm_id = ? AND x = ? AND y = ?').run('grass', farm.id, x, y);
+      const message = crop.state === 'dead'
+        ? 'This crop died from never being watered — cleared the tile, but nothing to harvest.'
+        : 'This crop withered from sitting too long after it was ready — cleared the tile, but nothing to harvest.';
+      return res.json({ ok: true, tile: { x, y, state: 'grass' }, cleared: crop.state, message });
+    }
+
+    if (crop.state !== 'ready') return res.status(400).json({ error: 'Nothing ready to harvest' });
 
     if (!spendEnergy(db, req.userId, 1)) return res.status(400).json({ error: 'Not enough energy' });
 

@@ -180,7 +180,7 @@ function migrate(db) {
     growth_end_at INTEGER NOT NULL,
     watered INTEGER NOT NULL DEFAULT 0,
     watered_by INTEGER, -- last visitor who watered (for help tracking), nullable
-    state TEXT NOT NULL DEFAULT 'growing', -- growing | ready | harvested
+    state TEXT NOT NULL DEFAULT 'growing', -- growing | ready | dead (un-watered too long) | withered (ready too long, un-harvested)
     UNIQUE(farm_id, tile_x, tile_y)
   );
 
@@ -481,7 +481,7 @@ function seedContent(db) {
     { id: 'milk',     name: 'Milk',     sell_price: 45, sprite: 'milk', category: 'animal_product' },
     { id: 'wool',     name: 'Wool',     sell_price: 38, sprite: 'wool', category: 'animal_product' },
     { id: 'truffle',  name: 'Truffle',  sell_price: 60, sprite: 'truffle', category: 'animal_product' },
-    { id: 'log',      name: 'Log',      sell_price: 8,  sprite: 'log', category: 'material' },
+    { id: 'log',      name: 'Log',      sell_price: 25, sprite: 'log', category: 'material' },
     { id: 'chicken_feed', name: 'Chicken Feed', sell_price: 3, sprite: 'feed', category: 'feed' },
     { id: 'cow_feed',     name: 'Cow Feed',     sell_price: 6, sprite: 'feed', category: 'feed' },
     { id: 'sheep_feed',   name: 'Sheep Feed',   sell_price: 5, sprite: 'feed', category: 'feed' },

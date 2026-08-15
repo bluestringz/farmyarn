@@ -70,6 +70,22 @@ function spriteKeyFor(gender, facingDir, walkFrame, moving, outfitKey) {
 // around rather than a menu.
 const MARKET_WIDTH = 17;
 const MARKET_HEIGHT = 15;
+
+// Central Park — a shared open space (same "everyone in it sees each other
+// move" model as the Marketplace, just no stalls) with fixed benches
+// players can actually sit on for the faster energy regen, same as a
+// bench out on their own farm.
+const PARK_WIDTH = 16;
+const PARK_HEIGHT = 14;
+const PARK_BENCH_POSITIONS = [
+  { x: 3, y: 4 }, { x: 6, y: 4 }, { x: 9, y: 4 }, { x: 12, y: 4 },
+  { x: 3, y: 10 }, { x: 6, y: 10 }, { x: 9, y: 10 }, { x: 12, y: 10 },
+];
+const PARK_TREE_POSITIONS = [
+  { x: 1, y: 1 }, { x: 14, y: 1 }, { x: 1, y: 12 }, { x: 14, y: 12 },
+  { x: 7, y: 1 }, { x: 8, y: 12 },
+];
+
 const MARKET_STALL_POSITIONS = (() => {
   const xs = [1, 4, 7, 10, 13];
   const ys = [1, 4, 8, 11];
@@ -143,6 +159,7 @@ class FarmGame {
     this.onTileClick = null; // callback(x, y)
     this.onObjectClick = null; // callback(object)
     this.onMarketStallClick = null; // callback(stall)
+    this.onParkBenchClick = null; // callback(benchPosition)
     this.highlightFn = null; // (x,y) => 'valid'|'invalid'|null, drawn as overlay
     this._ghost = null; // { category, itemId, x, y, rotation, def } pending-placement preview
 
@@ -598,6 +615,22 @@ class FarmGame {
     if (this.farm) this._centerCamera();
   }
 
+  // ---- Central Park (shared hangout plaza) mode ----
+  setParkMode() {
+    this.mode = 'park';
+    this._centerCameraFor(PARK_WIDTH, PARK_HEIGHT);
+    const wx = (PARK_WIDTH / 2) * TILE, wy = (PARK_HEIGHT / 2) * TILE;
+    this._character.x = wx; this._character.y = wy;
+    this._character.targetX = wx; this._character.targetY = wy;
+    this._character.moving = false;
+  }
+
+  exitParkMode() {
+    this.mode = 'outdoor';
+    this._repositionOnReturnToFarm();
+    if (this.farm) this._centerCamera();
+  }
+
   // The Marketplace and house interior are entirely separate grids from the
   // farm — a character position picked up while in one of those (e.g.
   // standing at market tile (8,10)) is meaningless back on the farm grid,
@@ -819,6 +852,17 @@ class FarmGame {
       return;
     }
 
+    if (this.mode === 'park') {
+      if (tile.x < 0 || tile.y < 0 || tile.x >= PARK_WIDTH || tile.y >= PARK_HEIGHT) return;
+      const bench = PARK_BENCH_POSITIONS.find((p) => p.x === tile.x && p.y === tile.y);
+      if (bench && this.onParkBenchClick) {
+        this.onParkBenchClick(bench);
+        return;
+      }
+      this.walkTo(tile.x, tile.y, null);
+      return;
+    }
+
     if (this.mode === 'indoor') {
       if (!this.interior) return;
       if (tile.x < 0 || tile.y < 0 || tile.x >= this.interior.width || tile.y >= this.interior.height) return;
@@ -958,6 +1002,20 @@ class FarmGame {
       this._drawPeopleSorted();
       this._drawCharacterOverlay();
       this._drawMarketBorder();
+      ctx.restore();
+      this._drawWeatherOverlay(rect);
+      return;
+    }
+
+    if (this.mode === 'park') {
+      this._drawSky(rect);
+      ctx.save();
+      ctx.translate(this.camera.x, this.camera.y);
+      ctx.scale(this.camera.scale, this.camera.scale);
+      this._drawParkPlaza();
+      this._drawPeopleSorted();
+      this._drawCharacterOverlay();
+      this._drawParkBorder();
       ctx.restore();
       this._drawWeatherOverlay(rect);
       return;
@@ -1251,6 +1309,44 @@ class FarmGame {
   _drawMarketBorder() {
     const ctx = this.ctx;
     const w = MARKET_WIDTH * TILE, h = MARKET_HEIGHT * TILE;
+    ctx.strokeStyle = '#5e3b1f';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(-1, -1, w + 2, h + 2);
+    ctx.strokeStyle = '#8a5a34';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-1, -1, w + 2, h + 2);
+  }
+
+  // Grass field with a path grid, some trees around the edges, and fixed
+  // benches players can actually sit at (see main.js's rest-toggle, which
+  // already knows how to handle a 'bench' decoration — this just gives it
+  // a shared space to live in instead of only the player's own farm).
+  _drawParkPlaza() {
+    const ctx = this.ctx;
+    const grassShades = ['#8fc93a', '#86c134', '#93cf42'];
+    for (let y = 0; y < PARK_HEIGHT; y++) {
+      for (let x = 0; x < PARK_WIDTH; x++) {
+        const rnd = this._hash(x, y, 9);
+        ctx.fillStyle = grassShades[Math.floor(rnd * grassShades.length)];
+        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+      }
+    }
+    // a simple cross-shaped path through the middle
+    ctx.fillStyle = 'rgba(201,168,118,0.55)';
+    ctx.fillRect(0, (PARK_HEIGHT / 2 - 1) * TILE, PARK_WIDTH * TILE, 2 * TILE);
+    ctx.fillRect((PARK_WIDTH / 2 - 1) * TILE, 0, 2 * TILE, PARK_HEIGHT * TILE);
+
+    for (const { x, y } of PARK_TREE_POSITIONS) {
+      this._drawDecorationShape(ctx, DECORATION_STYLE.tree, x * TILE, y * TILE, TILE, TILE);
+    }
+    for (const { x, y } of PARK_BENCH_POSITIONS) {
+      this._drawDecorationShape(ctx, DECORATION_STYLE.bench, x * TILE, y * TILE, TILE, TILE);
+    }
+  }
+
+  _drawParkBorder() {
+    const ctx = this.ctx;
+    const w = PARK_WIDTH * TILE, h = PARK_HEIGHT * TILE;
     ctx.strokeStyle = '#5e3b1f';
     ctx.lineWidth = 8;
     ctx.strokeRect(-1, -1, w + 2, h + 2);
@@ -1885,15 +1981,6 @@ class FarmGame {
     const ctx = this.ctx;
     const px = crop.tile_x * TILE, py = crop.tile_y * TILE;
     const cx = px + TILE / 2, cy = py + TILE / 2;
-    const total = crop.growth_end_at - crop.planted_at;
-    const elapsed = Math.min(total, Math.max(0, t - crop.planted_at));
-    const progress = total > 0 ? elapsed / total : 1;
-    // A crop now only actually finishes once it's been watered — matches
-    // the same requirement enforced server-side in resolveCropStates().
-    // Without the `crop.watered` check here too, an un-watered crop would
-    // still visually glow/look harvestable once its timer ran out, even
-    // though tapping it to harvest would fail.
-    const ready = crop.state === 'ready' || (progress >= 1 && !!crop.watered);
 
     // soft ground shadow under the plant
     ctx.fillStyle = 'rgba(0,0,0,0.18)';
@@ -1906,6 +1993,39 @@ class FarmGame {
     ctx.beginPath();
     ctx.ellipse(cx, cy + TILE * 0.2, TILE * 0.22, TILE * 0.1, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // Dead (never watered in time) or withered (ready too long, left
+    // un-harvested) — same idea either way: a droopy brown collapsed
+    // plant instead of the normal upright icon, tinted and rotated onto
+    // its side to read as "this has gone bad", tap Harvest to clear it.
+    if (crop.state === 'dead' || crop.state === 'withered') {
+      ctx.save();
+      ctx.translate(cx, cy - 2);
+      ctx.rotate(-0.35);
+      ctx.font = `${Math.floor(TILE * 0.5)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = 0.75;
+      ctx.filter = 'grayscale(70%) sepia(40%)';
+      const glyph = crop.state === 'dead' ? '🥀' : (CROP_GLYPH[crop.crop_type] || '🥀');
+      ctx.fillText(glyph, 0, 0);
+      ctx.restore();
+      return;
+    }
+
+    const total = crop.growth_end_at - crop.planted_at;
+    const elapsed = Math.min(total, Math.max(0, t - crop.planted_at));
+    const rawProgress = total > 0 ? elapsed / total : 1;
+    // Nothing about a crop's growth should visually move at all until it's
+    // actually been watered — no size change, no icon change, no filling
+    // progress bar — it should look exactly like the moment it was planted
+    // for as long as it sits un-watered, no matter how much real time
+    // passes. Previously the progress bar/icon scaling/glyph swap all used
+    // the raw elapsed-time progress directly, so an un-watered crop still
+    // visibly "grew" on its own, which is exactly backwards from the
+    // watering requirement enforced server-side.
+    const progress = crop.watered ? rawProgress : 0;
+    const ready = crop.state === 'ready' || (progress >= 1 && !!crop.watered);
 
     // growth stage: brief generic sprout right after planting, then the
     // crop's own icon scales up throughout the rest of growth — so a
@@ -1932,15 +2052,29 @@ class FarmGame {
       ctx.arc(px + TILE - 10, py + 10, 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-    } else {
-      // mini progress bar with a cream backing card
+    } else if (crop.watered) {
+      // mini progress bar with a cream backing card — only shown once
+      // watering has actually started the clock; an un-watered crop just
+      // sits there as a plain seedling with no bar at all, since there's
+      // no progress to show yet.
       const barW = TILE - 16;
       ctx.fillStyle = 'rgba(255,255,255,0.65)';
       ctx.fillRect(px + 7, py + TILE - 11, barW + 2, 7);
       ctx.fillStyle = 'rgba(0,0,0,0.2)';
       ctx.fillRect(px + 8, py + TILE - 10, barW, 5);
-      ctx.fillStyle = crop.watered ? '#5ab0ff' : '#ffc84a';
+      ctx.fillStyle = '#5ab0ff';
       ctx.fillRect(px + 8, py + TILE - 10, barW * progress, 5);
+    } else {
+      // Un-watered: a small blue water-drop reminder instead of a
+      // progress bar, so it's visually obvious the crop is just waiting,
+      // not silently growing on its own.
+      ctx.save();
+      ctx.font = `${Math.floor(TILE * 0.28)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = 0.75 + Math.sin(t * 2) * 0.2;
+      ctx.fillText('💧', px + TILE - 12, py + 12);
+      ctx.restore();
     }
   }
 

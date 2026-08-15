@@ -90,6 +90,7 @@
       <button class="icon-btn" id="friends-btn" title="Friends">👥</button>
       <button class="icon-btn" id="settings-btn" title="Account Settings">⚙️</button>
       <button class="icon-btn" id="home-btn" title="My Farm">🏡</button>
+      <a class="icon-btn" id="discord-btn" href="https://discord.gg/rJGUMAbVC" target="_blank" rel="noopener noreferrer" title="Join our Discord">🔗</a>
       <button class="icon-btn" id="logout-btn" title="Log out">🚪</button>
     </div>
   </header>
@@ -117,6 +118,12 @@
   <div id="market-banner" class="visiting-banner market-banner hidden">
     <span>🏪 The Marketplace — tap a stall to buy or manage it</span>
     <button class="btn btn-small" id="market-exit-btn">Leave Market</button>
+  </div>
+
+  <!-- CENTRAL PARK BANNER -->
+  <div id="park-banner" class="visiting-banner market-banner hidden">
+    <span>🌳 Central Park — hang out and tap a bench to sit</span>
+    <button class="btn btn-small" id="park-exit-btn">Leave Park</button>
   </div>
 
   <!-- FARM CANVAS -->
@@ -166,6 +173,9 @@
     </button>
     <button class="tool-btn" data-tool="marketplace" title="Marketplace">
       <span class="tool-icon">🏪</span><span class="tool-label">Market</span>
+    </button>
+    <button class="tool-btn" data-tool="park" title="Central Park">
+      <span class="tool-icon">🌳</span><span class="tool-label">Park</span>
     </button>
     <button class="tool-btn" data-tool="inventory" title="Inventory">
       <span class="tool-icon">🎒</span><span class="tool-label">Bag</span>

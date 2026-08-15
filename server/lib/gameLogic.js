@@ -40,6 +40,13 @@ function initFarmTiles(db, farmId, width, height) {
 // Resolve (lazily update) crop states for a farm based on server time.
 // This is called whenever a farm is loaded/queried so growth is always accurate
 // regardless of whether the owner was online.
+// How long a crop is allowed to sit before it's considered abandoned:
+//  - UNWATERED crops die outright 3 hours after being planted.
+//  - Crops that finished growing but sat un-harvested for 2 hours past
+//    that wither instead (still visible/clearable, just yield nothing).
+const CROP_DEATH_UNWATERED_SECONDS = 3 * 3600;
+const CROP_WITHER_UNHARVESTED_SECONDS = 2 * 3600;
+
 function resolveCropStates(db, farmId) {
   const t = nowSec();
   // A crop only actually finishes growing once it's been watered at least
@@ -48,11 +55,27 @@ function resolveCropStates(db, farmId) {
   // watered it at all. Requiring `watered = 1` here means an un-watered
   // crop just sits at 100% progress and waits, instead of quietly
   // finishing anyway.
-  const stmt = db.prepare(`
+  db.prepare(`
     UPDATE crops SET state = 'ready'
     WHERE farm_id = ? AND state = 'growing' AND watered = 1 AND growth_end_at <= ?
-  `);
-  stmt.run(farmId, t);
+  `).run(farmId, t);
+
+  // Left un-watered too long: the seed just dies. Cleared by re-plowing
+  // over it (or tapping Harvest, which yields nothing for a dead crop —
+  // see the /harvest route).
+  db.prepare(`
+    UPDATE crops SET state = 'dead'
+    WHERE farm_id = ? AND state = 'growing' AND watered = 0 AND ? - planted_at > ?
+  `).run(farmId, t, CROP_DEATH_UNWATERED_SECONDS);
+
+  // Fully grown but left un-harvested too long: it wilts on the vine
+  // instead of waiting forever. growth_end_at doubles as "the moment it
+  // became ready" here (that's when the 'ready' transition above fires),
+  // so wither timing is measured from there.
+  db.prepare(`
+    UPDATE crops SET state = 'withered'
+    WHERE farm_id = ? AND state = 'ready' AND ? - growth_end_at > ?
+  `).run(farmId, t, CROP_WITHER_UNHARVESTED_SECONDS);
 }
 
 // Resolve animal production readiness is handled inline at read-time (see routes/farm.js)

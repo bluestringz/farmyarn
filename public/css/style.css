@@ -293,6 +293,9 @@ button { font-family: inherit; cursor: pointer; }
   background: var(--cream);
   font-size: 17px;
   display: flex; align-items: center; justify-content: center;
+  text-decoration: none; /* .icon-btn is also used as an <a> (Discord link) — no underline/link color */
+  color: inherit;
+  cursor: pointer;
 }
 .badge {
   position: absolute;
@@ -838,7 +841,19 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
 
 /* ---- Responsive (phones) ---- */
 @media (max-width: 640px) {
-  .topbar { padding: 6px 8px; gap: 8px; }
+  .topbar {
+    padding: 6px 8px;
+    gap: 6px 8px;
+    /* Player info + stats + action icons no longer all fit on one line on
+       a narrow phone — wrapping onto a second line (rather than letting
+       icons silently overflow off-screen, which is what was happening
+       before) means every button stays reachable without needing to
+       scroll or guess that there's more off to the side. */
+    flex-wrap: wrap;
+  }
+  .topbar-player { flex: 1 1 100%; } /* avatar+name+XP bar always gets its own full-width first line */
+  .topbar-stats { flex: 1 1 auto; }
+  .topbar-actions { flex: 0 1 auto; margin-left: auto; }
   .avatar-badge { width: 32px; height: 32px; font-size: 16px; }
   .xp-bar-track { width: 64px; height: 12px; }
   .player-name { font-size: 13px; }

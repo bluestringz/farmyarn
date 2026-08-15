@@ -277,7 +277,7 @@
   }
 
   async function refreshCurrentFarm() {
-    if (state.inHouse || state.inMarket) return; // interior/market don't need the outdoor refresh
+    if (state.inHouse || state.inMarket || state.inPark) return; // interior/market/park don't need the outdoor refresh
     if (state.viewingUserId) await loadFarm(state.viewingUserId);
     else await loadOwnFarm();
   }
@@ -408,6 +408,7 @@
     if (tool === 'inventory') { openInventory(); return; }
     if (tool === 'expand') { doExpand(); return; }
     if (tool === 'marketplace') { enterMarket(); return; }
+    if (tool === 'park') { enterPark(); return; }
 
     if (state.inHouse) {
       if (tool === 'decorate') { setTool(state.tool === 'decorate' ? null : 'decorate'); return; }
@@ -695,10 +696,15 @@
         if (state.viewingUserId || state.inHouse) return;
         game.walkTo(x, y, null);
         const res = await Api.harvest(x, y);
-        await refreshPlayer();
-        UI.toast(res.seedReturned
-          ? `Harvested ${res.harvested}! +${res.reward.xp} XP — got a free seed back! 🌱`
-          : `Harvested ${res.harvested}! +${res.reward.xp} XP`);
+        if (res.cleared) {
+          // Dead/withered crop — cleared with no yield, no XP/energy spent.
+          UI.toast(res.message);
+        } else {
+          await refreshPlayer();
+          UI.toast(res.seedReturned
+            ? `Harvested ${res.harvested}! +${res.reward.xp} XP — got a free seed back! 🌱`
+            : `Harvested ${res.harvested}! +${res.reward.xp} XP`);
+        }
         game.playAction(ACTION_ICON.harvest);
         await refreshCurrentFarm();
       } else if ((state.tool === 'build' || state.tool === 'decorate') && state.buildSelection) {
@@ -1060,6 +1066,61 @@
     await loadOwnFarm(); // rejoins the outdoor farm space
   }
 
+  // Central Park — a shared hangout space like the Marketplace (everyone
+  // in it sees everyone else move around), just with fixed benches
+  // instead of stalls. No server data to fetch — the layout is fixed and
+  // known entirely client-side (see PARK_WIDTH/HEIGHT/PARK_BENCH_POSITIONS
+  // in game.js) — so entering it is simpler than the market or a farm.
+  async function enterPark() {
+    if (state.viewingUserId) { UI.toast("Leave your friend's farm first"); return; }
+    if (state.inHouse) await exitHouse();
+    game.setParkMode();
+    game.onParkBenchClick = handleParkBenchClick;
+    state.inPark = true;
+    joinSpace('park');
+    setTool(null);
+    document.getElementById('park-banner').classList.remove('hidden');
+    document.getElementById('visiting-banner').classList.add('hidden');
+  }
+
+  async function exitPark() {
+    if (state.me.isResting) {
+      try {
+        const res = await Api.stopResting();
+        state.me.isResting = res.resting;
+        state.me.energy = res.energy;
+        renderTopbar();
+      } catch (err) { /* non-critical */ }
+    }
+    game.setRestPose(null);
+    game.exitParkMode();
+    state.inPark = false;
+    document.getElementById('park-banner').classList.add('hidden');
+    await loadOwnFarm(); // rejoins the outdoor farm space
+  }
+
+  async function handleParkBenchClick(bench) {
+    game.walkTo(bench.x, bench.y, null);
+    try {
+      if (state.me.isResting) {
+        const res = await Api.stopResting();
+        state.me.isResting = res.resting;
+        state.me.energy = res.energy;
+        game.setRestPose(null);
+        UI.toast('You got up.');
+      } else {
+        game.setRestPose('sit', bench.x + 0.5, bench.y + 0.5);
+        const res = await Api.startResting();
+        state.me.isResting = res.resting;
+        state.me.energy = res.energy;
+        UI.toast('Sitting down — energy regenerates faster. Tap the bench again to get up.');
+      }
+      renderTopbar();
+    } catch (err) {
+      UI.toast(err.message);
+    }
+  }
+
   async function refreshMarketStalls() {
     const stalls = await Api.marketplace();
     state.marketStalls = stalls;
@@ -1163,6 +1224,7 @@
     document.getElementById('house-exit-btn').addEventListener('click', exitHouse);
     document.getElementById('coop-exit-btn').addEventListener('click', exitHouse);
     document.getElementById('market-exit-btn').addEventListener('click', exitMarket);
+    document.getElementById('park-exit-btn').addEventListener('click', exitPark);
     document.getElementById('daily-reward-btn').addEventListener('click', claimDailyReward);
     refreshNotifBadge();
     setInterval(refreshNotifBadge, 15000);
