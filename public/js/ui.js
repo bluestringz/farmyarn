@@ -122,11 +122,11 @@ const UI = (() => {
     ).join('');
 
     if (activeCategory === 'outfits') {
-      // These four never got real matching artwork (they just fell back to
+      // These items never got real matching artwork (they just fell back to
       // showing the classic look), which made them pointless/misleading —
       // hidden here now that real illustrated costumes exist. Not removed
       // from the database, so anyone who already owns/wears one keeps it.
-      const PLACEHOLDER_OUTFITS = new Set(['red_flannel', 'blue_dungarees', 'straw_worker', 'harvest_gold']);
+      const PLACEHOLDER_OUTFITS = new Set(['red_flannel', 'blue_dungarees', 'straw_worker', 'harvest_gold', 'meadow_dress', 'sunflower_dress']);
       const items = (catalog.outfits || [])
         .filter((o) => o.gender === 'unisex' || o.gender === player.gender)
         .filter((o) => !PLACEHOLDER_OUTFITS.has(o.id));
