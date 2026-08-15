@@ -786,6 +786,13 @@ class FarmGame {
     };
 
     const pointerUp = (e) => {
+      // A touch on mobile fires BOTH 'touchend' and a synthetic 'mouseup'
+      // right after it (browser compatibility shim for old code that only
+      // listens for mouse events) — without this, a single tap called
+      // pointerUp/_handleTap TWICE in a row, which for a toggle-style
+      // action like plow (grass<->plowed) looked like "tapping barely did
+      // anything" since the second call immediately flipped it back.
+      if (e.type === 'touchend' || e.type === 'touchcancel') e.preventDefault();
       this._pinchDist = null;
       if (this._rightDragging) {
         this._rightDragging = false;
