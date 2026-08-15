@@ -41,11 +41,11 @@ function initFarmTiles(db, farmId, width, height) {
 // This is called whenever a farm is loaded/queried so growth is always accurate
 // regardless of whether the owner was online.
 // How long a crop is allowed to sit before it's considered abandoned:
-//  - UNWATERED crops die outright 3 hours after being planted.
-//  - Crops that finished growing but sat un-harvested for 2 hours past
+//  - UNWATERED crops die outright 1 day after being planted.
+//  - Crops that finished growing but sat un-harvested for 1 day past
 //    that wither instead (still visible/clearable, just yield nothing).
-const CROP_DEATH_UNWATERED_SECONDS = 3 * 3600;
-const CROP_WITHER_UNHARVESTED_SECONDS = 2 * 3600;
+const CROP_DEATH_UNWATERED_SECONDS = 24 * 3600;
+const CROP_WITHER_UNHARVESTED_SECONDS = 24 * 3600;
 
 function resolveCropStates(db, farmId) {
   const t = nowSec();
