@@ -168,7 +168,7 @@ const UI = (() => {
         </div>
       `;
 
-      body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">Costumes are 7-day rentals paid in 💎 Premium Points — renewing early adds the days on top of what you have left instead of resetting the clock.</p><div class="shop-grid">${cards}</div>${changeNameSection}`;
+      body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">Costumes are 7-day rentals paid in 💎 Premium Points — you can rent a new one once the current 7 days runs out.</p><div class="shop-grid">${cards}</div>${changeNameSection}`;
 
       body.querySelectorAll('canvas[data-preview-outfit]').forEach((canvas) => {
         const outfit = items.find((o) => o.id === canvas.dataset.previewOutfit);
