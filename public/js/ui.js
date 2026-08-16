@@ -600,10 +600,10 @@ const UI = (() => {
   function renderSiloPanel(wheatOwned, onCraft) {
     const body = panelBody();
     const recipes = [
-      { animalType: 'chicken', feedName: 'Chicken Feed', wheatCost: 2, icon: '🐔' },
-      { animalType: 'sheep',   feedName: 'Sheep Feed',   wheatCost: 4, icon: '🐑' },
-      { animalType: 'pig',     feedName: 'Pig Feed',     wheatCost: 5, icon: '🐷' },
-      { animalType: 'cow',     feedName: 'Cow Feed',     wheatCost: 6, icon: '🐄' },
+      { animalType: 'chicken', feedName: 'Chicken Feed', wheatCost: 1, icon: '🐔' },
+      { animalType: 'sheep',   feedName: 'Sheep Feed',   wheatCost: 3, icon: '🐑' },
+      { animalType: 'pig',     feedName: 'Pig Feed',     wheatCost: 4, icon: '🐷' },
+      { animalType: 'cow',     feedName: 'Cow Feed',     wheatCost: 5, icon: '🐄' },
     ];
     body.innerHTML = `
       <p class="panel-hint">You have 🌾 ${wheatOwned} wheat. Turn it into feed here, then feed your animals before collecting from them.</p>

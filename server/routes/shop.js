@@ -291,10 +291,10 @@ module.exports = function shopRoutes(db) {
   // up for bigger animals. Matches "no feeds = no eggs": collecting from an
   // animal now requires having fed it since its last collection.
   const FEED_RECIPES = {
-    chicken: { wheatCost: 2, feedItemId: 'chicken_feed' },
-    sheep: { wheatCost: 4, feedItemId: 'sheep_feed' },
-    pig: { wheatCost: 5, feedItemId: 'pig_feed' },
-    cow: { wheatCost: 6, feedItemId: 'cow_feed' },
+    chicken: { wheatCost: 1, feedItemId: 'chicken_feed' },
+    sheep: { wheatCost: 3, feedItemId: 'sheep_feed' },
+    pig: { wheatCost: 4, feedItemId: 'pig_feed' },
+    cow: { wheatCost: 5, feedItemId: 'cow_feed' },
   };
 
   // POST /api/shop/craft-feed { animalType, quantity } — requires owning a
