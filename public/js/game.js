@@ -1051,7 +1051,7 @@ class FarmGame {
       this._drawIndoorRoom();
       this._drawIndoorObjects();
       this._drawGhost();
-      this._drawCharacter();
+      this._drawPeopleSorted();
       this._drawCharacterOverlay();
       ctx.restore();
       return;

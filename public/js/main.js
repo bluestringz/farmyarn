@@ -306,7 +306,15 @@
     game.setInteriorMode(interior);
     state.inHouse = true;
     state.interiorSpace = { buildingType: interior.buildingType, buildingId: interior.buildingId || null, location: interior.location };
-    leaveCurrentSpace(); // interiors are private — no shared presence
+    // Shared presence for interiors too — a visitor and the owner (or two
+    // visitors) standing in the SAME specific room now actually see each
+    // other move around, the same way farm/market/park already work.
+    // interior.location is already unique per specific building (see
+    // server/lib/interiorSpaces.js), so keying on
+    // "interior:<ownerId>:<location>" naturally puts everyone looking at
+    // that exact room together without colliding with a different one.
+    const ownerId = state.viewingUserId || state.me.id;
+    joinSpace(`interior:${ownerId}:${interior.location}`);
     clearPendingPlacement();
     setTool(null);
     const label = { chicken_coop: 'chicken coop', cow_barn: 'cow barn', barn: 'barn', farmhouse: 'house' };

@@ -335,16 +335,36 @@ function addColumnsIfMissing(db) {
     UPDATE users SET equipped_outfit = 'classic_overalls'
     WHERE equipped_outfit IN ('red_flannel', 'blue_dungarees', 'straw_worker', 'harvest_gold')
   `);
-  // One-time top-up for accounts still stuck at the OLD energy ceiling (20)
-  // from before this update — new energy default is 1000 (see MAX_ENERGY
-  // in lib/gameLogic.js). Deliberately checks "<= 20" rather than "< 1000":
-  // this runs on every server start, so topping up to 1000 whenever energy
-  // is merely below 1000 would undo completely normal gameplay spending
-  // every time the server restarts. Old accounts could only ever reach 20,
-  // so anyone still at or under that old ceiling gets bumped to the new
-  // baseline; anyone who has already spent energy under the new system
-  // (which can be anywhere from 0-1000) is left alone.
-  db.exec('UPDATE users SET energy = 1000 WHERE energy <= 20');
+  // ONE-TIME top-up for accounts still stuck at the OLD energy ceiling
+  // (20) from before this update — new energy default is 1000 (see
+  // MAX_ENERGY in lib/gameLogic.js).
+  //
+  // BUG FIX: this used to check "energy <= 20" as a proxy for "this must
+  // be an old stuck account" — but that's actually really easy for a
+  // genuinely active player to hit through completely normal play (energy
+  // only regenerates 1 per 3 minutes, so someone plowing/planting/
+  // watering/harvesting a lot can easily run their energy down to 20 or
+  // below). Since this runs on every server start, and this game gets
+  // redeployed often, active players kept getting their energy silently
+  // reset back up to 1000 any time a deploy happened to land while their
+  // energy was already low from normal spending — NOT what "one-time
+  // top-up" was supposed to mean. Fixed by using an actual one-time flag
+  // column instead of re-deriving "is this an old account" from a energy
+  // value that legitimately changes during normal play.
+  const migrationCols = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
+  if (!migrationCols.includes('energy_v2_migrated')) {
+    db.exec('ALTER TABLE users ADD COLUMN energy_v2_migrated INTEGER NOT NULL DEFAULT 0');
+  }
+  db.exec(`
+    UPDATE users SET energy = 1000, energy_v2_migrated = 1
+    WHERE energy_v2_migrated = 0 AND energy <= 20
+  `);
+  // Accounts that were already above the old 20-point ceiling when this
+  // shipped (meaning they'd already been topped up some other way, or are
+  // fresh registrations that start at 1000 anyway) never needed the
+  // top-up — just mark them done so this UPDATE has nothing left to touch
+  // on future restarts, matching the "only ever runs once" intent.
+  db.exec('UPDATE users SET energy_v2_migrated = 1 WHERE energy_v2_migrated = 0');
 
   // One-time migration: coop/barn interiors used to be ONE shared room per
   // farm regardless of how many physical coop/barn buildings existed
