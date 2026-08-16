@@ -679,9 +679,10 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   font-size: 12px;
 }
 .shop-card button:disabled { background: #b7b7b7; }
-.shop-card .qty-row { width: 100%; margin-top: 2px; }
+.shop-card .qty-row { width: 100%; margin-top: 2px; display: flex; gap: 4px; }
 .shop-card .qty-input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   border: 2px solid var(--cream-dark);
   border-radius: 8px;
   padding: 5px;
@@ -691,6 +692,18 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   font-family: inherit;
 }
 .shop-card .qty-input:focus { outline: none; border-color: var(--leaf); }
+.shop-card .qty-max-btn {
+  flex-shrink: 0;
+  padding: 5px 8px;
+  border: 2px solid var(--leaf);
+  border-radius: 8px;
+  background: var(--leaf-light, #d7edb8);
+  color: var(--wood-dark);
+  font-weight: 800;
+  font-size: 11px;
+  cursor: pointer;
+}
+.shop-card .qty-max-btn:hover { background: var(--leaf); color: #fff; }
 
 /* Lists (inventory, friends, notifications) */
 .list-row {

@@ -207,9 +207,12 @@ const UI = (() => {
       const glyphMap = { crops: '🌱', buildings: '🏗️', animals: '🐾', decorations: '🌷', interiors: '🛋️' };
       const durationLine = isCrops ? `<div class="shop-level">⏱ ${formatDuration(item.growth_seconds)} to harvest</div>` : '';
       // Seeds are the one thing people buy in bulk (to plant a whole field
-      // at once) — give them a quantity field instead of one-click-at-a-time.
+      // at once) — give them a quantity field instead of one-click-at-a-time,
+      // plus a MAX button that fills in exactly as many as their coins can
+      // cover so they're not stuck guessing/doing the division themselves.
+      const maxAffordable = Math.max(1, Math.min(99, Math.floor(player.coins / cost)));
       const qtyRow = isCrops && !locked
-        ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${item.id}"></div>`
+        ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
         : '';
       return `
         <div class="shop-card">
@@ -237,11 +240,17 @@ const UI = (() => {
     body.querySelectorAll('.shop-tab').forEach((btn) => {
       btn.addEventListener('click', () => onCategoryChange(btn.dataset.cat));
     });
-    body.querySelectorAll('.shop-card button').forEach((btn) => {
+    body.querySelectorAll('.shop-card button[data-item]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const qtyInput = body.querySelector(`input[data-qty-for="${btn.dataset.item}"]`);
         const qty = qtyInput ? Math.max(1, Math.min(99, parseInt(qtyInput.value, 10) || 1)) : 1;
         onBuy(buyCategory, btn.dataset.item, qty);
+      });
+    });
+    body.querySelectorAll('.qty-max-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const input = body.querySelector(`input[data-qty-for="${btn.dataset.maxFor}"]`);
+        if (input) input.value = btn.dataset.maxValue;
       });
     });
   }
@@ -599,17 +608,26 @@ const UI = (() => {
     body.innerHTML = `
       <p class="panel-hint">You have 🌾 ${wheatOwned} wheat. Turn it into feed here, then feed your animals before collecting from them.</p>
       <div class="shop-grid">
-        ${recipes.map((r) => `
+        ${recipes.map((r) => {
+          const maxAffordable = Math.max(1, Math.min(99, Math.floor(wheatOwned / r.wheatCost)));
+          return `
           <div class="shop-card">
             <div class="shop-icon">${r.icon}</div>
             <div class="shop-name">${r.feedName}</div>
             <div class="shop-price">🌾 ${r.wheatCost} wheat each</div>
-            <div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${r.animalType}"></div>
-            <button data-animal="${r.animalType}">Make Feed</button>
-          </div>`).join('')}
+            <div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${r.animalType}"><button type="button" class="qty-max-btn" data-max-for="${r.animalType}" data-max-value="${maxAffordable}">MAX</button></div>
+            <button data-animal="${r.animalType}" ${wheatOwned < r.wheatCost ? 'disabled' : ''}>Make Feed</button>
+          </div>`;
+        }).join('')}
       </div>
     `;
-    body.querySelectorAll('.shop-card button').forEach((btn) => {
+    body.querySelectorAll('.qty-max-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const input = body.querySelector(`input[data-qty-for="${btn.dataset.maxFor}"]`);
+        if (input) input.value = btn.dataset.maxValue;
+      });
+    });
+    body.querySelectorAll('.shop-card button[data-animal]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const qtyInput = body.querySelector(`input[data-qty-for="${btn.dataset.animal}"]`);
         const qty = qtyInput ? Math.max(1, Math.min(99, parseInt(qtyInput.value, 10) || 1)) : 1;
@@ -637,18 +655,28 @@ const UI = (() => {
     body.innerHTML = `
       <p class="panel-hint">Cook harvested crops or animal products into food — eating food restores ⚡ Energy, which you need to plow/plant/water.</p>
       <div class="shop-grid">
-        ${recipes.map((r) => `
+        ${recipes.map((r) => {
+          const owned = ownedOf(r.cropType);
+          const maxAffordable = Math.max(1, Math.min(99, Math.floor(owned / r.cropCost)));
+          return `
           <div class="shop-card">
             <div class="shop-icon">${r.icon}</div>
             <div class="shop-name">${r.foodName}</div>
             <div class="shop-price">${r.cropCost} ${r.cropType} → ⚡+${r.energy}</div>
-            <div class="shop-level">You have: ${ownedOf(r.cropType)}</div>
-            <div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${r.cropType}"></div>
-            <button data-crop="${r.cropType}" ${ownedOf(r.cropType) < r.cropCost ? 'disabled' : ''}>Cook</button>
-          </div>`).join('')}
+            <div class="shop-level">You have: ${owned}</div>
+            <div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${r.cropType}"><button type="button" class="qty-max-btn" data-max-for="${r.cropType}" data-max-value="${maxAffordable}">MAX</button></div>
+            <button data-crop="${r.cropType}" ${owned < r.cropCost ? 'disabled' : ''}>Cook</button>
+          </div>`;
+        }).join('')}
       </div>
     `;
-    body.querySelectorAll('.shop-card button').forEach((btn) => {
+    body.querySelectorAll('.qty-max-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const input = body.querySelector(`input[data-qty-for="${btn.dataset.maxFor}"]`);
+        if (input) input.value = btn.dataset.maxValue;
+      });
+    });
+    body.querySelectorAll('.shop-card button[data-crop]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const qtyInput = body.querySelector(`input[data-qty-for="${btn.dataset.crop}"]`);
         const qty = qtyInput ? Math.max(1, Math.min(99, parseInt(qtyInput.value, 10) || 1)) : 1;

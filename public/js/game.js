@@ -86,10 +86,13 @@ const PARK_TREE_POSITIONS = [
   { x: 7, y: 1 }, { x: 8, y: 12 },
 ];
 // Snack carts — tap one to buy straight into your Bag (see main.js's
-// handleParkCartClick / /api/farm/park-buy-snack).
+// handleParkCartClick / /api/farm/park-buy-snack). Placed together near
+// the tree in the upper-left corner (with some breathing room between
+// them) so they read as a little snack corner instead of being scattered
+// randomly across the park.
 const PARK_CART_POSITIONS = [
-  { x: 1, y: 6, itemId: 'ice_cream', label: 'Ice Cream 🍦', cost: 75 },
-  { x: 14, y: 6, itemId: 'hotdog', label: 'Hotdog 🌭', cost: 100 },
+  { x: 2, y: 3, itemId: 'ice_cream', label: 'Ice Cream 🍦', cost: 75 },
+  { x: 4, y: 3, itemId: 'hotdog', label: 'Hotdog 🌭', cost: 100 },
 ];
 
 const MARKET_STALL_POSITIONS = (() => {
@@ -1474,8 +1477,10 @@ class FarmGame {
         // Animals housed in the coop/barn interior render the same way
         // they do outdoors, "ready to collect" glow included.
         const last = obj.last_collected_at || obj.created_at;
-        const ready = t >= last + (this._animalProdSeconds(obj.item_id) || 600) && this._isAnimalFed(obj);
+        const fed = this._isAnimalFed(obj);
+        const ready = t >= last + (this._animalProdSeconds(obj.item_id) || 600) && fed;
         this._drawAnimal(px, py, pw, ph, obj.item_id, ready, obj.rotation || 0);
+        this._drawFeedIndicator(px, py, pw, fed, ready);
       } else {
         this._drawFurniture(px, py, pw, ph, obj.item_id, obj.rotation || 0);
       }
@@ -2174,8 +2179,10 @@ class FarmGame {
       this._drawDecoration(px, py, pw, ph, obj.item_id, obj.rotation || 0, obj.grid_x, obj.grid_y, this.farm.objects, growthState);
     } else if (obj.object_type === 'animal') {
       const last = obj.last_collected_at || obj.created_at;
-      const ready = t >= last + (this._animalProdSeconds(obj.item_id) || 600) && this._isAnimalFed(obj);
+      const fed = this._isAnimalFed(obj);
+      const ready = t >= last + (this._animalProdSeconds(obj.item_id) || 600) && fed;
       this._drawAnimal(px, py, pw, ph, obj.item_id, ready, obj.rotation || 0);
+      this._drawFeedIndicator(px, py, pw, fed, ready);
     }
   }
 
@@ -2487,6 +2494,31 @@ class FarmGame {
     try { state = JSON.parse(obj.state); } catch (e) { return false; }
     const last = obj.last_collected_at || obj.created_at;
     return !!(state.lastFed && state.lastFed >= last);
+  }
+
+  // Small badge above the animal showing feed status at a glance: an
+  // orange "🍽️" bubble while it still needs feeding, a green "✓" once fed
+  // and just waiting on its production timer. Once ready (fed AND timer
+  // done), the existing ready-glow already communicates that clearly on
+  // its own, so this badge steps aside rather than layering on top of it.
+  _drawFeedIndicator(px, py, pw, fed, ready) {
+    if (ready) return;
+    const ctx = this.ctx;
+    const cx = px + pw / 2, cy = py - 6;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+    ctx.fillStyle = fed ? '#4f8f2e' : '#e8a527';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(fed ? '✓' : '!', cx, cy + 1);
+    ctx.restore();
   }
 
   _groundShadow(px, py, pw, ph) {
