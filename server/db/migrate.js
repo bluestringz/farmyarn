@@ -500,10 +500,10 @@ function seedContent(db) {
       production_seconds=excluded.production_seconds, sprite=excluded.sprite
   `);
   const animals = [
-    { id: 'chicken', name: 'Chicken', cost: 100, required_level: 2, product_item_id: 'egg',   production_seconds: 600,  sprite: 'chicken' },
-    { id: 'cow',     name: 'Cow',     cost: 400, required_level: 5, product_item_id: 'milk',  production_seconds: 1800, sprite: 'cow' },
-    { id: 'sheep',   name: 'Sheep',   cost: 300, required_level: 4, product_item_id: 'wool',  production_seconds: 1500, sprite: 'sheep' },
-    { id: 'pig',     name: 'Pig',     cost: 250, required_level: 3, product_item_id: 'truffle', production_seconds: 1200, sprite: 'pig' },
+    { id: 'chicken', name: 'Chicken', cost: 100, required_level: 2, product_item_id: 'egg',   production_seconds: 6 * 3600,  sprite: 'chicken' },
+    { id: 'cow',     name: 'Cow',     cost: 400, required_level: 5, product_item_id: 'milk',  production_seconds: 9 * 3600, sprite: 'cow' },
+    { id: 'sheep',   name: 'Sheep',   cost: 300, required_level: 4, product_item_id: 'wool',  production_seconds: 8 * 3600, sprite: 'sheep' },
+    { id: 'pig',     name: 'Pig',     cost: 250, required_level: 3, product_item_id: 'truffle', production_seconds: 7 * 3600, sprite: 'pig' },
   ];
   const txAnimals = db.transaction((rows) => rows.forEach((r) => upsertAnimal.run(r)));
   txAnimals(animals);

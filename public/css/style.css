@@ -693,7 +693,9 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
 }
 .shop-card .qty-input:focus { outline: none; border-color: var(--leaf); }
 .shop-card .qty-max-btn {
+  width: auto; /* the general ".shop-card button { width: 100% }" rule was winning otherwise — with flex-basis defaulting to the element's own width, "100%" made it try to fill the ENTIRE row before flex even got a say, which is why it was rendering huge regardless of the flex/padding/font-size settings below */
   flex: 0 0 auto;
+  margin-top: 0;
   padding: 3px 6px;
   border: 2px solid var(--leaf);
   border-radius: 8px;
