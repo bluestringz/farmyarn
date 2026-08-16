@@ -451,6 +451,16 @@
     document.querySelectorAll('.tool-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.tool === tool);
     });
+    // Swap the canvas cursor to match, so the pointer itself shows what
+    // you're about to do to a tile — same tiny icon set as ACTION_ICON.
+    const canvas = document.getElementById('farm-canvas');
+    canvas.classList.remove('tool-plow', 'tool-plant', 'tool-water', 'tool-harvest', 'tool-build', 'tool-feed');
+    const CURSOR_TOOLS = new Set(['plow', 'plant', 'water', 'harvest', 'build', 'feed']);
+    if (tool && CURSOR_TOOLS.has(tool)) canvas.classList.add(`tool-${tool}`);
+    // Watering supports hold-and-drag across a whole plot instead of one
+    // tap per tile — every other tool keeps the normal single-tap
+    // behavior (a drag still just pans the map for those).
+    game.setDragActEnabled(tool === 'water');
     document.getElementById('seed-picker').classList.add('hidden');
     document.getElementById('build-picker').classList.add('hidden');
 

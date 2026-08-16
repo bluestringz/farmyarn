@@ -166,6 +166,9 @@ class FarmGame {
     this.interior = null; // { width, height, objects, serverTime } when mode === 'indoor'
     this.market = null; // { stalls } when mode === 'market'
     this.onTileClick = null; // callback(x, y)
+    this.dragActEnabled = false; // when true (water tool active — see setDragActEnabled), holding
+    // and dragging across tiles calls onTileClick for each NEW tile the
+    // pointer passes over, instead of the drag panning the map.
     this.onObjectClick = null; // callback(object)
     this.onMarketStallClick = null; // callback(stall)
     this.onParkBenchClick = null; // callback(benchPosition)
@@ -448,6 +451,15 @@ class FarmGame {
       c.path = []; c.moving = false;
       c.facingDir = 'down';
     }
+  }
+
+  // Enable/disable "hold and drag to keep acting on each tile" — used for
+  // the water tool specifically, so watering a whole plot doesn't require
+  // tapping every single tile one at a time. Off for every other tool,
+  // where a drag still means "pan the map" as usual.
+  setDragActEnabled(enabled) {
+    this.dragActEnabled = enabled;
+    this._lastDragActedTile = null;
   }
 
   // A little watering-can-tips-and-sprinkles animation over a specific
@@ -783,6 +795,22 @@ class FarmGame {
       const dx = pos.x - this._lastPointer.x;
       const dy = pos.y - this._lastPointer.y;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._dragMoved = true;
+
+      // Water tool: acting on each new tile the pointer passes over,
+      // instead of panning — lets you hold and drag across a whole plot
+      // to water it in one motion rather than tapping tile by tile.
+      if (this.dragActEnabled && this.onTileClick) {
+        const world = this.screenToWorld(pos.x, pos.y);
+        const tile = this.worldToTile(world.x, world.y);
+        const last = this._lastDragActedTile;
+        if (!last || last.x !== tile.x || last.y !== tile.y) {
+          this._lastDragActedTile = tile;
+          this.onTileClick(tile.x, tile.y);
+        }
+        this._lastPointer = pos;
+        return;
+      }
+
       // Touch has no right-click equivalent, so a one-finger drag pans the
       // map directly (this is safe on touch specifically: a real tap never
       // triggers noticeable movement, so it doesn't fight with tap-to-act).
@@ -810,6 +838,7 @@ class FarmGame {
       }
       if (!this._dragging) return;
       this._dragging = false;
+      this._lastDragActedTile = null;
       if (!this._dragMoved) {
         const pos = this._lastPointer;
         this._handleTap(pos.x, pos.y);
