@@ -117,10 +117,14 @@ const Api = (() => {
     deleteObject: (objectId) => request('DELETE', `/api/shop/object/${objectId}`),
     collectAnimal: (objectId) => request('POST', '/api/shop/collect-animal', { objectId }),
     craftFeed: (animalType, quantity) => request('POST', '/api/shop/craft-feed', { animalType, quantity }),
+    craftFurniture: (furnitureType, quantity) => request('POST', '/api/shop/craft-furniture', { furnitureType, quantity }),
     feedAnimal: (objectId) => request('POST', '/api/shop/feed-animal', { objectId }),
     cook: (cropType, quantity, atFarmId) => request('POST', '/api/farm/cook', { cropType, quantity, atFarmId }),
     eat: (foodItemId) => request('POST', '/api/farm/eat', { foodItemId }),
     buyParkSnack: (itemId) => request('POST', '/api/farm/park-buy-snack', { itemId }),
+    storage: () => request('GET', '/api/farm/storage'),
+    storageDeposit: (itemId, quantity) => request('POST', '/api/farm/storage-deposit', { itemId, quantity }),
+    storageWithdraw: (itemId, quantity) => request('POST', '/api/farm/storage-withdraw', { itemId, quantity }),
 
     // Marketplace (player-to-player)
     marketplace: () => request('GET', '/api/marketplace'),

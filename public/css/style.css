@@ -451,17 +451,18 @@ button { font-family: inherit; cursor: pointer; }
 #farm-canvas { display: block; width: 100%; height: 100%; cursor: grab; }
 #farm-canvas:active { cursor: grabbing; }
 /* Cursor changes to match the active tool — set via a class on the canvas
-   in main.js's setTool(). Each is an emoji rendered as a tiny inline SVG,
-   since plain emoji characters aren't a valid CSS cursor value on their
-   own; the hotspot (last two numbers) is roughly the emoji's visual
-   center so it points at the tile you're actually about to affect. Falls
-   back to the normal pointer for tools with no obvious single-icon match
+   in main.js's setTool(). Plow/water/harvest are small custom-drawn SVG
+   icons (a hoe, a watering can, a sickle) rather than emoji, since none of
+   those three tools has a clean matching emoji glyph to reuse. The
+   hotspot (last two numbers) is roughly each icon's business end, so the
+   cursor actually points at the tile you're about to affect. Falls back
+   to the normal pointer for tools with no obvious single-icon match
    (move/remove/decorate) rather than forcing a cursor that would just be
    confusing. */
-#farm-canvas.tool-plow { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><text y="24" font-size="26">🚜</text></svg>') 8 24, pointer; }
+#farm-canvas.tool-plow { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><line x1="8" y1="4" x2="20" y2="22" stroke="%238b5e34" stroke-width="3" stroke-linecap="round"/><g transform="rotate(45 22 23)"><rect x="17" y="20" width="10" height="6" rx="1" fill="%239a9a9a" stroke="%23555555" stroke-width="1"/></g></svg>') 20 22, pointer; }
 #farm-canvas.tool-plant { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><text y="24" font-size="26">🌱</text></svg>') 8 24, pointer; }
-#farm-canvas.tool-water { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><text y="24" font-size="26">💧</text></svg>') 8 24, pointer; }
-#farm-canvas.tool-harvest { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><text y="24" font-size="26">🧺</text></svg>') 8 24, pointer; }
+#farm-canvas.tool-water { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><ellipse cx="14" cy="20" rx="9" ry="7" fill="%235a8fc9" stroke="%233f6a9c" stroke-width="1.5"/><path d="M21 14 L30 6 L28 4 L20 11 Z" fill="%235a8fc9" stroke="%233f6a9c" stroke-width="1"/><circle cx="29" cy="5" r="2" fill="%233f6a9c"/><path d="M8 12 Q2 6 8 2" fill="none" stroke="%233f6a9c" stroke-width="2"/></svg>') 29 5, pointer; }
+#farm-canvas.tool-harvest { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><path d="M12 28 Q2 18 10 6 Q18 0 26 6" fill="none" stroke="%23c0c0c0" stroke-width="3" stroke-linecap="round"/><line x1="12" y1="28" x2="20" y2="32" stroke="%238b5e34" stroke-width="3" stroke-linecap="round"/></svg>') 12 28, pointer; }
 #farm-canvas.tool-build { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><text y="24" font-size="26">🏗️</text></svg>') 8 24, pointer; }
 #farm-canvas.tool-feed { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><text y="24" font-size="26">🌾</text></svg>') 8 24, pointer; }
 

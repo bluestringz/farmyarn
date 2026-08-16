@@ -208,6 +208,18 @@ function migrate(db) {
     UNIQUE(user_id, item_id)
   );
 
+  -- A second, separate item pool from inventory (the Bag) — deposited at
+  -- the Storage Shed to declutter the Bag, withdrawn back whenever needed.
+  -- Same shape as inventory on purpose (item_id/quantity), just a
+  -- different "location" for the same kind of stack.
+  CREATE TABLE IF NOT EXISTS storage_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(user_id, item_id)
+  );
+
   CREATE TABLE IF NOT EXISTS friends (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -484,6 +496,7 @@ function seedContent(db) {
     { id: 'bush',       name: 'Bush',        cost: 15,  required_level: 1, width: 1, height: 1, sprite: 'bush', growable: 0, growth_seconds: 0 },
     { id: 'hay_bale',   name: 'Hay Bale',    cost: 10,  required_level: 1, width: 1, height: 1, sprite: 'hay', growable: 0, growth_seconds: 0 },
     { id: 'bench',      name: 'Bench',       cost: 40,  required_level: 2, width: 1, height: 1, sprite: 'bench', growable: 0, growth_seconds: 0 },
+    { id: 'crafted_bench', name: 'Crafted Bench', cost: 0, required_level: 1, width: 1, height: 1, sprite: 'bench', growable: 0, growth_seconds: 0 },
     { id: 'lamp',       name: 'Lamp Post',   cost: 60,  required_level: 2, width: 1, height: 1, sprite: 'lamp', growable: 0, growth_seconds: 0 },
     { id: 'sign',       name: 'Sign',        cost: 25,  required_level: 1, width: 1, height: 1, sprite: 'sign', growable: 0, growth_seconds: 0 },
     { id: 'path',       name: 'Path Tile',   cost: 8,   required_level: 1, width: 1, height: 1, sprite: 'path', growable: 0, growth_seconds: 0 },
@@ -585,6 +598,18 @@ function seedContent(db) {
     { id: 'fireplace', name: 'Fireplace',     cost: 200, required_level: 3, width: 1, height: 1, sprite: 'fireplace' },
     { id: 'stove',     name: 'Stove',         cost: 250, required_level: 1, width: 1, height: 1, sprite: 'stove' },
     { id: 'bookshelf', name: 'Bookshelf',     cost: 130, required_level: 2, width: 1, height: 1, sprite: 'bookshelf' },
+    // Workshop-crafted furniture — never bought with coins in the Shop
+    // (cost: 0, and hidden from the Shop's Interior tab in ui.js), made
+    // instead from Wood at the Workshop building. Same look as their
+    // store-bought counterparts (reuses the sprite) but a distinct id/name
+    // ("Crafted Bed" etc.) so they're tellable apart, and — unlike regular
+    // store-bought furniture — sellable at a Marketplace stall. The bench
+    // is NOT here — it's an outdoor decoration, not interior furniture, so
+    // its crafted version lives in the decoration_types seed data instead.
+    { id: 'crafted_chair',     name: 'Crafted Chair',     cost: 0, required_level: 1, width: 1, height: 1, sprite: 'chair' },
+    { id: 'crafted_bed',       name: 'Crafted Bed',       cost: 0, required_level: 1, width: 2, height: 1, sprite: 'bed' },
+    { id: 'crafted_cabinet',   name: 'Crafted Cabinet',   cost: 0, required_level: 1, width: 1, height: 1, sprite: 'cabinet' },
+    { id: 'crafted_bookshelf', name: 'Crafted Bookshelf', cost: 0, required_level: 1, width: 1, height: 1, sprite: 'bookshelf' },
   ];
   const txInterior = db.transaction((rows) => rows.forEach((r) => upsertInterior.run(r)));
   txInterior(interiorItems);

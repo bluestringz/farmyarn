@@ -354,6 +354,21 @@
     });
   }
 
+  async function openWorkshopPanel() {
+    const inv = await Api.inventory();
+    const woodRow = inv.find((row) => row.item_id === 'log');
+    UI.openPanel('Workshop — Craft Furniture');
+    UI.renderWorkshopPanel(woodRow ? woodRow.quantity : 0, async (furnitureType, qty) => {
+      try {
+        const res = await Api.craftFurniture(furnitureType, qty);
+        UI.toast(`Crafted ${res.quantity}x! (used ${res.woodSpent} wood) Check your Bag.`);
+        await openWorkshopPanel(); // refresh wood count shown
+      } catch (err) {
+        UI.toast(err.message);
+      }
+    });
+  }
+
   async function openStovePanel() {
     const inv = await Api.inventory();
     UI.openPanel('Stove — Cook Food');
@@ -366,6 +381,26 @@
         UI.toast(err.message);
       }
     });
+  }
+
+  async function openStoragePanel() {
+    const [bagItems, storageItems] = await Promise.all([Api.inventory(), Api.storage()]);
+    UI.openPanel('Storage Shed');
+    UI.renderStoragePanel(bagItems, storageItems,
+      async (itemId, qty) => {
+        try {
+          await Api.storageDeposit(itemId, qty);
+          UI.toast(`Stored ${qty}x`);
+          await openStoragePanel();
+        } catch (err) { UI.toast(err.message); }
+      },
+      async (itemId, qty) => {
+        try {
+          await Api.storageWithdraw(itemId, qty);
+          UI.toast(`Took out ${qty}x — check your Bag`);
+          await openStoragePanel();
+        } catch (err) { UI.toast(err.message); }
+      });
   }
 
   async function exitHouse() {
@@ -778,8 +813,8 @@
     // plain tap (no tool active) on any of them toggles it. Chair/bed are
     // house furniture (only usable indoors); the bench is an outdoor
     // decoration, usable out on the farm instead.
-    const REST_INTERIOR = new Set(['bed', 'chair']);
-    const REST_OUTDOOR = new Set(['bench']);
+    const REST_INTERIOR = new Set(['bed', 'chair', 'crafted_bed', 'crafted_chair']);
+    const REST_OUTDOOR = new Set(['bench', 'crafted_bench']);
     const isRestFurniture = (state.inHouse && obj.object_type === 'interior' && REST_INTERIOR.has(obj.item_id))
       || (!state.inHouse && obj.object_type === 'decoration' && REST_OUTDOOR.has(obj.item_id));
     if (isRestFurniture && !state.tool && !state.viewingUserId) {
@@ -833,6 +868,20 @@
         && state.tool !== 'build' && state.tool !== 'move' && state.tool !== 'remove') {
       game.walkTo(obj.grid_x, obj.grid_y, null);
       await openSiloPanel();
+      return;
+    }
+
+    if (obj.item_id === 'workshop' && obj.object_type === 'building' && !state.viewingUserId
+        && state.tool !== 'build' && state.tool !== 'move' && state.tool !== 'remove') {
+      game.walkTo(obj.grid_x, obj.grid_y, null);
+      await openWorkshopPanel();
+      return;
+    }
+
+    if (obj.item_id === 'storage_shed' && obj.object_type === 'building' && !state.viewingUserId
+        && state.tool !== 'build' && state.tool !== 'move' && state.tool !== 'remove') {
+      game.walkTo(obj.grid_x, obj.grid_y, null);
+      await openStoragePanel();
       return;
     }
 

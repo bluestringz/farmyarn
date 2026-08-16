@@ -297,6 +297,47 @@ module.exports = function shopRoutes(db) {
     cow: { wheatCost: 5, feedItemId: 'cow_feed' },
   };
 
+  // Workshop-crafted furniture — turns Wood (logs, from chopping trees)
+  // into furniture that reuses its store-bought counterpart's look but has
+  // its own distinct id/name ("Crafted Bed" etc.) and, unlike store-bought
+  // furniture, can be sold at a Marketplace stall. `category` decides the
+  // inventory item id prefix used below (interior_ vs decoration_ — the
+  // bench is an outdoor decoration, not indoor furniture, so it's the one
+  // exception here).
+  const FURNITURE_RECIPES = {
+    crafted_bench:     { woodCost: 5,  category: 'decoration', name: 'Crafted Bench' },
+    crafted_chair:     { woodCost: 5,  category: 'interior', name: 'Crafted Chair' },
+    crafted_cabinet:   { woodCost: 10, category: 'interior', name: 'Crafted Cabinet' },
+    crafted_bookshelf: { woodCost: 10, category: 'interior', name: 'Crafted Bookshelf' },
+    crafted_bed:       { woodCost: 15, category: 'interior', name: 'Crafted Bed' },
+  };
+
+  // POST /api/shop/craft-furniture { furnitureType, quantity } — requires
+  // owning a Workshop building; consumes Wood (the 'log' material item)
+  // from inventory, produces the matching crafted furniture piece.
+  router.post('/craft-furniture', (req, res) => {
+    const { furnitureType, quantity } = req.body || {};
+    const qty = parseInt(quantity, 10);
+    if (!qty || qty < 1) return res.status(400).json({ error: 'Invalid quantity' });
+    const recipe = FURNITURE_RECIPES[furnitureType];
+    if (!recipe) return res.status(400).json({ error: 'Unknown furniture type' });
+
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    const workshop = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND item_id = 'workshop'").get(farm.id);
+    if (!workshop) return res.status(400).json({ error: 'You need a Workshop on your farm to craft furniture' });
+
+    const woodNeeded = recipe.woodCost * qty;
+    const woodRow = db.prepare("SELECT * FROM inventory WHERE user_id = ? AND item_id = 'log'").get(req.userId);
+    if (!woodRow || woodRow.quantity < woodNeeded) {
+      return res.status(400).json({ error: `Not enough Wood — need ${woodNeeded}, have ${woodRow ? woodRow.quantity : 0}` });
+    }
+
+    db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(woodNeeded, woodRow.id);
+    addInventory(db, req.userId, `${recipe.category}_${furnitureType}`, qty);
+    res.json({ ok: true, furnitureType, quantity: qty, woodSpent: woodNeeded });
+  });
+
   // POST /api/shop/craft-feed { animalType, quantity } — requires owning a
   // Silo building; consumes wheat from inventory, produces matching feed.
   router.post('/craft-feed', (req, res) => {

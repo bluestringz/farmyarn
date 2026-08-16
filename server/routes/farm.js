@@ -60,6 +60,53 @@ module.exports = function farmRoutes(db, io) {
     res.json(serializeFarm(farm));
   });
 
+  // ---- STORAGE SHED — a second item pool separate from the Bag, so you
+  // can stash things there to declutter without losing them. No coin
+  // cost either way (moving items around your own farm, not a trade).
+  // Declared BEFORE the /:userId route below — that route's :userId param
+  // would otherwise happily match the literal string "storage" too
+  // (Express matches routes in declaration order), silently swallowing
+  // every request to this path with a confusing "Farm not found".
+  function addStorage(itemId, qty, userId) {
+    const existing = db.prepare('SELECT * FROM storage_items WHERE user_id = ? AND item_id = ?').get(userId, itemId);
+    if (existing) {
+      db.prepare('UPDATE storage_items SET quantity = quantity + ? WHERE id = ?').run(qty, existing.id);
+    } else {
+      db.prepare('INSERT INTO storage_items (user_id, item_id, quantity) VALUES (?, ?, ?)').run(userId, itemId, qty);
+    }
+  }
+
+  router.get('/storage', (req, res) => {
+    const rows = db.prepare('SELECT item_id, quantity FROM storage_items WHERE user_id = ? AND quantity > 0').all(req.userId);
+    res.json(rows);
+  });
+
+  router.post('/storage-deposit', (req, res) => {
+    const { itemId, quantity } = req.body || {};
+    const qty = parseInt(quantity, 10);
+    if (!qty || qty < 1) return res.status(400).json({ error: 'Invalid quantity' });
+
+    const invRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, itemId);
+    if (!invRow || invRow.quantity < qty) return res.status(400).json({ error: 'Not enough in your Bag' });
+
+    db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(qty, invRow.id);
+    addStorage(itemId, qty, req.userId);
+    res.json({ ok: true, itemId, quantity: qty });
+  });
+
+  router.post('/storage-withdraw', (req, res) => {
+    const { itemId, quantity } = req.body || {};
+    const qty = parseInt(quantity, 10);
+    if (!qty || qty < 1) return res.status(400).json({ error: 'Invalid quantity' });
+
+    const storeRow = db.prepare('SELECT * FROM storage_items WHERE user_id = ? AND item_id = ?').get(req.userId, itemId);
+    if (!storeRow || storeRow.quantity < qty) return res.status(400).json({ error: 'Not enough in storage' });
+
+    db.prepare('UPDATE storage_items SET quantity = quantity - ? WHERE id = ?').run(qty, storeRow.id);
+    addInventory(db, req.userId, itemId, qty);
+    res.json({ ok: true, itemId, quantity: qty });
+  });
+
   // GET /api/farm/:userId - view any player's farm (read-only visit)
   router.get('/:userId', (req, res) => {
     const targetId = parseInt(req.params.userId, 10);

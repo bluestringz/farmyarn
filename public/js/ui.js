@@ -59,10 +59,10 @@ const UI = (() => {
     silo: 'Tap it to turn wheat into animal feed — feed your animals here before you can collect from them.',
     well: 'Classic farm decoration — a water source for the homestead look.',
     market_stall: 'A rentable stall in the shared Marketplace — sell goods to other players.',
-    storage_shed: 'Extra storage building for your farm.',
+    storage_shed: 'Tap it to store extra Bag items and keep your Bag tidy — take them back out anytime.',
     chicken_coop: 'Tap to go inside — houses Chickens only. Each coop you build has its own separate room.',
     cow_barn: 'Tap to go inside — houses Cows only. Each cow barn you build has its own separate room.',
-    workshop: 'Crafting-flavored building — mainly a farm centerpiece for now.',
+    workshop: 'Tap it to craft furniture from Wood (chop trees for logs) — crafted pieces can be sold at a Marketplace stall, unlike store-bought furniture.',
     // decorations
     fence: 'Blocks walking — fences auto-connect to neighboring fence tiles, and you can route your farm paths around them.',
     tree: 'Plant it and water it — takes 2 days to grow into a full tree you can chop for logs.',
@@ -198,7 +198,13 @@ const UI = (() => {
       : activeCategory === 'animals' ? 'animal'
       : activeCategory === 'decorations' ? 'decoration'
       : 'crops';
-    const items = catalog[catalogKey] || [];
+    const items = (catalog[catalogKey] || []).filter((item) =>
+      // Workshop-crafted furniture (crafted_bench, crafted_bed, etc.) is
+      // never bought here with coins — it's made at the Workshop from
+      // Wood instead (cost: 0 in the catalog is the tell). Filtering it
+      // out of Decor/Interior here keeps the Shop from showing something
+      // that would look free but can't actually be bought this way.
+      !item.id.startsWith('crafted_'));
     const isCrops = activeCategory === 'crops';
     const cards = items.map((item) => {
       const cost = item.seed_cost ?? item.cost;
@@ -373,6 +379,18 @@ const UI = (() => {
         const cropForSeed = catalog.crops.find((c) => c.id === id.slice(5));
         if (cropForSeed) return `${cropForSeed.name} Seeds`;
       }
+      // Workshop-crafted furniture is the one placeable-category thing
+      // that's sellable here (see the sellable filter below) — its
+      // inventory id is "interior_<id>" or "decoration_<id>", so strip
+      // that prefix and look it up in the matching catalog list.
+      if (id.startsWith('interior_')) {
+        const interior = (catalog.interiors || []).find((i) => i.id === id.slice('interior_'.length));
+        if (interior) return interior.name;
+      }
+      if (id.startsWith('decoration_')) {
+        const deco = (catalog.decorations || []).find((d) => d.id === id.slice('decoration_'.length));
+        if (deco) return deco.name;
+      }
       const item = (catalog.items || []).find((i) => i.id === id);
       return item ? item.name : id;
     };
@@ -473,8 +491,13 @@ const UI = (() => {
         // at all (the Shop won't buy them back, on purpose, so they hold
         // real value — see server/routes/farm.js's /sell route). Only
         // placeable-category items (buildings/decorations/animals/interior)
-        // are excluded, since those go through Build/Decorate, not selling.
+        // are excluded, since those go through Build/Decorate, not selling
+        // — EXCEPT Workshop-crafted furniture (interior_crafted_* /
+        // decoration_crafted_*), which is deliberately sellable: that's
+        // the whole point of crafting it instead of just buying it.
+        const isCraftedFurniture = (id) => id.includes('_crafted_');
         const sellable = inv.filter((r) =>
+          isCraftedFurniture(r.item_id) ||
           !['building_', 'decoration_', 'animal_', 'interior_'].some((p) => r.item_id.startsWith(p)));
         const select = document.getElementById('mkt-list-item');
         select.innerHTML = sellable.map((r) => `<option value="${r.item_id}">${nameFor(r.item_id)} (have ${r.quantity})</option>`).join('')
@@ -685,7 +708,119 @@ const UI = (() => {
     });
   }
 
-  return { toast, openPanel, closePanel, panelBody, renderShop, renderInventory, renderFriends, renderNotifications, renderPicker, renderStallDetail, renderSiloPanel, renderStovePanel, formatDuration, timeAgo };
+  // Storage Shed — a second item pool separate from the Bag, so things
+  // can be tucked away to declutter without being sold or lost. Shows two
+  // lists side by side: what's in your Bag (deposit) and what's already
+  // in Storage (withdraw) — both use the same item-name lookup as the
+  // Marketplace's stall panel.
+  function renderStoragePanel(bagItems, storageItems, onDeposit, onWithdraw) {
+    const body = panelBody();
+    const catalog = window.GameCatalog || { crops: [], items: [] };
+    const nameFor = (id) => {
+      const crop = (catalog.crops || []).find((c) => c.id === id);
+      if (crop) return crop.name;
+      if (id.startsWith('seed_')) {
+        const cropForSeed = (catalog.crops || []).find((c) => c.id === id.slice(5));
+        if (cropForSeed) return `${cropForSeed.name} Seeds`;
+      }
+      const item = (catalog.items || []).find((i) => i.id === id);
+      return item ? item.name : id;
+    };
+    // Placeable things (buildings/decorations/animals/interior furniture)
+    // don't make sense to stash here — those live on the farm itself, not
+    // in a stackable item pool. Only "regular" Bag contents apply.
+    const isStashable = (id) => !['building_', 'decoration_', 'animal_', 'interior_'].some((p) => id.startsWith(p));
+
+    const bagRows = bagItems.filter((r) => r.quantity > 0 && isStashable(r.item_id));
+    const storageRows = storageItems.filter((r) => r.quantity > 0);
+
+    const rowHtml = (id, qty, action, maxQty) => `
+      <div class="list-row">
+        <div class="row-main">
+          <div class="row-title">${nameFor(id)}</div>
+          <div class="row-sub">Have: ${qty}</div>
+        </div>
+        <div class="qty-row" style="max-width:140px;">
+          <input type="number" class="qty-input" min="1" max="${maxQty}" value="1" data-qty-for="${action}-${id}">
+          <button type="button" class="qty-max-btn" data-max-for="${action}-${id}" data-max-value="${maxQty}">MAX</button>
+        </div>
+        <button data-${action}="${id}" style="width:100%;margin-top:4px;">${action === 'deposit' ? 'Store' : 'Take out'}</button>
+      </div>`;
+
+    body.innerHTML = `
+      <p class="panel-hint">Stash extra Bag items here to keep your Bag tidy — take them back out anytime.</p>
+      <div class="panel-section-title">Your Bag</div>
+      ${bagRows.length ? bagRows.map((r) => rowHtml(r.item_id, r.quantity, 'deposit', r.quantity)).join('') : '<div class="empty-state">Nothing to store right now.</div>'}
+      <div class="panel-section-title">In Storage</div>
+      ${storageRows.length ? storageRows.map((r) => rowHtml(r.item_id, r.quantity, 'withdraw', r.quantity)).join('') : '<div class="empty-state">Storage is empty.</div>'}
+    `;
+
+    body.querySelectorAll('.qty-max-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const input = body.querySelector(`input[data-qty-for="${btn.dataset.maxFor}"]`);
+        if (input) input.value = btn.dataset.maxValue;
+      });
+    });
+    body.querySelectorAll('button[data-deposit]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const qtyInput = body.querySelector(`input[data-qty-for="deposit-${btn.dataset.deposit}"]`);
+        const qty = qtyInput ? Math.max(1, parseInt(qtyInput.value, 10) || 1) : 1;
+        onDeposit(btn.dataset.deposit, qty);
+      });
+    });
+    body.querySelectorAll('button[data-withdraw]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const qtyInput = body.querySelector(`input[data-qty-for="withdraw-${btn.dataset.withdraw}"]`);
+        const qty = qtyInput ? Math.max(1, parseInt(qtyInput.value, 10) || 1) : 1;
+        onWithdraw(btn.dataset.withdraw, qty);
+      });
+    });
+  }
+
+  // Workshop — craft furniture from Wood instead of buying it from the
+  // Shop. Same shape as the Silo panel (single-material recipes, MAX
+  // button per recipe), just with 5 furniture recipes instead of 4 feeds.
+  function renderWorkshopPanel(woodOwned, onCraft) {
+    const body = panelBody();
+    const recipes = [
+      { furnitureType: 'crafted_bench',     name: 'Crafted Bench',     woodCost: 5,  icon: '🪑' },
+      { furnitureType: 'crafted_chair',     name: 'Crafted Chair',     woodCost: 5,  icon: '💺' },
+      { furnitureType: 'crafted_cabinet',   name: 'Crafted Cabinet',   woodCost: 10, icon: '🗄️' },
+      { furnitureType: 'crafted_bookshelf', name: 'Crafted Bookshelf', woodCost: 10, icon: '📚' },
+      { furnitureType: 'crafted_bed',       name: 'Crafted Bed',       woodCost: 15, icon: '🛏️' },
+    ];
+    body.innerHTML = `
+      <p class="panel-hint">You have 🪵 ${woodOwned} wood. Craft furniture here instead of buying it — crafted pieces can also be sold at a Marketplace stall, unlike store-bought ones.</p>
+      <div class="shop-grid">
+        ${recipes.map((r) => {
+          const maxAffordable = Math.max(1, Math.min(99, Math.floor(woodOwned / r.woodCost)));
+          return `
+          <div class="shop-card">
+            <div class="shop-icon">${r.icon}</div>
+            <div class="shop-name">${r.name}</div>
+            <div class="shop-price">🪵 ${r.woodCost} wood each</div>
+            <div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${r.furnitureType}"><button type="button" class="qty-max-btn" data-max-for="${r.furnitureType}" data-max-value="${maxAffordable}">MAX</button></div>
+            <button data-furniture="${r.furnitureType}" ${woodOwned < r.woodCost ? 'disabled' : ''}>Craft</button>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+    body.querySelectorAll('.qty-max-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const input = body.querySelector(`input[data-qty-for="${btn.dataset.maxFor}"]`);
+        if (input) input.value = btn.dataset.maxValue;
+      });
+    });
+    body.querySelectorAll('.shop-card button[data-furniture]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const qtyInput = body.querySelector(`input[data-qty-for="${btn.dataset.furniture}"]`);
+        const qty = qtyInput ? Math.max(1, Math.min(99, parseInt(qtyInput.value, 10) || 1)) : 1;
+        onCraft(btn.dataset.furniture, qty);
+      });
+    });
+  }
+
+  return { toast, openPanel, closePanel, panelBody, renderShop, renderInventory, renderFriends, renderNotifications, renderPicker, renderStallDetail, renderSiloPanel, renderStovePanel, renderStoragePanel, renderWorkshopPanel, formatDuration, timeAgo };
 })();
 
 window.UI = UI;

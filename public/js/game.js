@@ -766,6 +766,19 @@ class FarmGame {
     };
 
     const pointerMove = (e) => {
+      // Hover highlight — updates on every mouse move regardless of
+      // dragging/pinching/etc below, so whichever tile the mouse is
+      // currently pointing at is always known for the highlight box drawn
+      // in the render loop. Touch has no real "hover" (there's no pointer
+      // position before you actually touch down), so this only matters
+      // for mouse — touchmove events land here too but e.touches makes
+      // this harmless/no-op-ish for them since there's no persistent hover
+      // concept to show.
+      if (!e.touches) {
+        const pos = getPos(e);
+        const world = this.screenToWorld(pos.x, pos.y);
+        this._hoverTile = this.worldToTile(world.x, world.y);
+      }
       if (e.touches && e.touches.length === 2) {
         const d = this._touchDist(e.touches);
         if (this._pinchDist) {
@@ -848,6 +861,7 @@ class FarmGame {
     c.addEventListener('mousedown', pointerDown);
     window.addEventListener('mousemove', pointerMove);
     window.addEventListener('mouseup', pointerUp);
+    c.addEventListener('mouseleave', () => { this._hoverTile = null; });
     c.addEventListener('touchstart', pointerDown, { passive: true });
     c.addEventListener('touchmove', pointerMove, { passive: true });
     c.addEventListener('touchend', pointerUp);
@@ -1079,6 +1093,7 @@ class FarmGame {
       ctx.scale(this.camera.scale, this.camera.scale);
       this._drawIndoorRoom();
       this._drawIndoorObjects();
+      this._drawHoverHighlight(this.interior.width, this.interior.height);
       this._drawGhost();
       this._drawPeopleSorted();
       this._drawCharacterOverlay();
@@ -1099,6 +1114,7 @@ class FarmGame {
     this._drawFlatDecorations();
     this._drawSceneSorted();
     this._drawWaterEffects();
+    this._drawHoverHighlight(this.farm.width, this.farm.height);
     this._drawGhost();
     this._drawCharacterOverlay();
     this._drawWoodenBorder();
@@ -1106,6 +1122,29 @@ class FarmGame {
     ctx.restore();
     this._drawWeatherOverlay(rect);
   }
+
+  // A soft highlight box on whichever tile the mouse is currently pointing
+  // at (see the pointerMove hover tracking) — mainly useful with a tool
+  // active (plow/plant/water/harvest/etc.), where knowing EXACTLY which
+  // tile a click will land on matters, but shown regardless of tool so it
+  // always reads as "here's what you're pointing at". Skipped when
+  // there's no hover tile (touch devices, or the mouse has left the
+  // canvas) or it's outside the playable area.
+  _drawHoverHighlight(boundsW, boundsH) {
+    if (!this._hoverTile) return;
+    const { x, y } = this._hoverTile;
+    if (x < 0 || y < 0 || x >= boundsW || y >= boundsH) return;
+    const ctx = this.ctx;
+    const px = x * TILE, py = y * TILE;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fillRect(px, py, TILE, TILE);
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px + 1, py + 1, TILE - 2, TILE - 2);
+    ctx.restore();
+  }
+
 
   // Lighter version of _drawSceneSorted for the Marketplace: no crops/objects
   // to sort against, just making sure players standing near each other
