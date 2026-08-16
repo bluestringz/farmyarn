@@ -512,6 +512,8 @@ function seedContent(db) {
     { id: 'tomato_soup',      name: 'Tomato Soup',      sell_price: 38, sprite: 'food', category: 'food' },
     { id: 'strawberry_cake',  name: 'Strawberry Cake',  sell_price: 65, sprite: 'food', category: 'food' },
     { id: 'pumpkin_pie',      name: 'Pumpkin Pie',      sell_price: 120, sprite: 'food', category: 'food' },
+    { id: 'ice_cream',        name: 'Ice Cream',        sell_price: 0,   sprite: 'food', category: 'food' },
+    { id: 'hotdog',           name: 'Hotdog',           sell_price: 0,   sprite: 'food', category: 'food' },
     { id: 'fried_egg',        name: 'Fried Egg',        sell_price: 20,  sprite: 'food', category: 'food' },
     { id: 'milkshake',        name: 'Milkshake',        sell_price: 55,  sprite: 'food', category: 'food' },
     { id: 'truffle_dish',     name: 'Truffle Dish',     sell_price: 140, sprite: 'food', category: 'food' },

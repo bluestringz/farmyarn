@@ -255,7 +255,7 @@ const UI = (() => {
     const seeds = items.filter((r) => r.item_id.startsWith('seed_'));
     const placeablePrefixes = ['building_', 'decoration_', 'animal_', 'interior_'];
     const placeables = items.filter((r) => placeablePrefixes.some((p) => r.item_id.startsWith(p)));
-    const FOOD_ITEMS = { bread: 5, rice_bowl: 6, corn_soup: 7, carrot_stew: 8, mashed_potato: 10, tomato_soup: 11, strawberry_cake: 14, pumpkin_pie: 17, fried_egg: 6, milkshake: 10, truffle_dish: 18 };
+    const FOOD_ITEMS = { bread: 5, rice_bowl: 6, corn_soup: 7, carrot_stew: 8, mashed_potato: 10, tomato_soup: 11, strawberry_cake: 14, pumpkin_pie: 17, fried_egg: 6, milkshake: 10, truffle_dish: 18, ice_cream: 5, hotdog: 8 };
     const food = items.filter((r) => FOOD_ITEMS[r.item_id] !== undefined);
     const produce = items.filter((r) => !r.item_id.startsWith('seed_') && !placeablePrefixes.some((p) => r.item_id.startsWith(p)) && FOOD_ITEMS[r.item_id] === undefined);
 

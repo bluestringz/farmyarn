@@ -78,6 +78,27 @@ function resolveCropStates(db, farmId) {
   `).run(farmId, t, CROP_WITHER_UNHARVESTED_SECONDS);
 }
 
+// A chicken/pig/sheep/cow that hasn't been fed in a full day dies — same
+// "lazily settle on read" pattern as crop growth/death above, called
+// wherever a farm's objects get fetched (both outdoor AND indoor, since
+// animals can live in the coop/barn now too — see interiorSpaces.js).
+// Reference point is whichever is more recent: the last time it was fed,
+// or when it was placed (for an animal that's never been fed at all).
+const ANIMAL_STARVE_SECONDS = 24 * 3600;
+
+function resolveAnimalDeaths(db, farmId) {
+  const t = nowSec();
+  const animals = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND object_type = 'animal'").all(farmId);
+  for (const animal of animals) {
+    let state = null;
+    try { state = animal.state ? JSON.parse(animal.state) : null; } catch (e) { state = null; }
+    const referencePoint = (state && state.lastFed) || animal.created_at;
+    if (t - referencePoint > ANIMAL_STARVE_SECONDS) {
+      db.prepare('DELETE FROM farm_objects WHERE id = ?').run(animal.id);
+    }
+  }
+}
+
 // Resolve animal production readiness is handled inline at read-time (see routes/farm.js)
 // since animal state lives inside farm_objects.state as JSON, not a dedicated table.
 
@@ -215,7 +236,7 @@ function isReservedName(name) {
 }
 
 module.exports = {
-  nowSec, xpForLevel, levelForXp, xpProgress, initFarmTiles, resolveCropStates,
+  nowSec, xpForLevel, levelForXp, xpProgress, initFarmTiles, resolveCropStates, resolveAnimalDeaths,
   grantRewards, addInventory, notify, resolveEnergy, spendEnergy, addEnergy, MAX_ENERGY,
   isReservedName, startResting, stopResting, resolveEquippedOutfit,
 };

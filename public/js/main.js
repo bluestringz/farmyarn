@@ -1076,6 +1076,7 @@
     if (state.inHouse) await exitHouse();
     game.setParkMode();
     game.onParkBenchClick = handleParkBenchClick;
+    game.onParkCartClick = handleParkCartClick;
     state.inPark = true;
     joinSpace('park');
     setTool(null);
@@ -1116,6 +1117,19 @@
         UI.toast('Sitting down — energy regenerates faster. Tap the bench again to get up.');
       }
       renderTopbar();
+    } catch (err) {
+      UI.toast(err.message);
+    }
+  }
+
+  async function handleParkCartClick(cart) {
+    game.walkTo(cart.x, cart.y, null);
+    if (!confirm(`Buy a ${cart.label} for 🪙${cart.cost}? It'll go to your Bag — eat it there whenever you want the energy.`)) return;
+    try {
+      const res = await Api.buyParkSnack(cart.itemId);
+      state.me.coins = res.coins;
+      renderTopbar();
+      UI.toast(`Bought a ${cart.label}! Check your Bag to eat it.`);
     } catch (err) {
       UI.toast(err.message);
     }

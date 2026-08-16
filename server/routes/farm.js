@@ -1,6 +1,6 @@
 const express = require('express');
 const {
-  nowSec, resolveCropStates, grantRewards, addInventory, notify,
+  nowSec, resolveCropStates, resolveAnimalDeaths, grantRewards, addInventory, notify,
   resolveEnergy, spendEnergy, addEnergy, xpProgress,
 } = require('../lib/gameLogic');
 const {
@@ -20,6 +20,7 @@ module.exports = function farmRoutes(db, io) {
 
   function serializeFarm(farm) {
     resolveCropStates(db, farm.id);
+    resolveAnimalDeaths(db, farm.id);
     const tiles = db.prepare('SELECT x, y, state FROM farm_tiles WHERE farm_id = ?').all(farm.id);
     const crops = db.prepare('SELECT * FROM crops WHERE farm_id = ?').all(farm.id);
     const objects = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND location = 'outdoor'").all(farm.id).map(resolveObject);
@@ -76,6 +77,7 @@ module.exports = function farmRoutes(db, io) {
   function handleInteriorRequest(req, res, farmOwnerId) {
     const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(farmOwnerId);
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    resolveAnimalDeaths(db, farm.id); // covers animals in here too, not just outdoor — same farm_id either way
 
     const buildingId = parseInt(req.query.buildingId, 10);
     if (buildingId) {
@@ -434,6 +436,32 @@ module.exports = function farmRoutes(db, io) {
     truffle:    { cropCost: 2, foodItemId: 'truffle_dish', energyRestore: 18 },
   };
 
+  // Ready-made snacks bought directly with coins at the Central Park carts
+  // (not cooked at a Stove like the recipes above) — see /api/park/buy-snack.
+  const PARK_SNACKS = {
+    ice_cream: { coinCost: 75, energyRestore: 5 },
+    hotdog:    { coinCost: 100, energyRestore: 8 },
+  };
+
+  // POST /api/park/buy-snack { itemId } — buy 1 ice cream or hotdog from a
+  // Central Park cart straight into your Bag (no Stove/ingredients needed,
+  // unlike the cooking recipes — this is a ready-made snack, paid for
+  // directly in coins).
+  router.post('/park-buy-snack', (req, res) => {
+    const { itemId } = req.body || {};
+    const snack = PARK_SNACKS[itemId];
+    if (!snack) return res.status(400).json({ error: 'Unknown snack' });
+
+    const user = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+    if (user.coins < snack.coinCost) {
+      return res.status(400).json({ error: `Not enough coins — need ${snack.coinCost}` });
+    }
+    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(snack.coinCost, req.userId);
+    addInventory(db, req.userId, itemId, 1);
+    const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+    res.json({ ok: true, itemId, coins: updated.coins });
+  });
+
   // POST /api/farm/cook { cropType, quantity, atFarmId } — requires a Stove
   // somewhere indoors on the target farm (your own house by default, or a
   // friend's if you're visiting — cooking together is allowed, unlike most
@@ -463,15 +491,21 @@ module.exports = function farmRoutes(db, io) {
   // POST /api/farm/eat { foodItemId } — consumes 1 food item, restores energy.
   router.post('/eat', (req, res) => {
     const { foodItemId } = req.body || {};
-    const recipe = Object.values(COOK_RECIPES).find((r) => r.foodItemId === foodItemId);
-    if (!recipe) return res.status(400).json({ error: 'Unknown food item' });
+    // Food can come from either a Stove recipe (COOK_RECIPES, keyed by
+    // ingredient) or a Central Park snack cart (PARK_SNACKS, keyed
+    // directly by the food's own item id) — normalize both into the same
+    // { foodItemId, energyRestore } shape before looking up what's owned.
+    const cooked = Object.values(COOK_RECIPES).find((r) => r.foodItemId === foodItemId);
+    const snack = PARK_SNACKS[foodItemId];
+    const energyRestore = cooked ? cooked.energyRestore : snack ? snack.energyRestore : null;
+    if (energyRestore === null) return res.status(400).json({ error: 'Unknown food item' });
 
     const foodRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, foodItemId);
     if (!foodRow || foodRow.quantity < 1) return res.status(400).json({ error: "You don't have any of that to eat" });
 
     db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(foodRow.id);
-    const energy = addEnergy(db, req.userId, recipe.energyRestore);
-    res.json({ ok: true, energy, energyRestored: recipe.energyRestore });
+    const energy = addEnergy(db, req.userId, energyRestore);
+    res.json({ ok: true, energy, energyRestored: energyRestore });
   });
 
   return router;

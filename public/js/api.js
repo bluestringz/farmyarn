@@ -120,6 +120,7 @@ const Api = (() => {
     feedAnimal: (objectId) => request('POST', '/api/shop/feed-animal', { objectId }),
     cook: (cropType, quantity, atFarmId) => request('POST', '/api/farm/cook', { cropType, quantity, atFarmId }),
     eat: (foodItemId) => request('POST', '/api/farm/eat', { foodItemId }),
+    buyParkSnack: (itemId) => request('POST', '/api/farm/park-buy-snack', { itemId }),
 
     // Marketplace (player-to-player)
     marketplace: () => request('GET', '/api/marketplace'),

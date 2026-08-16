@@ -85,6 +85,12 @@ const PARK_TREE_POSITIONS = [
   { x: 1, y: 1 }, { x: 14, y: 1 }, { x: 1, y: 12 }, { x: 14, y: 12 },
   { x: 7, y: 1 }, { x: 8, y: 12 },
 ];
+// Snack carts — tap one to buy straight into your Bag (see main.js's
+// handleParkCartClick / /api/farm/park-buy-snack).
+const PARK_CART_POSITIONS = [
+  { x: 1, y: 6, itemId: 'ice_cream', label: 'Ice Cream 🍦', cost: 75 },
+  { x: 14, y: 6, itemId: 'hotdog', label: 'Hotdog 🌭', cost: 100 },
+];
 
 const MARKET_STALL_POSITIONS = (() => {
   const xs = [1, 4, 7, 10, 13];
@@ -160,6 +166,7 @@ class FarmGame {
     this.onObjectClick = null; // callback(object)
     this.onMarketStallClick = null; // callback(stall)
     this.onParkBenchClick = null; // callback(benchPosition)
+    this.onParkCartClick = null; // callback(cartPosition)
     this.highlightFn = null; // (x,y) => 'valid'|'invalid'|null, drawn as overlay
     this._ghost = null; // { category, itemId, x, y, rotation, def } pending-placement preview
 
@@ -866,6 +873,11 @@ class FarmGame {
         this.onParkBenchClick(bench);
         return;
       }
+      const cart = PARK_CART_POSITIONS.find((p) => p.x === tile.x && p.y === tile.y);
+      if (cart && this.onParkCartClick) {
+        this.onParkCartClick(cart);
+        return;
+      }
       this.walkTo(tile.x, tile.y, null);
       return;
     }
@@ -1349,6 +1361,63 @@ class FarmGame {
     for (const { x, y } of PARK_BENCH_POSITIONS) {
       this._drawDecorationShape(ctx, DECORATION_STYLE.bench, x * TILE, y * TILE, TILE, TILE);
     }
+    for (const cart of PARK_CART_POSITIONS) {
+      this._drawSnackCart(cart.x * TILE, cart.y * TILE, cart.itemId);
+    }
+  }
+
+  // A little vendor cart — canopy + counter + wheels, tinted per snack and
+  // topped with the snack's own emoji so it's obvious what's sold there
+  // without needing a label to be visible at every zoom level.
+  _drawSnackCart(px, py, itemId) {
+    const ctx = this.ctx;
+    const w = TILE, h = TILE;
+    const canopyColor = itemId === 'ice_cream' ? '#e05a7e' : '#c0392b';
+    const canopyColor2 = itemId === 'ice_cream' ? '#fff6e3' : '#f4c95d';
+    const emoji = itemId === 'ice_cream' ? '🍦' : '🌭';
+
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath();
+    ctx.ellipse(px + w / 2, py + h * 0.92, w * 0.4, h * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // wheels
+    ctx.fillStyle = '#3a2a1a';
+    ctx.beginPath(); ctx.arc(px + w * 0.28, py + h * 0.82, w * 0.08, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px + w * 0.72, py + h * 0.82, w * 0.08, 0, Math.PI * 2); ctx.fill();
+
+    // counter/body
+    ctx.fillStyle = '#8b5e34';
+    ctx.strokeStyle = '#5e3b1f';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    this._roundRect(px + w * 0.14, py + h * 0.5, w * 0.72, h * 0.32, 4);
+    ctx.fill(); ctx.stroke();
+
+    // striped canopy (a little scalloped roof)
+    const stripeCount = 5;
+    const canopyY = py + h * 0.18, canopyH = h * 0.22, canopyX = px + w * 0.08, canopyW = w * 0.84;
+    for (let i = 0; i < stripeCount; i++) {
+      ctx.fillStyle = i % 2 === 0 ? canopyColor : canopyColor2;
+      ctx.fillRect(canopyX + (canopyW / stripeCount) * i, canopyY, canopyW / stripeCount, canopyH);
+    }
+    ctx.strokeStyle = '#5e3b1f';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(canopyX, canopyY, canopyW, canopyH);
+    // little support poles
+    ctx.strokeStyle = '#8b5e34';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px + w * 0.18, py + h * 0.4); ctx.lineTo(px + w * 0.18, canopyY + canopyH);
+    ctx.moveTo(px + w * 0.82, py + h * 0.4); ctx.lineTo(px + w * 0.82, canopyY + canopyH);
+    ctx.stroke();
+
+    // the snack emoji, front and center
+    ctx.font = `${Math.floor(h * 0.32)}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(emoji, px + w / 2, py + h * 0.42);
   }
 
   _drawParkBorder() {
