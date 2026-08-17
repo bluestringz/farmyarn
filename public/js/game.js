@@ -1238,7 +1238,15 @@ class FarmGame {
       items.push({ sortY: actor.y + TILE * 0.28, draw: () => this._drawSimpleAvatar(actor) });
     }
     const c = this._character;
-    items.push({ sortY: c.y + TILE * 0.28, draw: () => this._drawCharacter() });
+    // When sitting/lying, the character's world position gets snapped
+    // right onto the furniture's own tile — with no extra push, that
+    // leaves its sort position TIED with (or even behind) the furniture
+    // it's on, so the furniture's own backrest/frame could draw on top
+    // of the character instead of the other way around. A resting
+    // character should always read as sitting IN FRONT of/ON the
+    // furniture, so give it a large sort-position boost while resting.
+    const restBoost = c.restPose ? TILE * 0.8 : 0;
+    items.push({ sortY: c.y + TILE * 0.28 + restBoost, draw: () => this._drawCharacter() });
     items.sort((a, b) => a.sortY - b.sortY);
     for (const item of items) item.draw();
   }
