@@ -1714,8 +1714,10 @@ class FarmGame {
     // the prefix-stripping above. Same look, just placeable indoors only.
     if (itemId === 'bench') {
       const bx = x + w * 0.14, by = y + h * 0.42, bw = w * 0.72;
+      // No backrest bar (same reasoning as the outdoor bench in
+      // _drawDecorationShape) — it visually cut across a seated
+      // character's torso at roughly chest height.
       ctx.fillStyle = '#8b5e34';
-      ctx.fillRect(bx, by, bw, h * 0.1);
       ctx.fillRect(bx, by + h * 0.24, bw, h * 0.1);
       ctx.fillStyle = '#6b4423';
       ctx.fillRect(bx + 2, by + h * 0.34, w * 0.06, h * 0.24);
@@ -3071,8 +3073,12 @@ class FarmGame {
       ctx.beginPath(); ctx.moveTo(cx - r, cy + r * 0.2); ctx.lineTo(cx + r, cy + r * 0.2); ctx.stroke();
     } else if (style.shape === 'bench') {
       const bx = x + w * 0.14, by = y + h * 0.42, bw = w * 0.72;
+      // The backrest sits just above the seat now, not up near where a
+      // seated character's chest/head would be — a backrest that tall
+      // used to visually cut across a seated character's torso no matter
+      // which order the bench and character drew in.
       ctx.fillStyle = style.wood;
-      ctx.fillRect(bx, by, bw, h * 0.1); // backrest
+      ctx.fillRect(bx, by + h * 0.16, bw, h * 0.06); // backrest (low)
       ctx.fillRect(bx, by + h * 0.24, bw, h * 0.1); // seat
       ctx.fillStyle = style.woodDark;
       ctx.fillRect(bx + 2, by + h * 0.34, w * 0.06, h * 0.24); // legs
