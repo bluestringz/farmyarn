@@ -288,10 +288,23 @@ module.exports = function farmRoutes(db, io) {
       db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(WATER_COST, req.userId);
     }
 
-    // Watering speeds up growth by 10%, capped so it can't push growth_end_at into the past oddly.
+    // Watering speeds up growth by 10% — but if the crop sat unwatered
+    // long enough that its growth window already elapsed (it couldn't
+    // become ready anyway without water, so that time was never doing
+    // anything useful), that stale window gets thrown out and restarted
+    // fresh from right now instead. Without this, watering a
+    // long-neglected crop made it "ready" in the very same instant — the
+    // 10%-off math has nothing meaningful to shave off an already-expired
+    // timestamp, so it just silently kept the stale value as-is.
     const t = nowSec();
-    const remaining = Math.max(0, crop.growth_end_at - t);
-    const newEnd = crop.growth_end_at - Math.floor(remaining * 0.10);
+    let newEnd;
+    if (t >= crop.growth_end_at) {
+      const cropType = db.prepare('SELECT growth_seconds FROM crop_types WHERE id = ?').get(crop.crop_type);
+      newEnd = t + (cropType ? cropType.growth_seconds : 0);
+    } else {
+      const remaining = crop.growth_end_at - t;
+      newEnd = crop.growth_end_at - Math.floor(remaining * 0.10);
+    }
 
     db.prepare('UPDATE crops SET watered = 1, watered_by = ?, growth_end_at = ? WHERE id = ?')
       .run(req.userId, newEnd, crop.id);

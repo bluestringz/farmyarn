@@ -6,8 +6,9 @@ if (!JWT_SECRET) {
   throw new Error('JWT_SECRET is not set. Define it in your .env file before starting the server.');
 }
 
-function signToken(user) {
-  return jwt.sign({ sub: user.id, username: user.username, isAdmin: !!user.is_admin, sv: user.session_version || 0 }, JWT_SECRET, {
+function signToken(user, context = 'game') {
+  const sv = context === 'admin' ? (user.admin_session_version || 0) : (user.session_version || 0);
+  return jwt.sign({ sub: user.id, username: user.username, isAdmin: !!user.is_admin, sv, ctx: context }, JWT_SECRET, {
     expiresIn: '7d',
   });
 }
@@ -24,7 +25,7 @@ function requireAuth(db) {
     if (!token) return res.status(401).json({ error: 'Missing auth token' });
     try {
       const payload = jwt.verify(token, JWT_SECRET);
-      const user = db.prepare('SELECT is_banned, suspended_until, is_admin, session_version FROM users WHERE id = ?').get(payload.sub);
+      const user = db.prepare('SELECT is_banned, suspended_until, is_admin, session_version, admin_session_version FROM users WHERE id = ?').get(payload.sub);
       if (!user) return res.status(401).json({ error: 'Account no longer exists' });
       if (user.is_banned) return res.status(403).json({ error: 'This account has been banned' });
       if (user.suspended_until && user.suspended_until > Math.floor(Date.now() / 1000)) {
@@ -36,7 +37,13 @@ function requireAuth(db) {
       // version means this session has been superseded by a newer login
       // elsewhere, so it's treated the same as an expired/invalid one
       // rather than allowed to keep working alongside the new session.
-      if ((payload.sv || 0) !== (user.session_version || 0)) {
+      // The GAME client and the admin PANEL each get their own separate
+      // counter (session_version vs admin_session_version, chosen by
+      // payload.ctx) — logging into the game doesn't kick out an open
+      // admin panel session for the same account, and vice versa.
+      const isAdminCtx = payload.ctx === 'admin';
+      const currentSv = isAdminCtx ? (user.admin_session_version || 0) : (user.session_version || 0);
+      if ((payload.sv || 0) !== currentSv) {
         return res.status(401).json({ error: 'Logged in from another device' });
       }
       req.userId = payload.sub;

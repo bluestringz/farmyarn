@@ -96,7 +96,7 @@ module.exports = function authRoutes(db, io, onlineUsers) {
 
   router.post('/login', async (req, res) => {
     try {
-      const { username, password } = req.body || {};
+      const { username, password, context } = req.body || {};
       if (typeof username !== 'string' || typeof password !== 'string') {
         return res.status(400).json({ error: 'Username and password are required' });
       }
@@ -112,14 +112,24 @@ module.exports = function authRoutes(db, io, onlineUsers) {
       if (!ok) return res.status(401).json({ error: 'Invalid username or password' });
 
       // Bumping session_version invalidates every other token already
-      // issued for this account (see requireAuth's version check) — this
-      // is what actually logs out a browser session when the same account
-      // logs in from a phone (or anywhere else) afterward.
-      db.prepare('UPDATE users SET last_login = ?, session_version = session_version + 1 WHERE id = ?').run(nowSec(), user.id);
+      // issued for this account for the SAME context (see requireAuth's
+      // version check) — this is what actually logs out a browser session
+      // when the same account logs in from a phone (or anywhere else)
+      // afterward. The game client and the admin panel each have their
+      // own separate counter, so logging into one no longer kicks out an
+      // open session on the other for the same account — only another
+      // login of the SAME kind (two game clients, or two admin panels)
+      // still does that.
+      const isAdminCtx = context === 'admin';
+      const svColumn = isAdminCtx ? 'admin_session_version' : 'session_version';
+      db.prepare(`UPDATE users SET last_login = ?, ${svColumn} = ${svColumn} + 1 WHERE id = ?`).run(nowSec(), user.id);
       resolveEquippedOutfit(db, user.id);
       const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-      const token = signToken(fresh);
-      if (kickExistingSessions) kickExistingSessions(user.id);
+      const token = signToken(fresh, isAdminCtx ? 'admin' : 'game');
+      // Socket.IO sessions only exist for the game client — an admin
+      // panel login has no socket to kick, and kicking the game's socket
+      // here would disconnect an unrelated, still-valid game session.
+      if (!isAdminCtx && kickExistingSessions) kickExistingSessions(user.id);
       return res.json({ token, user: publicUser(fresh) });
     } catch (err) {
       console.error('login error', err);

@@ -107,7 +107,7 @@ document.getElementById('admin-login-btn').addEventListener('click', async () =>
   try {
     const username = document.getElementById('admin-username').value;
     const password = document.getElementById('admin-password').value;
-    const { token, user } = await api('POST', '/api/auth/login', { username, password });
+    const { token, user } = await api('POST', '/api/auth/login', { username, password, context: 'admin' });
     if (!user.isAdmin) throw new Error('This account is not an admin.');
     TOKEN = token;
     localStorage.setItem('fy_admin_token', token);

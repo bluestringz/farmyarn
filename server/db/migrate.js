@@ -31,7 +31,8 @@ function migrate(db) {
     is_banned INTEGER NOT NULL DEFAULT 0,
     suspended_until INTEGER, -- unix timestamp; NULL = not suspended. Temporary, unlike is_banned (permanent).
     is_resting INTEGER NOT NULL DEFAULT 0, -- sitting/lying on furniture — regenerates energy faster while true
-    session_version INTEGER NOT NULL DEFAULT 0, -- bumps on every login; a JWT with a stale version is a logged-out-elsewhere session
+    session_version INTEGER NOT NULL DEFAULT 0, -- bumps on every GAME login; a JWT with a stale version is a logged-out-elsewhere session
+    admin_session_version INTEGER NOT NULL DEFAULT 0, -- separate counter for the admin PANEL specifically — an admin logging into the game and the admin panel with the same account no longer kick each other out, since each has its own slot
     friend_water_count INTEGER NOT NULL DEFAULT 0, -- how many times today this player has watered a FRIEND's crop — resets daily, makes each successive help cost more gold
     friend_water_date TEXT, -- 'YYYY-MM-DD' the count above is for; a new day resets the count to 0
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
@@ -301,6 +302,9 @@ function addColumnsIfMissing(db) {
   }
   if (!existingCols.includes('session_version')) {
     db.exec('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!existingCols.includes('admin_session_version')) {
+    db.exec('ALTER TABLE users ADD COLUMN admin_session_version INTEGER NOT NULL DEFAULT 0');
   }
   if (!existingCols.includes('friend_water_count')) {
     db.exec('ALTER TABLE users ADD COLUMN friend_water_count INTEGER NOT NULL DEFAULT 0');

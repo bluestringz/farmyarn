@@ -418,8 +418,23 @@ module.exports = function shopRoutes(db) {
     }
 
     db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(feedRow.id);
-    state.lastFed = nowSec();
-    db.prepare('UPDATE farm_objects SET state = ? WHERE id = ?').run(JSON.stringify(state), obj.id);
+    const t = nowSec();
+    state.lastFed = t;
+    // If the production window already elapsed while this animal sat
+    // unfed (it couldn't produce anything without food anyway, so that
+    // time wasn't doing anything useful), restart the timer fresh from
+    // right now instead of leaving the stale reference point in place —
+    // otherwise feeding a long-neglected animal made it instantly ready
+    // in the same moment, the same bug as un-watered crops had.
+    const animalType = db.prepare('SELECT production_seconds FROM animal_types WHERE id = ?').get(obj.item_id);
+    const prodSeconds = animalType ? animalType.production_seconds : 0;
+    let updateSql = 'UPDATE farm_objects SET state = ? WHERE id = ?';
+    let updateParams = [JSON.stringify(state), obj.id];
+    if (t >= last + prodSeconds) {
+      updateSql = 'UPDATE farm_objects SET state = ?, last_collected_at = ? WHERE id = ?';
+      updateParams = [JSON.stringify(state), t, obj.id];
+    }
+    db.prepare(updateSql).run(...updateParams);
     res.json({ ok: true });
   });
 
