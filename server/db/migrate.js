@@ -604,8 +604,9 @@ function seedContent(db) {
     // store-bought counterparts (reuses the sprite) but a distinct id/name
     // ("Crafted Bed" etc.) so they're tellable apart, and — unlike regular
     // store-bought furniture — sellable at a Marketplace stall. The bench
-    // is NOT here — it's an outdoor decoration, not interior furniture, so
-    // its crafted version lives in the decoration_types seed data instead.
+    // is NOT here — it stays an outdoor decoration like the regular bench,
+    // not indoor-only furniture; its crafted version lives in
+    // decoration_types instead.
     { id: 'crafted_chair',     name: 'Crafted Chair',     cost: 0, required_level: 1, width: 1, height: 1, sprite: 'chair' },
     { id: 'crafted_bed',       name: 'Crafted Bed',       cost: 0, required_level: 1, width: 2, height: 1, sprite: 'bed' },
     { id: 'crafted_cabinet',   name: 'Crafted Cabinet',   cost: 0, required_level: 1, width: 1, height: 1, sprite: 'cabinet' },

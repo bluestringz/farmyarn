@@ -1,7 +1,7 @@
 const express = require('express');
 const {
   nowSec, resolveCropStates, resolveAnimalDeaths, grantRewards, addInventory, notify,
-  resolveEnergy, spendEnergy, addEnergy, xpProgress,
+  resolveEnergy, spendEnergy, addEnergy, xpProgress, rollHarvestQuantity,
 } = require('../lib/gameLogic');
 const {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
@@ -397,7 +397,8 @@ module.exports = function farmRoutes(db, io) {
 
     db.prepare('DELETE FROM crops WHERE id = ?').run(crop.id);
     db.prepare('UPDATE farm_tiles SET state = ? WHERE farm_id = ? AND x = ? AND y = ?').run('grass', farm.id, x, y);
-    addInventory(db, req.userId, cropType.id, 1);
+    const harvestQty = rollHarvestQuantity();
+    addInventory(db, req.userId, cropType.id, harvestQty);
 
     // A harvest has a chance to also return a seed, so players aren't
     // completely dependent on buying from the shop every time.
@@ -408,7 +409,7 @@ module.exports = function farmRoutes(db, io) {
     const reward = grantRewards(db, req.userId, { coins: 0, xp: cropType.xp_reward });
     const energy = resolveEnergy(db, req.userId);
 
-    res.json({ ok: true, tile: { x, y, state: 'grass' }, harvested: cropType.id, seedReturned: gotSeed, reward, xpProgress: xpProgress(reward.xp), energy });
+    res.json({ ok: true, tile: { x, y, state: 'grass' }, harvested: cropType.id, harvestQuantity: harvestQty, seedReturned: gotSeed, reward, xpProgress: xpProgress(reward.xp), energy });
   });
 
   // ---- SELL (from inventory, at the market) ----

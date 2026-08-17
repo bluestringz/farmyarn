@@ -735,16 +735,14 @@ const UI = (() => {
     const storageRows = storageItems.filter((r) => r.quantity > 0);
 
     const rowHtml = (id, qty, action, maxQty) => `
-      <div class="list-row">
-        <div class="row-main">
-          <div class="row-title">${nameFor(id)}</div>
-          <div class="row-sub">Have: ${qty}</div>
-        </div>
-        <div class="qty-row" style="max-width:140px;">
+      <div class="storage-row">
+        <div class="row-title">${nameFor(id)}</div>
+        <div class="row-sub">Have: ${qty}</div>
+        <div class="qty-row">
           <input type="number" class="qty-input" min="1" max="${maxQty}" value="1" data-qty-for="${action}-${id}">
           <button type="button" class="qty-max-btn" data-max-for="${action}-${id}" data-max-value="${maxQty}">MAX</button>
         </div>
-        <button data-${action}="${id}" style="width:100%;margin-top:4px;">${action === 'deposit' ? 'Store' : 'Take out'}</button>
+        <button data-${action}="${id}">${action === 'deposit' ? 'Store' : 'Take out'}</button>
       </div>`;
 
     body.innerHTML = `

@@ -754,9 +754,10 @@
           UI.toast(res.message);
         } else {
           await refreshPlayer();
+          const qtyLabel = res.harvestQuantity > 1 ? `${res.harvestQuantity}x ${res.harvested}` : res.harvested;
           UI.toast(res.seedReturned
-            ? `Harvested ${res.harvested}! +${res.reward.xp} XP — got a free seed back! 🌱`
-            : `Harvested ${res.harvested}! +${res.reward.xp} XP`);
+            ? `Harvested ${qtyLabel}! +${res.reward.xp} XP — got a free seed back! 🌱`
+            : `Harvested ${qtyLabel}! +${res.reward.xp} XP`);
         }
         game.playAction(ACTION_ICON.harvest);
         await refreshCurrentFarm();

@@ -1137,9 +1137,9 @@ class FarmGame {
     const ctx = this.ctx;
     const px = x * TILE, py = y * TILE;
     ctx.save();
-    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
     ctx.fillRect(px, py, TILE, TILE);
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
     ctx.lineWidth = 2;
     ctx.strokeRect(px + 1, py + 1, TILE - 2, TILE - 2);
     ctx.restore();
@@ -1562,6 +1562,12 @@ class FarmGame {
     const ctx = this.ctx;
     const x = px, y = py, w = pw, h = ph;
     const OUTLINE = '#5e3b1f';
+    // Workshop-crafted furniture (crafted_bed, crafted_chair, etc.) reuses
+    // the same look as its store-bought counterpart — strip the prefix so
+    // every itemId check below still matches, instead of falling through
+    // to nothing drawn (which is exactly why these were rendering
+    // invisible before, despite placing/functioning correctly).
+    itemId = itemId.startsWith('crafted_') ? itemId.slice('crafted_'.length) : itemId;
 
     // A real 90°-step spin, not just a mirror — the footprint is square
     // (every piece of furniture is 1×1) so a true rotation never needs the
@@ -1582,7 +1588,18 @@ class FarmGame {
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 1.6;
 
-    if (itemId === 'rug') {
+    // Only reachable via a crafted_bench (the plain "bench" stays an
+    // outdoor decoration, drawn separately in _drawDecorationShape) — see
+    // the prefix-stripping above. Same look, just placeable indoors only.
+    if (itemId === 'bench') {
+      const bx = x + w * 0.14, by = y + h * 0.42, bw = w * 0.72;
+      ctx.fillStyle = '#8b5e34';
+      ctx.fillRect(bx, by, bw, h * 0.1);
+      ctx.fillRect(bx, by + h * 0.24, bw, h * 0.1);
+      ctx.fillStyle = '#6b4423';
+      ctx.fillRect(bx + 2, by + h * 0.34, w * 0.06, h * 0.24);
+      ctx.fillRect(bx + bw - w * 0.08, by + h * 0.34, w * 0.06, h * 0.24);
+    } else if (itemId === 'rug') {
       ctx.fillStyle = '#c0392b';
       ctx.beginPath();
       this._roundRect(x + w * 0.08, y + h * 0.25, w * 0.84, h * 0.55, 8);
@@ -2617,6 +2634,11 @@ class FarmGame {
   // instant full-grown look.
   _drawDecoration(px, py, pw, ph, itemId, rotation, gridX, gridY, allObjects, growthState) {
     const ctx = this.ctx;
+    // Workshop-crafted decorations (currently just crafted_bench) reuse
+    // the exact look of their store-bought counterpart — strip the prefix
+    // so the DECORATION_STYLE lookup below still matches "bench" instead
+    // of finding nothing and silently rendering invisible.
+    itemId = itemId.startsWith('crafted_') ? itemId.slice('crafted_'.length) : itemId;
     const style = DECORATION_STYLE[itemId];
     if (!style) return;
     const x = px, y = py, w = pw, h = ph;
