@@ -872,7 +872,12 @@
     const REST_OUTDOOR = new Set(['bench', 'crafted_bench']);
     const isRestFurniture = (state.inHouse && obj.object_type === 'interior' && REST_INTERIOR.has(obj.item_id))
       || (!state.inHouse && obj.object_type === 'decoration' && REST_OUTDOOR.has(obj.item_id));
-    if (isRestFurniture && !state.tool && !state.viewingUserId) {
+    // Sitting/lying down is a personal action (your own energy regen) that
+    // doesn't change anything about a friend's farm, so there's no reason
+    // to restrict it to your own furniture only — you can rest on theirs
+    // too while visiting, same as you can already walk around and help
+    // water their crops.
+    if (isRestFurniture && !state.tool) {
       try {
         if (state.me.isResting) {
           const res = await Api.stopResting();
