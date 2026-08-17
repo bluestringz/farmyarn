@@ -3078,7 +3078,11 @@ class FarmGame {
       ctx.beginPath(); ctx.moveTo(cx - r, cy - r * 0.2); ctx.lineTo(cx + r, cy - r * 0.2); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(cx - r, cy + r * 0.2); ctx.lineTo(cx + r, cy + r * 0.2); ctx.stroke();
     } else if (style.shape === 'bench') {
-      const bx = x + w * 0.14, by = y + h * 0.42, bw = w * 0.72;
+      // Narrowed to fit within a sitting character's own visual width
+      // (~0.63 of a tile) — the seat plank used to be wider than that
+      // (0.72), so it stuck out past the character on both sides even
+      // with the legs pulled in and the backrest lowered.
+      const bx = x + w * 0.22, by = y + h * 0.42, bw = w * 0.56;
       // The backrest sits just above the seat now, not up near where a
       // seated character's chest/head would be — a backrest that tall
       // used to visually cut across a seated character's torso no matter
