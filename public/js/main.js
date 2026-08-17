@@ -479,6 +479,10 @@
         setTool(state.tool === 'feed' ? null : 'feed');
         return;
       }
+      if (tool === 'place-animal' && isAnimalPenBuilding()) {
+        setTool(state.tool === 'place-animal' ? null : 'place-animal');
+        return;
+      }
       UI.toast('That tool is for the farm outside');
       return;
     }
