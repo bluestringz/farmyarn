@@ -1757,8 +1757,9 @@ class FarmGame {
       ctx.beginPath(); ctx.moveTo(x + w * 0.15, y + h * 0.43); ctx.lineTo(x + w * 0.85, y + h * 0.43); ctx.stroke();
     } else if (itemId === 'chair') {
       ctx.fillStyle = '#8b5e34';
-      // backrest
-      ctx.beginPath(); this._roundRect(x + w * 0.28, y + h * 0.12, w * 0.44, h * 0.35, 4); ctx.fill(); ctx.stroke();
+      // backrest — lower now, just above the seat, not up near where a
+      // seated character's chest/head would be (same fix as the bench).
+      ctx.beginPath(); this._roundRect(x + w * 0.28, y + h * 0.32, w * 0.44, h * 0.14, 4); ctx.fill(); ctx.stroke();
       // seat
       ctx.beginPath(); this._roundRect(x + w * 0.2, y + h * 0.45, w * 0.6, h * 0.14, 3); ctx.fill(); ctx.stroke();
       // legs
@@ -1994,8 +1995,11 @@ class FarmGame {
         ctx.scale(0.8, 0.68);
         ctx.drawImage(img, -displayWidth / 2, -displayHeight / 2, displayWidth, displayHeight);
       } else if (c.restPose === 'sit') {
-        ctx.translate(cx, groundY + (c.bob || 0) + TILE * 0.16);
-        ctx.scale(0.9, 0.72);
+        // Sunk down further than before so more of the character visually
+        // overlaps the seat/legs — otherwise it read as "standing behind
+        // a low table" rather than actually sitting on the furniture.
+        ctx.translate(cx, groundY + (c.bob || 0) + TILE * 0.32);
+        ctx.scale(0.85, 0.62);
         ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
       } else {
         ctx.translate(cx, groundY + (c.bob || 0));
@@ -2103,8 +2107,8 @@ class FarmGame {
       // whatever furniture it was meant to be centered on.
       ctx.drawImage(img, -displayWidth / 2, -displayHeight / 2, displayWidth, displayHeight);
     } else if (c.restPose === 'sit') {
-      ctx.translate(cx, groundY + c.bob + TILE * 0.16);
-      ctx.scale(0.9, 0.72);
+      ctx.translate(cx, groundY + c.bob + TILE * 0.32);
+      ctx.scale(0.85, 0.62);
       ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
     } else {
       ctx.translate(cx, groundY + c.bob);
