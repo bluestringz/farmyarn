@@ -359,7 +359,9 @@
     UI.renderSiloPanel(wheatRow ? wheatRow.quantity : 0, async (animalType, qty) => {
       try {
         const res = await Api.craftFeed(animalType, qty);
-        UI.toast(`Made ${res.quantity} ${res.feedItemId.replace('_', ' ')} (used ${res.wheatSpent} wheat)`);
+        UI.toast(res.failed > 0
+          ? `Made ${res.quantity} ${res.feedItemId.replace('_', ' ')} — ${res.failed} batch(es) came out ruined! (used ${res.wheatSpent} wheat)`
+          : `Made ${res.quantity} ${res.feedItemId.replace('_', ' ')} (used ${res.wheatSpent} wheat)`);
         await openSiloPanel(); // refresh wheat count shown
       } catch (err) {
         UI.toast(err.message);
@@ -388,7 +390,9 @@
     UI.renderStovePanel(inv, async (cropType, qty) => {
       try {
         const res = await Api.cook(cropType, qty);
-        UI.toast(`Cooked ${res.quantity} ${res.foodItemId.replace(/_/g, ' ')} (used ${res.cropSpent} ${cropType})`);
+        UI.toast(res.failed > 0
+          ? `Cooked ${res.quantity} ${res.foodItemId.replace(/_/g, ' ')} — ${res.failed} came out burnt! (used ${res.cropSpent} ${cropType})`
+          : `Cooked ${res.quantity} ${res.foodItemId.replace(/_/g, ' ')} (used ${res.cropSpent} ${cropType})`);
         await openStovePanel(); // refresh crop counts shown
       } catch (err) {
         UI.toast(err.message);
@@ -480,6 +484,7 @@
     }
 
     if (tool === 'build') { setTool(state.tool === 'build' ? null : 'build'); return; }
+    if (tool === 'place-animal') { setTool(state.tool === 'place-animal' ? null : 'place-animal'); return; }
     if (tool === 'remove') {
       if (state.viewingUserId) { UI.toast("You can't remove things on a friend's farm"); return; }
       setTool(state.tool === 'remove' ? null : 'remove');
@@ -518,6 +523,8 @@
       openSeedPicker();
     } else if (tool === 'build') {
       openBuildPicker();
+    } else if (tool === 'place-animal') {
+      openAnimalPicker();
     } else if (tool === 'decorate') {
       openDecoratePicker();
     }
@@ -550,7 +557,7 @@
     const inv = await Api.inventory();
     const owned = [];
     inv.forEach((row) => {
-      for (const cat of ['building', 'decoration', 'animal']) {
+      for (const cat of ['building', 'decoration']) {
         if (row.item_id.startsWith(`${cat}_`) && row.quantity > 0) {
           const itemId = row.item_id.slice(cat.length + 1);
           const def = findDef(cat, itemId);
@@ -560,13 +567,41 @@
     });
     if (!owned.length) {
       picker.classList.add('hidden');
-      UI.toast("You haven't bought anything to build yet — visit the Shop first!");
+      UI.toast("You haven't bought any buildings or decorations to place yet — visit the Shop first!");
       return;
     }
     UI.renderPicker(picker, owned, 'buildings', state.me, (id) => {
       const found = owned.find((x) => x.id === id);
       state.buildSelection = { category: found._cat, itemId: id, def: found };
       UI.toast(`Selected ${found.name}. Tap a spot on your farm to preview it.`);
+    });
+  }
+
+  // Animals get their own picker/tool, separate from Build — placing a
+  // chicken shouldn't feel lumped in with placing a fence or a silo.
+  // Animals can go in the coop/barn/cow_barn interiors OR straight
+  // outdoors on the open farm (the placement endpoint enforces which
+  // buildings accept which animal types either way).
+  async function openAnimalPicker() {
+    const picker = document.getElementById('build-picker');
+    const inv = await Api.inventory();
+    const owned = [];
+    inv.forEach((row) => {
+      if (row.item_id.startsWith('animal_') && row.quantity > 0) {
+        const itemId = row.item_id.slice('animal_'.length);
+        const def = findDef('animal', itemId);
+        if (def) owned.push({ ...def, _cat: 'animal', _owned: row.quantity });
+      }
+    });
+    if (!owned.length) {
+      picker.classList.add('hidden');
+      UI.toast("You haven't bought any animals yet — visit the Shop's Animals tab first!");
+      return;
+    }
+    UI.renderPicker(picker, owned, 'animals', state.me, (id) => {
+      const found = owned.find((x) => x.id === id);
+      state.buildSelection = { category: found._cat, itemId: id, def: found };
+      UI.toast(`Selected ${found.name}. Tap a spot to place it.`);
     });
   }
 
@@ -693,7 +728,11 @@
       game.playAction(ACTION_ICON.build);
       clearPendingPlacement();
       if (state.inHouse) { await refreshInterior(); await openDecoratePicker(); }
-      else { await refreshCurrentFarm(); await openBuildPicker(); }
+      else {
+        await refreshCurrentFarm();
+        if (state.tool === 'place-animal') await openAnimalPicker();
+        else await openBuildPicker();
+      }
     } catch (err) {
       UI.toast(err.message);
       clearPendingPlacement();
@@ -970,7 +1009,7 @@
           }
         }
         await refreshPlayer();
-        UI.toast(`Collected ${res.product}!`);
+        UI.toast(`Collected ${res.productQuantity > 1 ? `${res.productQuantity}x ${res.product}` : res.product}!`);
         game.playAction(ACTION_ICON.collect);
         await refreshCurrentFarm();
       } catch (err) {
@@ -1078,7 +1117,7 @@
           const res = await Api.buyPlaceable(cat, itemId, 1);
           state.me.coins = res.coins;
           renderTopbar();
-          const toolHint = cat === 'interior' ? 'Decorate (inside your house)' : 'Build';
+          const toolHint = cat === 'interior' ? 'Decorate (inside your house)' : cat === 'animal' ? 'Animal' : 'Build';
           UI.toast(`Bought! Pick "${toolHint}" on the toolbar to place it.`);
           await renderShopPanel(cat === 'interior' ? 'interiors' : cat === 'building' ? 'buildings' : cat === 'animal' ? 'animals' : 'decorations');
           return;

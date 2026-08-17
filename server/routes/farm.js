@@ -557,8 +557,16 @@ module.exports = function farmRoutes(db, io) {
     }
 
     db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(cropNeeded, cropRow.id);
-    addInventory(db, req.userId, recipe.foodItemId, qty);
-    res.json({ ok: true, foodItemId: recipe.foodItemId, quantity: qty, cropSpent: cropNeeded });
+    // Ingredients are spent either way (that's the risk of cooking) — but
+    // each individual attempt within the batch has an independent 5%
+    // chance to come out ruined, yielding one fewer food item than qty
+    // asked for. Small enough to rarely matter for a batch of a few, but
+    // real enough to notice on a big batch.
+    const COOK_FAIL_CHANCE = 0.05;
+    let succeeded = 0;
+    for (let i = 0; i < qty; i++) if (Math.random() >= COOK_FAIL_CHANCE) succeeded++;
+    if (succeeded > 0) addInventory(db, req.userId, recipe.foodItemId, succeeded);
+    res.json({ ok: true, foodItemId: recipe.foodItemId, quantity: succeeded, attempted: qty, failed: qty - succeeded, cropSpent: cropNeeded });
   });
 
   // POST /api/farm/eat { foodItemId } — consumes 1 food item, restores energy.

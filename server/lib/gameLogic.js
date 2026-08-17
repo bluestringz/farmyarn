@@ -102,20 +102,26 @@ function resolveAnimalDeaths(db, farmId) {
 // Resolve animal production readiness is handled inline at read-time (see routes/farm.js)
 // since animal state lives inside farm_objects.state as JSON, not a dedicated table.
 
-// How many units a single harvest yields — always at least 1, with a
-// shrinking chance at each additional piece (cascading: each roll only
-// happens if the previous one succeeded), so 5 is rare but not impossible.
-// 1pc guaranteed, then 85% for a 2nd, 65% for a 3rd (given the 2nd), 35%
-// for a 4th (given the 3rd), 19% for a 5th (given the 4th).
-const HARVEST_QTY_CASCADE = [1, 0.85, 0.65, 0.35, 0.19];
-function rollHarvestQuantity() {
+// How many units a single harvest/collection yields — always at least 1,
+// with a shrinking chance at each additional piece (cascading: each roll
+// only happens if the previous one succeeded), so the max is rare but not
+// impossible. Crops and animal products use different odds/caps (crops
+// can go up to 5, animal products cap at 3 — animal products are
+// generally worth more per unit, so a smaller ceiling keeps them from
+// snowballing as fast as a big crop harvest can).
+const HARVEST_QTY_CASCADE = [1, 0.85, 0.65, 0.35, 0.19]; // 1pc guaranteed, 85% for a 2nd, 65% for a 3rd (given the 2nd), 35% for a 4th, 19% for a 5th
+const ANIMAL_QTY_CASCADE = [1, 0.40, 0.09]; // 1pc guaranteed, 40% for a 2nd, 9% for a 3rd (given the 2nd)
+
+function rollCascadeQuantity(cascade) {
   let qty = 0;
-  for (const chance of HARVEST_QTY_CASCADE) {
+  for (const chance of cascade) {
     if (Math.random() < chance) qty++;
     else break;
   }
   return qty;
 }
+function rollHarvestQuantity() { return rollCascadeQuantity(HARVEST_QTY_CASCADE); }
+function rollAnimalQuantity() { return rollCascadeQuantity(ANIMAL_QTY_CASCADE); }
 
 function grantRewards(db, userId, { coins = 0, xp = 0 } = {}) {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
@@ -253,5 +259,5 @@ function isReservedName(name) {
 module.exports = {
   nowSec, xpForLevel, levelForXp, xpProgress, initFarmTiles, resolveCropStates, resolveAnimalDeaths,
   grantRewards, addInventory, notify, resolveEnergy, spendEnergy, addEnergy, MAX_ENERGY,
-  isReservedName, startResting, stopResting, resolveEquippedOutfit, rollHarvestQuantity,
+  isReservedName, startResting, stopResting, resolveEquippedOutfit, rollHarvestQuantity, rollAnimalQuantity,
 };

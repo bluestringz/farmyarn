@@ -1,5 +1,5 @@
 const express = require('express');
-const { grantRewards, addInventory, nowSec } = require('../lib/gameLogic');
+const { grantRewards, addInventory, nowSec, rollAnimalQuantity } = require('../lib/gameLogic');
 const {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
   ENTERABLE_BUILDING_DIMENSIONS, BUILDING_ALLOWED_ANIMALS,
@@ -385,8 +385,14 @@ module.exports = function shopRoutes(db) {
     }
 
     db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(wheatNeeded, wheatRow.id);
-    addInventory(db, req.userId, recipe.feedItemId, qty);
-    res.json({ ok: true, feedItemId: recipe.feedItemId, quantity: qty, wheatSpent: wheatNeeded });
+    // Wheat is spent either way (that's the risk of crafting) — but each
+    // individual batch of feed has an independent 5% chance to come out
+    // ruined, yielding one fewer feed item than qty asked for.
+    const CRAFT_FAIL_CHANCE = 0.05;
+    let succeeded = 0;
+    for (let i = 0; i < qty; i++) if (Math.random() >= CRAFT_FAIL_CHANCE) succeeded++;
+    if (succeeded > 0) addInventory(db, req.userId, recipe.feedItemId, succeeded);
+    res.json({ ok: true, feedItemId: recipe.feedItemId, quantity: succeeded, attempted: qty, failed: qty - succeeded, wheatSpent: wheatNeeded });
   });
 
   // POST /api/shop/feed-animal { objectId } — consumes 1 matching feed,
@@ -462,10 +468,11 @@ module.exports = function shopRoutes(db) {
     }
 
     db.prepare('UPDATE farm_objects SET last_collected_at = ? WHERE id = ?').run(nowSec(), obj.id);
-    addInventory(db, req.userId, animalType.product_item_id, 1);
+    const productQty = rollAnimalQuantity();
+    addInventory(db, req.userId, animalType.product_item_id, productQty);
     const reward = grantRewards(db, req.userId, { coins: 0, xp: 1 });
 
-    res.json({ ok: true, product: animalType.product_item_id, reward });
+    res.json({ ok: true, product: animalType.product_item_id, productQuantity: productQty, reward });
   });
 
   return router;
