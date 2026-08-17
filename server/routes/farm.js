@@ -107,6 +107,18 @@ module.exports = function farmRoutes(db, io) {
     res.json({ ok: true, itemId, quantity: qty });
   });
 
+  // GET /api/farm/event-place — find whichever farm is currently
+  // designated the Event Place (see /api/admin/set-event-place), if any.
+  // Anyone can call this (not just admins) — it's how the "Event Place"
+  // toolbar button finds where to take you.
+  router.get('/event-place', (req, res) => {
+    const farm = db.prepare('SELECT * FROM farms WHERE is_event_place = 1').get();
+    if (!farm) return res.status(404).json({ error: 'No Event Place has been set up yet' });
+    const payload = serializeFarm(farm);
+    payload.isOwner = farm.owner_id === req.userId;
+    res.json(payload);
+  });
+
   // GET /api/farm/:userId - view any player's farm (read-only visit)
   router.get('/:userId', (req, res) => {
     const targetId = parseInt(req.params.userId, 10);

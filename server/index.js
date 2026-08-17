@@ -31,7 +31,7 @@ app.use(express.json({ limit: '256kb' }));
 app.use('/api/', rateLimit({ windowMs: 60 * 1000, max: 600, standardHeaders: true, legacyHeaders: false }));
 
 // ---- Routes ----
-app.use('/api/auth', require('./routes/auth')(db));
+app.use('/api/auth', require('./routes/auth')(db, io, onlineUsers));
 
 const auth = requireAuth(db);
 app.use('/api/farm', auth, require('./routes/farm')(db, io));
@@ -167,6 +167,21 @@ io.on('connection', (socket) => {
     const info = map.get(uid);
     info.x = x; info.y = y;
     socket.to(space).emit('presence:move', { userId: uid, x, y });
+  });
+
+  // Broadcasts sitting/lying so anyone else sharing the same space (a
+  // visitor in the same house, or someone else in the Park) actually sees
+  // it happen instead of just seeing the player standing still — restPose
+  // is null when getting up.
+  socket.on('space:rest', ({ space, restPose, x, y }) => {
+    if (!space || space !== socket.currentSpace) return;
+    const map = spaceOccupants.get(space);
+    if (!map || !map.has(uid)) return;
+    const info = map.get(uid);
+    info.restPose = restPose || null;
+    if (x !== undefined) info.x = x;
+    if (y !== undefined) info.y = y;
+    socket.to(space).emit('presence:rest', { userId: uid, restPose, x, y });
   });
 
   socket.on('space:leave', ({ space }) => {

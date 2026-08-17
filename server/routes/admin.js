@@ -36,6 +36,28 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     res.json({ ok: true, message: payload });
   });
 
+  // POST /api/admin/set-event-place — designates the CALLING admin's own
+  // farm as THE Event Place (only one farm can hold this at a time — any
+  // previous holder is automatically cleared first). Everyone can visit
+  // it like the Market/Park (see /api/farm/event-place), but placing
+  // things there stays owner-only, same as any other farm — since only
+  // an admin calls this on their OWN farm, that means only this admin can
+  // build there.
+  router.post('/set-event-place', (req, res) => {
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    db.prepare('UPDATE farms SET is_event_place = 0 WHERE is_event_place = 1').run();
+    db.prepare('UPDATE farms SET is_event_place = 1 WHERE id = ?').run(farm.id);
+    res.json({ ok: true });
+  });
+
+  // POST /api/admin/clear-event-place — no farm is the Event Place until
+  // an admin sets one again.
+  router.post('/clear-event-place', (req, res) => {
+    db.prepare('UPDATE farms SET is_event_place = 0 WHERE is_event_place = 1').run();
+    res.json({ ok: true });
+  });
+
   // GET /api/admin/backup — downloads a full, consistent snapshot of the
   // live database as a .db file. Uses better-sqlite3's built-in backup()
   // (not just copying the raw file), which is safe to run while the

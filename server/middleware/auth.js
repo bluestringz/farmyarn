@@ -7,7 +7,7 @@ if (!JWT_SECRET) {
 }
 
 function signToken(user) {
-  return jwt.sign({ sub: user.id, username: user.username, isAdmin: !!user.is_admin }, JWT_SECRET, {
+  return jwt.sign({ sub: user.id, username: user.username, isAdmin: !!user.is_admin, sv: user.session_version || 0 }, JWT_SECRET, {
     expiresIn: '7d',
   });
 }
@@ -24,12 +24,20 @@ function requireAuth(db) {
     if (!token) return res.status(401).json({ error: 'Missing auth token' });
     try {
       const payload = jwt.verify(token, JWT_SECRET);
-      const user = db.prepare('SELECT is_banned, suspended_until, is_admin FROM users WHERE id = ?').get(payload.sub);
+      const user = db.prepare('SELECT is_banned, suspended_until, is_admin, session_version FROM users WHERE id = ?').get(payload.sub);
       if (!user) return res.status(401).json({ error: 'Account no longer exists' });
       if (user.is_banned) return res.status(403).json({ error: 'This account has been banned' });
       if (user.suspended_until && user.suspended_until > Math.floor(Date.now() / 1000)) {
         const until = new Date(user.suspended_until * 1000).toLocaleString();
         return res.status(403).json({ error: `This account is suspended until ${until}` });
+      }
+      // Logging in on another device bumps session_version (see auth.js's
+      // /login route) — an older token still carrying the previous
+      // version means this session has been superseded by a newer login
+      // elsewhere, so it's treated the same as an expired/invalid one
+      // rather than allowed to keep working alongside the new session.
+      if ((payload.sv || 0) !== (user.session_version || 0)) {
+        return res.status(401).json({ error: 'Logged in from another device' });
       }
       req.userId = payload.sub;
       req.username = payload.username;

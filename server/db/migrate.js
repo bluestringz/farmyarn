@@ -31,6 +31,7 @@ function migrate(db) {
     is_banned INTEGER NOT NULL DEFAULT 0,
     suspended_until INTEGER, -- unix timestamp; NULL = not suspended. Temporary, unlike is_banned (permanent).
     is_resting INTEGER NOT NULL DEFAULT 0, -- sitting/lying on furniture — regenerates energy faster while true
+    session_version INTEGER NOT NULL DEFAULT 0, -- bumps on every login; a JWT with a stale version is a logged-out-elsewhere session
     friend_water_count INTEGER NOT NULL DEFAULT 0, -- how many times today this player has watered a FRIEND's crop — resets daily, makes each successive help cost more gold
     friend_water_date TEXT, -- 'YYYY-MM-DD' the count above is for; a new day resets the count to 0
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
@@ -44,6 +45,7 @@ function migrate(db) {
     width INTEGER NOT NULL DEFAULT 12,
     height INTEGER NOT NULL DEFAULT 12,
     expansion_level INTEGER NOT NULL DEFAULT 0,
+    is_event_place INTEGER NOT NULL DEFAULT 0, -- at most one farm has this set — see /api/admin/set-event-place; everyone can visit it like the Market/Park, but only its owner (an admin) can place/build there, same as any other farm's owner-only placement rule
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
 
@@ -297,11 +299,18 @@ function addColumnsIfMissing(db) {
   if (!existingCols.includes('is_resting')) {
     db.exec('ALTER TABLE users ADD COLUMN is_resting INTEGER NOT NULL DEFAULT 0');
   }
+  if (!existingCols.includes('session_version')) {
+    db.exec('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0');
+  }
   if (!existingCols.includes('friend_water_count')) {
     db.exec('ALTER TABLE users ADD COLUMN friend_water_count INTEGER NOT NULL DEFAULT 0');
   }
   if (!existingCols.includes('friend_water_date')) {
     db.exec('ALTER TABLE users ADD COLUMN friend_water_date TEXT');
+  }
+  const farmCols = db.prepare("PRAGMA table_info(farms)").all().map((c) => c.name);
+  if (!farmCols.includes('is_event_place')) {
+    db.exec('ALTER TABLE farms ADD COLUMN is_event_place INTEGER NOT NULL DEFAULT 0');
   }
   if (!existingCols.includes('display_name')) {
     db.exec('ALTER TABLE users ADD COLUMN display_name TEXT');

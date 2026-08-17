@@ -598,10 +598,16 @@ const UI = (() => {
 
   function renderPicker(el, items, kind, player, onPick, selectedId) {
     if (!items.length) { el.classList.add('hidden'); return; }
+    const GLYPH_BY_CATEGORY = { crops: '🌱', building: '🏗️', animal: '🐾', decoration: '🌷', interior: '🛋️' };
     el.innerHTML = items.map((item) => {
       const cost = item.seed_cost ?? item.cost;
       const locked = player.level < item.required_level;
-      const glyph = { crops: '🌱', buildings: '🏗️', animals: '🐾', decorations: '🌷' }[kind] || '❔';
+      // The picker can hold a mix of categories at once (buildings,
+      // decorations, AND animals all show up together after a Shop trip,
+      // via openBuildPicker) — glyph per actual item category (item._cat),
+      // not one fixed icon for the whole list, so an animal doesn't show
+      // up looking like a building/decoration.
+      const glyph = GLYPH_BY_CATEGORY[item._cat] || GLYPH_BY_CATEGORY[kind] || '❔';
       const owned = item._owned;
       const selected = item.id === selectedId;
       return `<button class="picker-item ${locked ? 'disabled' : ''} ${selected ? 'selected' : ''}" data-id="${item.id}" ${locked ? 'disabled' : ''}>
@@ -793,7 +799,8 @@ const UI = (() => {
         ${recipes.map((r) => {
           const maxAffordable = Math.max(1, Math.min(99, Math.floor(woodOwned / r.woodCost)));
           return `
-          <div class="shop-card">
+          <div class="shop-card workshop-card">
+            <div class="workshop-badge">🔨 Handmade</div>
             <div class="shop-icon">${r.icon}</div>
             <div class="shop-name">${r.name}</div>
             <div class="shop-price">🪵 ${r.woodCost} wood each</div>

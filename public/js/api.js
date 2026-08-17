@@ -15,6 +15,8 @@ const Api = (() => {
     return token;
   }
 
+  let onSessionSuperseded = null; // set by main.js — called once if the server says this token was replaced by a newer login elsewhere
+
   async function request(method, path, body) {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -29,6 +31,15 @@ const Api = (() => {
       const message = res.status === 429
         ? "You're doing that a bit fast — wait a few seconds and try again."
         : (data && data.error) || `Request failed (${res.status})`;
+      // Someone logged into this same account elsewhere — that login bumps
+      // session_version server-side, which invalidates every token from
+      // before it (see server/middleware/auth.js). Rather than just
+      // surface this as a confusing generic error on whatever action the
+      // person happened to be doing, treat it as a forced logout with an
+      // explanation, same as if their session had simply expired.
+      if (res.status === 401 && message === 'Logged in from another device' && onSessionSuperseded) {
+        onSessionSuperseded();
+      }
       const err = new Error(message);
       err.status = res.status;
       throw err;
@@ -59,6 +70,7 @@ const Api = (() => {
 
   return {
     setToken, getToken,
+    setOnSessionSuperseded: (fn) => { onSessionSuperseded = fn; },
     get: (path) => request('GET', path),
     post: (path, body) => request('POST', path, body),
     del: (path) => request('DELETE', path),
@@ -123,6 +135,9 @@ const Api = (() => {
     eat: (foodItemId) => request('POST', '/api/farm/eat', { foodItemId }),
     buyParkSnack: (itemId) => request('POST', '/api/farm/park-buy-snack', { itemId }),
     storage: () => request('GET', '/api/farm/storage'),
+    eventPlace: () => request('GET', '/api/farm/event-place'),
+    setEventPlace: () => request('POST', '/api/admin/set-event-place'),
+    clearEventPlace: () => request('POST', '/api/admin/clear-event-place'),
     storageDeposit: (itemId, quantity) => request('POST', '/api/farm/storage-deposit', { itemId, quantity }),
     storageWithdraw: (itemId, quantity) => request('POST', '/api/farm/storage-withdraw', { itemId, quantity }),
 

@@ -265,12 +265,36 @@ class FarmGame {
       style: (data.appearance && data.appearance.style) || 'overalls',
       outfitKey: (data.appearance && data.appearance.outfitKey) || 'classic',
       chatText: null, chatTimer: 0,
+      restPose: null, // set via setRemotePlayerRestPose() from the 'presence:rest' broadcast
     });
+  }
+
+  // Applies another player's sit/lie state to their on-screen avatar —
+  // called when the 'presence:rest' socket event arrives (see main.js),
+  // so a visitor actually sees a friend resting on furniture instead of
+  // just standing there. tileX/tileY (already the furniture's center, in
+  // tile units) snap the avatar onto it the same way setRestPose does for
+  // the local character.
+  setRemotePlayerRestPose(userId, restPose, tileX, tileY) {
+    const actor = this.remotePlayers.get(userId);
+    if (!actor) return;
+    actor.restPose = restPose;
+    if (restPose && tileX !== undefined && tileY !== undefined) {
+      const wx = tileX * TILE, wy = tileY * TILE;
+      actor.x = wx; actor.y = wy; actor.targetX = wx; actor.targetY = wy;
+      actor.moving = false;
+      actor.facingDir = 'down';
+    }
   }
 
   moveRemotePlayer(userId, tileX, tileY) {
     const actor = this.remotePlayers.get(userId);
     if (!actor) return;
+    // Real movement means they've gotten up off whatever furniture they
+    // were resting on — same as the local character's walkTo clearing its
+    // own restPose. A rest-triggered 'presence:move' from setRemotePlayerRestPose
+    // itself doesn't go through this function, so this only fires for genuine walking.
+    if (actor.restPose) actor.restPose = null;
     const dx = tileX * TILE + TILE / 2 - actor.x, dy = tileY * TILE + TILE / 2 - actor.y;
     actor.targetX = tileX * TILE + TILE / 2;
     actor.targetY = tileY * TILE + TILE / 2;
@@ -460,6 +484,16 @@ class FarmGame {
   setDragActEnabled(enabled) {
     this.dragActEnabled = enabled;
     this._lastDragActedTile = null;
+  }
+
+  // Tracks which tool is active — the plain tile-highlight box (see
+  // _drawHoverHighlight) only shows while a tool is selected (plow/plant/
+  // water/harvest/build/feed/etc.), since it's meaningless when just
+  // walking around with nothing selected. The separate "this tile has
+  // something interactive on it" glow (_drawHoverGlow) is independent of
+  // this and always shows regardless of tool state.
+  setActiveTool(tool) {
+    this.activeTool = tool || null;
   }
 
   // A little watering-can-tips-and-sprinkles animation over a specific
@@ -1093,6 +1127,7 @@ class FarmGame {
       ctx.scale(this.camera.scale, this.camera.scale);
       this._drawIndoorRoom();
       this._drawIndoorObjects();
+      this._drawHoverGlow(this.interior.width, this.interior.height);
       this._drawHoverHighlight(this.interior.width, this.interior.height);
       this._drawGhost();
       this._drawPeopleSorted();
@@ -1114,6 +1149,7 @@ class FarmGame {
     this._drawFlatDecorations();
     this._drawSceneSorted();
     this._drawWaterEffects();
+    this._drawHoverGlow(this.farm.width, this.farm.height);
     this._drawHoverHighlight(this.farm.width, this.farm.height);
     this._drawGhost();
     this._drawCharacterOverlay();
@@ -1124,14 +1160,13 @@ class FarmGame {
   }
 
   // A soft highlight box on whichever tile the mouse is currently pointing
-  // at (see the pointerMove hover tracking) — mainly useful with a tool
-  // active (plow/plant/water/harvest/etc.), where knowing EXACTLY which
-  // tile a click will land on matters, but shown regardless of tool so it
-  // always reads as "here's what you're pointing at". Skipped when
-  // there's no hover tile (touch devices, or the mouse has left the
-  // canvas) or it's outside the playable area.
+  // at (see the pointerMove hover tracking) — only while a tool is active
+  // (plow/plant/water/harvest/build/feed/etc, see setActiveTool), since
+  // it's meaningless clutter while just walking around with nothing
+  // selected. Skipped when there's no hover tile (touch devices, or the
+  // mouse has left the canvas) or it's outside the playable area.
   _drawHoverHighlight(boundsW, boundsH) {
-    if (!this._hoverTile) return;
+    if (!this._hoverTile || !this.activeTool) return;
     const { x, y } = this._hoverTile;
     if (x < 0 || y < 0 || x >= boundsW || y >= boundsH) return;
     const ctx = this.ctx;
@@ -1144,6 +1179,41 @@ class FarmGame {
     ctx.strokeRect(px + 1, py + 1, TILE - 2, TILE - 2);
     ctx.restore();
   }
+
+  // A warm golden glow around whatever's under the mouse IF it's something
+  // interactive — a crop (water/harvest), or any farm_object (building,
+  // animal, decoration, furniture — tapping any of them does something).
+  // Unlike _drawHoverHighlight above, this shows regardless of whether a
+  // tool is active — it answers "does this thing do something", not
+  // "where will my current tool land".
+  _drawHoverGlow(boundsW, boundsH) {
+    if (!this._hoverTile) return;
+    const { x, y } = this._hoverTile;
+    if (x < 0 || y < 0 || x >= boundsW || y >= boundsH) return;
+
+    let fx = x, fy = y, fw = 1, fh = 1;
+    const crop = this.mode !== 'indoor' && this.farm && this.farm.crops
+      ? this.farm.crops.find((c) => c.tile_x === x && c.tile_y === y) : null;
+    if (!crop) {
+      const obj = this._objectAt(x, y);
+      if (!obj) return; // nothing interactive here — no glow
+      const def = this._defFor(obj);
+      fx = obj.grid_x; fy = obj.grid_y;
+      fw = (def && def.width) || 1; fh = (def && def.height) || 1;
+    }
+
+    const ctx = this.ctx;
+    const px = fx * TILE, py = fy * TILE, pw = fw * TILE, ph = fh * TILE;
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,221,136,0.9)';
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = 'rgba(255,221,136,0.85)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(px + 2, py + 2, pw - 4, ph - 4);
+    ctx.restore();
+  }
+
+
 
 
   // Lighter version of _drawSceneSorted for the Marketplace: no crops/objects
@@ -1558,16 +1628,47 @@ class FarmGame {
   // Real vector-drawn furniture pieces instead of an icon-in-a-card — each
   // gets its own shape (legs, cushions, frames, etc.), matching how outdoor
   // buildings/decorations are drawn rather than looking like UI icons.
+  // A rough, hand-cut wood-grain finish drawn on top of a crafted piece's
+  // normal shape — a warm semi-transparent tint plus a few wavy grain
+  // streaks, giving it a rustic "made from raw wood" look distinct from
+  // the smoother, more finished/painted look of the store-bought version
+  // of the same furniture. Applied by both _drawFurniture (crafted
+  // chair/bed/cabinet/bookshelf) and _drawDecoration (crafted bench).
+  _drawCraftedWoodGrain(x, y, w, h) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = 'rgba(139,94,52,0.16)';
+    ctx.beginPath();
+    this._roundRect(x + 2, y + 2, w - 4, h - 4, 4);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(94,59,31,0.5)';
+    ctx.lineWidth = 1;
+    const grainCount = 3;
+    for (let i = 0; i < grainCount; i++) {
+      const gy = y + h * (0.3 + i * 0.22);
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.12, gy);
+      ctx.quadraticCurveTo(x + w * 0.5, gy - h * 0.05, x + w * 0.88, gy);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   _drawFurniture(px, py, pw, ph, itemId, rotation) {
     const ctx = this.ctx;
     const x = px, y = py, w = pw, h = ph;
     const OUTLINE = '#5e3b1f';
     // Workshop-crafted furniture (crafted_bed, crafted_chair, etc.) reuses
-    // the same look as its store-bought counterpart — strip the prefix so
+    // the same SHAPE as its store-bought counterpart — strip the prefix so
     // every itemId check below still matches, instead of falling through
     // to nothing drawn (which is exactly why these were rendering
-    // invisible before, despite placing/functioning correctly).
-    itemId = itemId.startsWith('crafted_') ? itemId.slice('crafted_'.length) : itemId;
+    // invisible before, despite placing/functioning correctly). It's NOT
+    // meant to look IDENTICAL once placed though — a rougher, more
+    // rustic wood-grain finish (_drawCraftedWoodGrain, applied after the
+    // normal shape below) is what actually tells a crafted piece apart
+    // from the store-bought one at a glance.
+    const isCrafted = itemId.startsWith('crafted_');
+    itemId = isCrafted ? itemId.slice('crafted_'.length) : itemId;
 
     // A real 90°-step spin, not just a mirror — the footprint is square
     // (every piece of furniture is 1×1) so a true rotation never needs the
@@ -1736,6 +1837,7 @@ class FarmGame {
       ctx.beginPath(); this._roundRect(x + 4, y + 4, w - 8, h - 8, 10); ctx.fill(); ctx.stroke();
     }
 
+    if (isCrafted) this._drawCraftedWoodGrain(x, y, w, h);
     if (rotation) ctx.restore();
   }
 
@@ -1858,9 +1960,25 @@ class FarmGame {
     if (img && img.complete && img.naturalWidth > 0) {
       const displayHeight = TILE * 1.45;
       const displayWidth = displayHeight * (img.naturalWidth / img.naturalHeight);
+      // Same faked sitting/lying pose as the local character (see
+      // _drawCharacter) — a visitor should actually see a friend resting
+      // on a bed/chair/bench, not just standing there while their energy
+      // regen is secretly faster. c.restPose comes from the 'presence:rest'
+      // socket broadcast (see main.js).
       ctx.save();
-      ctx.translate(cx, groundY + c.bob);
-      ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
+      if (c.restPose === 'lie') {
+        ctx.translate(cx, groundY + (c.bob || 0) - TILE * 0.18);
+        ctx.rotate(-Math.PI / 2);
+        ctx.scale(0.8, 0.68);
+        ctx.drawImage(img, -displayWidth / 2, -displayHeight / 2, displayWidth, displayHeight);
+      } else if (c.restPose === 'sit') {
+        ctx.translate(cx, groundY + (c.bob || 0) + TILE * 0.16);
+        ctx.scale(0.9, 0.72);
+        ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
+      } else {
+        ctx.translate(cx, groundY + (c.bob || 0));
+        ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
+      }
       ctx.restore();
     }
 
@@ -2635,10 +2753,14 @@ class FarmGame {
   _drawDecoration(px, py, pw, ph, itemId, rotation, gridX, gridY, allObjects, growthState) {
     const ctx = this.ctx;
     // Workshop-crafted decorations (currently just crafted_bench) reuse
-    // the exact look of their store-bought counterpart — strip the prefix
+    // the same SHAPE as their store-bought counterpart — strip the prefix
     // so the DECORATION_STYLE lookup below still matches "bench" instead
-    // of finding nothing and silently rendering invisible.
-    itemId = itemId.startsWith('crafted_') ? itemId.slice('crafted_'.length) : itemId;
+    // of finding nothing and silently rendering invisible. The rustic
+    // wood-grain finish applied near the end of this function (see
+    // _drawCraftedWoodGrain) is what actually makes it look distinct from
+    // the store-bought bench once placed, not an identical copy of it.
+    const isCrafted = itemId.startsWith('crafted_');
+    itemId = isCrafted ? itemId.slice('crafted_'.length) : itemId;
     const style = DECORATION_STYLE[itemId];
     if (!style) return;
     const x = px, y = py, w = pw, h = ph;
@@ -2664,6 +2786,7 @@ class FarmGame {
     }
 
     this._drawDecorationShape(ctx, style, x, y, w, h);
+    if (isCrafted) this._drawCraftedWoodGrain(x, y, w, h);
 
     if (rotation) ctx.restore();
   }

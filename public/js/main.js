@@ -249,6 +249,19 @@
     joinSpace(null);
   }
 
+  // Sets the local character's sit/lie pose AND tells everyone else
+  // sharing the current space (a visitor in the same house, someone else
+  // in the Park) so they actually see it happen too — see setRemotePlayerRestPose
+  // in game.js and the 'presence:rest' socket handler above. Every caller
+  // that used to call game.setRestPose(...) directly should call this
+  // instead so the broadcast never gets missed.
+  function setLocalRestPose(pose, tileX, tileY) {
+    game.setRestPose(pose, tileX, tileY);
+    if (state.socket && state.currentSpace) {
+      state.socket.emit('space:rest', { space: state.currentSpace, restPose: pose, x: tileX, y: tileY });
+    }
+  }
+
   async function loadOwnFarm() {
     state.viewingUserId = null;
     state.inHouse = false;
@@ -414,7 +427,7 @@
         renderTopbar();
       } catch (err) { /* non-critical — don't block leaving over this */ }
     }
-    game.setRestPose(null);
+    setLocalRestPose(null);
     game.exitInteriorMode();
     state.inHouse = false;
     state.interiorSpace = null;
@@ -452,6 +465,7 @@
     if (tool === 'expand') { doExpand(); return; }
     if (tool === 'marketplace') { enterMarket(); return; }
     if (tool === 'park') { enterPark(); return; }
+    if (tool === 'event-place') { enterEventPlace(); return; }
 
     if (state.inHouse) {
       if (tool === 'decorate') { setTool(state.tool === 'decorate' ? null : 'decorate'); return; }
@@ -496,6 +510,7 @@
     // tap per tile — every other tool keeps the normal single-tap
     // behavior (a drag still just pans the map for those).
     game.setDragActEnabled(tool === 'water');
+    game.setActiveTool(tool);
     document.getElementById('seed-picker').classList.add('hidden');
     document.getElementById('build-picker').classList.add('hidden');
 
@@ -824,7 +839,7 @@
           const res = await Api.stopResting();
           state.me.isResting = res.resting;
           state.me.energy = res.energy;
-          game.setRestPose(null);
+          setLocalRestPose(null);
           UI.toast('You got up.');
         } else {
           const pose = obj.item_id === 'bed' ? 'lie' : 'sit';
@@ -836,7 +851,7 @@
           const def = findDef(obj.object_type, obj.item_id);
           const centerX = obj.grid_x + ((def && def.width) || 1) / 2;
           const centerY = obj.grid_y + ((def && def.height) || 1) / 2;
-          game.setRestPose(pose, centerX, centerY);
+          setLocalRestPose(pose, centerX, centerY);
           const res = await Api.startResting();
           state.me.isResting = res.resting;
           state.me.energy = res.energy;
@@ -844,7 +859,7 @@
         }
         renderTopbar();
       } catch (err) {
-        game.setRestPose(null);
+        setLocalRestPose(null);
         UI.toast(err.message);
       }
       return;
@@ -1139,6 +1154,24 @@
   // instead of stalls. No server data to fetch — the layout is fixed and
   // known entirely client-side (see PARK_WIDTH/HEIGHT/PARK_BENCH_POSITIONS
   // in game.js) — so entering it is simpler than the market or a farm.
+  // The Event Place is just a regular farm (owned by whichever admin set
+  // it up via the admin panel) — reuses the exact same visit flow as
+  // clicking a friend in the Friends list, so shared presence, read-only
+  // enforcement for non-owners, and owner-only placement all come for
+  // free with zero new logic.
+  async function enterEventPlace() {
+    if (state.inHouse) await exitHouse();
+    if (state.inPark) await exitPark();
+    if (state.inMarket) await exitMarket();
+    try {
+      const farm = await Api.eventPlace();
+      await loadFarm(farm.ownerId);
+      UI.toast(farm.isOwner ? "This is the Event Place — you can build here." : "Welcome to the Event Place!");
+    } catch (err) {
+      UI.toast(err.message);
+    }
+  }
+
   async function enterPark() {
     if (state.viewingUserId) { UI.toast("Leave your friend's farm first"); return; }
     if (state.inHouse) await exitHouse();
@@ -1161,7 +1194,7 @@
         renderTopbar();
       } catch (err) { /* non-critical */ }
     }
-    game.setRestPose(null);
+    setLocalRestPose(null);
     game.exitParkMode();
     state.inPark = false;
     document.getElementById('park-banner').classList.add('hidden');
@@ -1175,10 +1208,10 @@
         const res = await Api.stopResting();
         state.me.isResting = res.resting;
         state.me.energy = res.energy;
-        game.setRestPose(null);
+        setLocalRestPose(null);
         UI.toast('You got up.');
       } else {
-        game.setRestPose('sit', bench.x + 0.5, bench.y + 0.5);
+        setLocalRestPose('sit', bench.x + 0.5, bench.y + 0.5);
         const res = await Api.startResting();
         state.me.isResting = res.resting;
         state.me.energy = res.energy;
@@ -1403,17 +1436,36 @@
       UI.toast(message);
       refreshNotifBadge();
     });
+    // Someone (possibly you, on another device) just logged into this
+    // same account — session_version bumped server-side, which makes
+    // this session's token invalid from here on. Log out immediately with
+    // an explicit reason rather than leaving the person to discover it
+    // confusingly on their next action (a failed request, a frozen game).
+    socket.on('session:kicked', () => {
+      Api.setToken(null);
+      alert('You were logged out because this account signed in on another device.');
+      window.location.reload();
+    });
 
     // ---- Shared presence (farm visits + Marketplace) ----
     socket.on('presence:roster', ({ space, occupants }) => {
       if (space !== state.currentSpace) return;
-      occupants.forEach((o) => game.upsertRemotePlayer(o.userId, o));
+      occupants.forEach((o) => {
+        game.upsertRemotePlayer(o.userId, o);
+        // Whoever was already in this room (sitting/lying) before we
+        // walked in should look that way from the very first frame, not
+        // pop into a resting pose only once they happen to move next.
+        if (o.restPose) game.setRemotePlayerRestPose(o.userId, o.restPose, o.x, o.y);
+      });
     });
     socket.on('presence:joined', (info) => {
       game.upsertRemotePlayer(info.userId, info);
     });
     socket.on('presence:move', ({ userId, x, y }) => {
       game.moveRemotePlayer(userId, x, y);
+    });
+    socket.on('presence:rest', ({ userId, restPose, x, y }) => {
+      game.setRemotePlayerRestPose(userId, restPose, x, y);
     });
     socket.on('presence:left', ({ userId }) => {
       game.removeRemotePlayer(userId);
@@ -1542,6 +1594,20 @@
 
   async function main() {
     initAuthScreen();
+    // Someone logging into this same account elsewhere invalidates this
+    // session immediately, mid-use — not just on the next page load. Set
+    // this before bootGame() so it's already armed for the very first API
+    // call, and _sessionSupersededHandled guards against firing more than
+    // once if several in-flight requests all fail from the same cause at
+    // once (each would otherwise try to alert+reload independently).
+    let sessionSupersededHandled = false;
+    Api.setOnSessionSuperseded(() => {
+      if (sessionSupersededHandled) return;
+      sessionSupersededHandled = true;
+      Api.setToken(null);
+      alert('You were logged out because this account signed in from another device.');
+      window.location.reload();
+    });
     if (Api.getToken()) {
       try {
         await bootGame();

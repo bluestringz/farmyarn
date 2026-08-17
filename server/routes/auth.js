@@ -14,7 +14,7 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts, please try again later.' },
 });
 
-module.exports = function authRoutes(db) {
+module.exports = function authRoutes(db, io, onlineUsers) {
   const router = express.Router();
   router.use(authLimiter);
 
@@ -75,6 +75,25 @@ module.exports = function authRoutes(db) {
     }
   });
 
+  // Force-disconnects any socket already connected as this user — used
+  // right after a login bumps session_version, so the OTHER device finds
+  // out immediately (a real-time kick) instead of only failing the next
+  // time it happens to make an API call. Emits 'session:kicked' first so
+  // the client can show an explicit "logged in elsewhere" message rather
+  // than just looking like the connection silently dropped.
+  function kickExistingSessions(userId) {
+    if (!io || !onlineUsers) return;
+    const socketIds = onlineUsers.get(userId);
+    if (!socketIds) return;
+    for (const socketId of socketIds) {
+      const socket = io.sockets.sockets.get(socketId);
+      if (socket) {
+        socket.emit('session:kicked');
+        socket.disconnect(true);
+      }
+    }
+  }
+
   router.post('/login', async (req, res) => {
     try {
       const { username, password } = req.body || {};
@@ -92,10 +111,15 @@ module.exports = function authRoutes(db) {
       const ok = await bcrypt.compare(password, user.password_hash);
       if (!ok) return res.status(401).json({ error: 'Invalid username or password' });
 
-      db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(nowSec(), user.id);
+      // Bumping session_version invalidates every other token already
+      // issued for this account (see requireAuth's version check) — this
+      // is what actually logs out a browser session when the same account
+      // logs in from a phone (or anywhere else) afterward.
+      db.prepare('UPDATE users SET last_login = ?, session_version = session_version + 1 WHERE id = ?').run(nowSec(), user.id);
       resolveEquippedOutfit(db, user.id);
       const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
       const token = signToken(fresh);
+      if (kickExistingSessions) kickExistingSessions(user.id);
       return res.json({ token, user: publicUser(fresh) });
     } catch (err) {
       console.error('login error', err);
