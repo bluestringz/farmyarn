@@ -1762,9 +1762,11 @@ class FarmGame {
       ctx.beginPath(); this._roundRect(x + w * 0.28, y + h * 0.32, w * 0.44, h * 0.14, 4); ctx.fill(); ctx.stroke();
       // seat
       ctx.beginPath(); this._roundRect(x + w * 0.2, y + h * 0.45, w * 0.6, h * 0.14, 3); ctx.fill(); ctx.stroke();
-      // legs
-      ctx.fillRect(x + w * 0.24, y + h * 0.58, w * 0.06, h * 0.28);
-      ctx.fillRect(x + w * 0.7, y + h * 0.58, w * 0.06, h * 0.28);
+      // legs — pulled in closer to center (was 0.24/0.70) so a seated
+      // character's body actually covers them instead of leaving them
+      // visibly poking out past either side.
+      ctx.fillRect(x + w * 0.34, y + h * 0.58, w * 0.06, h * 0.28);
+      ctx.fillRect(x + w * 0.6, y + h * 0.58, w * 0.06, h * 0.28);
     } else if (itemId === 'cabinet') {
       ctx.fillStyle = '#a9714a';
       ctx.beginPath(); this._roundRect(x + w * 0.14, y + h * 0.1, w * 0.72, h * 0.72, 5); ctx.fill(); ctx.stroke();
@@ -3085,8 +3087,11 @@ class FarmGame {
       ctx.fillRect(bx, by + h * 0.16, bw, h * 0.06); // backrest (low)
       ctx.fillRect(bx, by + h * 0.24, bw, h * 0.1); // seat
       ctx.fillStyle = style.woodDark;
-      ctx.fillRect(bx + 2, by + h * 0.34, w * 0.06, h * 0.24); // legs
-      ctx.fillRect(bx + bw - w * 0.08, by + h * 0.34, w * 0.06, h * 0.24);
+      // Legs pulled in closer to center than the seat's own width would
+      // suggest, so a seated character's body actually covers them
+      // instead of leaving them visibly poking out past either side.
+      ctx.fillRect(x + w * 0.32, by + h * 0.34, w * 0.06, h * 0.24); // legs
+      ctx.fillRect(x + w * 0.62, by + h * 0.34, w * 0.06, h * 0.24);
     } else if (style.shape === 'lamp') {
       const cx = x + w / 2;
       ctx.fillStyle = style.post;
