@@ -20,7 +20,7 @@
 </style>
 </head>
 <body>
-<h1>🌾 FarmYARN — Admin Panel</h1>
+<h1>🌾 FarmYARN — Admin Panel <button id="admin-logout-btn" style="display:none;float:right;background:#c0392b;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer;">Log out</button></h1>
 
 <div class="card" id="login-box">
   <p>Log in with an admin account.</p>
@@ -103,6 +103,16 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+document.getElementById('admin-logout-btn').addEventListener('click', () => {
+  TOKEN = null;
+  localStorage.removeItem('fy_admin_token');
+  document.getElementById('admin-app').style.display = 'none';
+  document.getElementById('admin-logout-btn').style.display = 'none';
+  document.getElementById('login-box').style.display = 'block';
+  document.getElementById('admin-username').value = '';
+  document.getElementById('admin-password').value = '';
+});
+
 document.getElementById('admin-login-btn').addEventListener('click', async () => {
   try {
     const username = document.getElementById('admin-username').value;
@@ -120,6 +130,7 @@ document.getElementById('admin-login-btn').addEventListener('click', async () =>
 async function showApp() {
   document.getElementById('login-box').style.display = 'none';
   document.getElementById('admin-app').style.display = 'block';
+  document.getElementById('admin-logout-btn').style.display = 'inline-block';
   await loadStats();
   await loadPlayers();
   await loadMailbox();
