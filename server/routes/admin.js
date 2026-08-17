@@ -51,10 +51,18 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     res.json({ ok: true });
   });
 
-  // POST /api/admin/clear-event-place — no farm is the Event Place until
-  // an admin sets one again.
+  // POST /api/admin/clear-event-place — wipes the Event Place back to
+  // empty (every farm_object removed EXCEPT the farmhouse itself, which
+  // can never be deleted — same rule as any other farm), so setting up a
+  // new event look doesn't mean manually removing the old one piece by
+  // piece. Stays the designated Event Place afterward — this resets the
+  // look, it doesn't un-designate it.
   router.post('/clear-event-place', (req, res) => {
-    db.prepare('UPDATE farms SET is_event_place = 0 WHERE is_event_place = 1').run();
+    const farm = db.prepare('SELECT * FROM farms WHERE is_event_place = 1').get();
+    if (!farm) return res.status(404).json({ error: 'No Event Place is currently set' });
+    db.prepare("DELETE FROM farm_objects WHERE farm_id = ? AND item_id != 'farmhouse'").run(farm.id);
+    db.prepare("DELETE FROM crops WHERE farm_id = ?").run(farm.id);
+    db.prepare("UPDATE farm_tiles SET state = 'grass' WHERE farm_id = ?").run(farm.id);
     res.json({ ok: true });
   });
 

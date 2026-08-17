@@ -134,6 +134,7 @@ const Api = (() => {
     cook: (cropType, quantity, atFarmId) => request('POST', '/api/farm/cook', { cropType, quantity, atFarmId }),
     eat: (foodItemId) => request('POST', '/api/farm/eat', { foodItemId }),
     buyParkSnack: (itemId) => request('POST', '/api/farm/park-buy-snack', { itemId }),
+    setSignText: (objectId, text) => request('POST', '/api/shop/set-sign-text', { objectId, text }),
     storage: () => request('GET', '/api/farm/storage'),
     eventPlace: () => request('GET', '/api/farm/event-place'),
     setEventPlace: () => request('POST', '/api/admin/set-event-place'),

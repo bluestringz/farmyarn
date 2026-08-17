@@ -65,7 +65,7 @@
     <p style="font-weight:700;margin-bottom:4px;">🎪 Event Place</p>
     <p style="font-size:12px;color:#8a5a34;margin-top:0;">Makes YOUR OWN farm the shared "Event Place" everyone can visit from the 🎪 Event toolbar button (like the Market/Park) — only you can build/place things there, since it's still just your farm under the hood. Only one admin's farm can hold this at a time.</p>
     <button id="set-event-place-btn">Make My Farm the Event Place</button>
-    <button id="clear-event-place-btn" style="margin-left:8px;">Clear Event Place</button>
+    <button id="clear-event-place-btn" style="margin-left:8px;">🧹 Wipe Event Place (removes everything except the house)</button>
     <span id="event-place-status" style="margin-left:10px; font-size:12px; color:#8a5a34;"></span>
   </div>
 
@@ -78,7 +78,7 @@
     <input id="search-input" placeholder="Search username...">
     <button id="search-btn">Search</button>
     <table id="players-table">
-      <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Name in Game</th><th>Lvl / XP</th><th>Energy</th><th>Coins</th><th>Premium Points</th><th>Status</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Name in Game</th><th>Lvl</th><th>Energy</th><th>Coins</th><th>Prem. Points</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -192,101 +192,122 @@ function statusLabel(u) {
 async function loadPlayers(q) {
   const rows = await api('GET', '/api/admin/players' + (q ? '?q=' + encodeURIComponent(q) : ''));
   const tbody = document.querySelector('#players-table tbody');
+  const MATERIAL_OPTIONS = [
+    { id: 'log', label: '🪵 Wood (log)' },
+    { id: 'egg', label: '🥚 Egg' },
+    { id: 'milk', label: '🥛 Milk' },
+    { id: 'wool', label: '🧶 Wool' },
+    { id: 'truffle', label: '🍄 Truffle' },
+    { id: 'wheat', label: '🌾 Wheat' },
+    { id: 'corn', label: '🌽 Corn' },
+    { id: 'tomato', label: '🍅 Tomato' },
+    { id: 'carrot', label: '🥕 Carrot' },
+    { id: 'potato', label: '🥔 Potato' },
+    { id: 'strawberry', label: '🍓 Strawberry' },
+    { id: 'pumpkin', label: '🎃 Pumpkin' },
+  ];
+
+  // A single "Actions" dropdown per player replaces what used to be six
+  // separate always-visible input+button pairs crammed into the row (Set
+  // Level, Set Energy, Set Coins, Give PP, Ban, Suspend, Delete all at
+  // once) — picking an action reveals just the one input it actually
+  // needs, so the table reads as a table again instead of a wall of
+  // fields for every single row.
+  function renderActionArea(container, u) {
+    const action = container.querySelector('.action-select').value;
+    const area = container.querySelector('.action-inputs');
+    if (!action) { area.innerHTML = ''; return; }
+    const forms = {
+      'set-level': `<input type="number" class="a-input" value="${u.level}" min="1" style="width:60px"><button class="a-go">Set</button>`,
+      'set-energy': `<input type="number" class="a-input" value="${u.energy ?? 0}" min="0" style="width:70px"><button class="a-go">Set</button>`,
+      'set-coins': `<input type="number" class="a-input" value="${u.coins}" min="0" style="width:80px"><button class="a-go">Set</button>`,
+      'give-pp': `<input type="number" class="a-input" value="100" style="width:70px"><button class="a-go">Give</button>`,
+      'give-item': `<select class="a-input2">${MATERIAL_OPTIONS.map(m => `<option value="${m.id}">${m.label}</option>`).join('')}</select>
+                    <input type="number" class="a-input" value="10" min="1" style="width:60px"><button class="a-go">Give</button>`,
+      ban: `<button class="a-go" style="background:${u.is_banned ? 'var(--leaf)' : '#c0392b'}">${u.is_banned ? 'Unban' : 'Confirm Ban'}</button>`,
+      suspend: `<input type="number" class="a-input" value="3" min="0.5" step="0.5" style="width:50px" title="Days"><button class="a-go">Suspend</button>${u.suspended_until ? '<button class="a-lift">Lift now</button>' : ''}`,
+      delete: `<button class="a-go" style="background:#c0392b">Confirm Delete</button>`,
+    };
+    area.innerHTML = forms[action] || '';
+
+    const go = area.querySelector('.a-go');
+    if (!go) return;
+    go.addEventListener('click', async () => {
+      const val = area.querySelector('.a-input') ? area.querySelector('.a-input').value : null;
+      try {
+        if (action === 'set-level') {
+          const level = parseInt(val, 10);
+          if (!Number.isFinite(level) || level < 1) return alert('Enter a valid level.');
+          await api('POST', `/api/admin/players/${u.id}/set-level`, { level });
+        } else if (action === 'set-energy') {
+          const energy = parseInt(val, 10);
+          if (!Number.isFinite(energy) || energy < 0) return alert('Enter a valid energy amount.');
+          await api('POST', `/api/admin/players/${u.id}/set-energy`, { energy });
+        } else if (action === 'set-coins') {
+          const coins = parseInt(val, 10);
+          if (!Number.isFinite(coins) || coins < 0) return alert('Enter a valid coin amount.');
+          await api('POST', `/api/admin/players/${u.id}/set-coins`, { coins });
+        } else if (action === 'give-pp') {
+          const amount = parseInt(val, 10) || 0;
+          if (!amount) return;
+          await api('POST', `/api/admin/players/${u.id}/give-premium`, { amount });
+        } else if (action === 'give-item') {
+          const itemId = area.querySelector('.a-input2').value;
+          const quantity = parseInt(val, 10) || 0;
+          if (!quantity) return;
+          await api('POST', `/api/admin/players/${u.id}/give-item`, { itemId, quantity });
+        } else if (action === 'ban') {
+          await api('POST', `/api/admin/players/${u.id}/ban`, { banned: !u.is_banned });
+        } else if (action === 'suspend') {
+          const days = parseFloat(val) || 1;
+          await api('POST', `/api/admin/players/${u.id}/suspend`, { days });
+        } else if (action === 'delete') {
+          if (!confirm(`Permanently delete "${u.username}"? This deletes their farm, inventory, everything — it cannot be undone.`)) return;
+          if (prompt(`Type "${u.username}" to confirm deletion:`) !== u.username) return alert('Name did not match — cancelled.');
+          await api('DELETE', `/api/admin/players/${u.id}`);
+        }
+        loadPlayers(document.getElementById('search-input').value);
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+    const lift = area.querySelector('.a-lift');
+    if (lift) lift.addEventListener('click', async () => {
+      await api('POST', `/api/admin/players/${u.id}/suspend`, { days: 0 });
+      loadPlayers(document.getElementById('search-input').value);
+    });
+  }
+
   tbody.innerHTML = rows.map(u => `
     <tr>
       <td>${u.online ? '🟢' : '⚪'}</td>
       <td>${u.id}</td><td>${u.username}</td>
       <td>${u.display_name ? escapeHtml(u.display_name) : '<span style="color:#999">(not set)</span>'}</td>
-      <td>
-        Lvl ${u.level}
-        <input type="number" class="level-input" data-level-for="${u.id}" value="${u.level}" style="width:50px" min="1">
-        <button data-set-level="${u.id}">Set</button>
-      </td>
-      <td>
-        <input type="number" class="energy-input" data-energy-for="${u.id}" value="${u.energy ?? ''}" style="width:60px" min="0">
-        <button data-set-energy="${u.id}">Set</button>
-      </td>
-      <td>
-        <input type="number" class="coins-input" data-coins-for="${u.id}" value="${u.coins}" style="width:80px">
-        <button data-set-coins="${u.id}">Set</button>
-      </td>
-      <td>
-        <input type="number" class="pp-amount" data-pp-for="${u.id}" value="100" style="width:60px" title="Premium Points to add">
-        <button data-give-pp="${u.id}">Give PP</button>
-      </td>
+      <td>${u.level}</td>
+      <td>${u.energy ?? 0}</td>
+      <td>${u.coins}</td>
+      <td>${u.premium_currency ?? 0}</td>
       <td>${statusLabel(u)}</td>
-      <td class="row-actions">
-        <button data-ban="${u.id}" data-state="${u.is_banned ? 0 : 1}">${u.is_banned ? 'Unban' : 'Ban'}</button>
-        <input type="number" class="suspend-days" data-suspend-for="${u.id}" value="3" style="width:50px" title="Days">
-        <button data-suspend="${u.id}">Suspend</button>
-        ${u.suspended_until ? `<button data-unsuspend="${u.id}">Lift</button>` : ''}
-        <button data-delete="${u.id}" data-username="${u.username}" style="background:#c0392b">Delete</button>
+      <td>
+        <select class="action-select" data-user="${u.id}">
+          <option value="">Choose action...</option>
+          <option value="set-level">Set Level</option>
+          <option value="set-energy">Set Energy</option>
+          <option value="set-coins">Set Coins</option>
+          <option value="give-pp">Give Premium Points</option>
+          <option value="give-item">Give Material</option>
+          <option value="ban">${u.is_banned ? 'Unban' : 'Ban'}</option>
+          <option value="suspend">Suspend</option>
+          <option value="delete">Delete</option>
+        </select>
+        <span class="action-inputs" data-user="${u.id}" style="margin-left:6px;"></span>
       </td>
     </tr>`).join('');
 
-  tbody.querySelectorAll('button[data-set-level]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const input = document.querySelector(`input[data-level-for="${btn.dataset.setLevel}"]`);
-      const level = parseInt(input.value, 10);
-      if (!Number.isFinite(level) || level < 1) return alert('Enter a valid level.');
-      await api('POST', `/api/admin/players/${btn.dataset.setLevel}/set-level`, { level });
-      loadPlayers(document.getElementById('search-input').value);
-    });
-  });
-  tbody.querySelectorAll('button[data-set-energy]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const input = document.querySelector(`input[data-energy-for="${btn.dataset.setEnergy}"]`);
-      const energy = parseInt(input.value, 10);
-      if (!Number.isFinite(energy) || energy < 0) return alert('Enter a valid energy amount.');
-      await api('POST', `/api/admin/players/${btn.dataset.setEnergy}/set-energy`, { energy });
-      loadPlayers(document.getElementById('search-input').value);
-    });
-  });
-  tbody.querySelectorAll('button[data-set-coins]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const input = document.querySelector(`input[data-coins-for="${btn.dataset.setCoins}"]`);
-      const coins = parseInt(input.value, 10);
-      if (!Number.isFinite(coins) || coins < 0) return alert('Enter a valid coin amount.');
-      await api('POST', `/api/admin/players/${btn.dataset.setCoins}/set-coins`, { coins });
-      loadPlayers(document.getElementById('search-input').value);
-    });
-  });
-  tbody.querySelectorAll('button[data-give-pp]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const input = document.querySelector(`input[data-pp-for="${btn.dataset.givePp}"]`);
-      const amount = parseInt(input.value, 10) || 0;
-      if (!amount) return;
-      await api('POST', `/api/admin/players/${btn.dataset.givePp}/give-premium`, { amount });
-      loadPlayers(document.getElementById('search-input').value);
-    });
-  });
-  tbody.querySelectorAll('button[data-ban]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      await api('POST', `/api/admin/players/${btn.dataset.ban}/ban`, { banned: btn.dataset.state === '1' });
-      loadPlayers(document.getElementById('search-input').value);
-    });
-  });
-  tbody.querySelectorAll('button[data-suspend]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const input = document.querySelector(`input[data-suspend-for="${btn.dataset.suspend}"]`);
-      const days = parseFloat(input.value) || 1;
-      await api('POST', `/api/admin/players/${btn.dataset.suspend}/suspend`, { days });
-      loadPlayers(document.getElementById('search-input').value);
-    });
-  });
-  tbody.querySelectorAll('button[data-unsuspend]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      await api('POST', `/api/admin/players/${btn.dataset.unsuspend}/suspend`, { days: 0 });
-      loadPlayers(document.getElementById('search-input').value);
-    });
-  });
-  tbody.querySelectorAll('button[data-delete]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const name = btn.dataset.username;
-      if (!confirm(`Permanently delete "${name}"? This deletes their farm, inventory, everything — it cannot be undone.`)) return;
-      if (prompt(`Type "${name}" to confirm deletion:`) !== name) return alert('Name did not match — cancelled.');
-      await api('DELETE', `/api/admin/players/${btn.dataset.delete}`);
-      loadPlayers(document.getElementById('search-input').value);
+  tbody.querySelectorAll('.action-select').forEach(select => {
+    select.addEventListener('change', () => {
+      const u = rows.find(r => String(r.id) === select.dataset.user);
+      renderActionArea(select.closest('tr'), u);
     });
   });
 }

@@ -238,6 +238,32 @@ module.exports = function shopRoutes(db) {
     res.json({ ok: true, objectId: info.lastInsertRowid });
   });
 
+  // POST /api/shop/set-sign-text  { objectId, text } — customize a Sign's
+  // text, costing coins every time (first time OR editing it again) since
+  // it's a paid customization, not a one-time unlock.
+  const SIGN_TEXT_COST = 150;
+  const MAX_SIGN_TEXT_LENGTH = 24;
+  router.post('/set-sign-text', (req, res) => {
+    const { objectId, text } = req.body || {};
+    const signText = (text || '').toString().trim();
+    if (!signText) return res.status(400).json({ error: 'Enter some text for the sign' });
+    if (signText.length > MAX_SIGN_TEXT_LENGTH) return res.status(400).json({ error: `Keep it under ${MAX_SIGN_TEXT_LENGTH} characters` });
+
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    const obj = db.prepare("SELECT * FROM farm_objects WHERE id = ? AND farm_id = ? AND item_id = 'sign'").get(objectId, farm.id);
+    if (!obj) return res.status(404).json({ error: 'Sign not found on your farm' });
+
+    const user = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+    if (user.coins < SIGN_TEXT_COST) return res.status(400).json({ error: `Customizing a sign costs 🪙${SIGN_TEXT_COST}` });
+
+    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(SIGN_TEXT_COST, req.userId);
+    db.prepare('UPDATE farm_objects SET state = ? WHERE id = ?').run(JSON.stringify({ text: signText }), obj.id);
+
+    const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+    res.json({ ok: true, text: signText, coins: updated.coins });
+  });
+
   // POST /api/shop/move-object  { objectId, x, y, rotation }
   router.post('/move-object', (req, res) => {
     const { objectId, x, y, rotation } = req.body || {};

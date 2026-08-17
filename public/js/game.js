@@ -1181,11 +1181,22 @@ class FarmGame {
   }
 
   // A warm golden glow around whatever's under the mouse IF it's something
-  // interactive — a crop (water/harvest), or any farm_object (building,
-  // animal, decoration, furniture — tapping any of them does something).
+  // that actually DOES something when tapped — a crop (water/harvest), an
+  // animal (feed/collect), or one of a specific set of buildings/furniture
+  // with a real tap-function (enters a room, opens a crafting panel, lets
+  // you sit/lie down, etc). Deliberately NOT every farm_object — plenty of
+  // decorations (a fence, a painting, a rug, a path tile) do nothing
+  // special when tapped with no tool active, so they don't glow either;
+  // glowing them would just be visual noise that doesn't mean anything.
   // Unlike _drawHoverHighlight above, this shows regardless of whether a
   // tool is active — it answers "does this thing do something", not
   // "where will my current tool land".
+  static FUNCTIONAL_ITEM_IDS = new Set([
+    'farmhouse', 'chicken_coop', 'cow_barn', 'barn', // enterable buildings
+    'silo', 'workshop', 'storage_shed', 'stove', // buildings/furniture that open a panel
+    'bed', 'chair', 'bench', 'crafted_bed', 'crafted_chair', 'crafted_bench', // sit/lie
+    'tree', // water/harvest depending on growth stage
+  ]);
   _drawHoverGlow(boundsW, boundsH) {
     if (!this._hoverTile) return;
     const { x, y } = this._hoverTile;
@@ -1196,7 +1207,8 @@ class FarmGame {
       ? this.farm.crops.find((c) => c.tile_x === x && c.tile_y === y) : null;
     if (!crop) {
       const obj = this._objectAt(x, y);
-      if (!obj) return; // nothing interactive here — no glow
+      const isFunctional = obj && (obj.object_type === 'animal' || FarmGame.FUNCTIONAL_ITEM_IDS.has(obj.item_id));
+      if (!isFunctional) return; // nothing interactive here — no glow
       const def = this._defFor(obj);
       fx = obj.grid_x; fy = obj.grid_y;
       fw = (def && def.width) || 1; fh = (def && def.height) || 1;
@@ -2787,6 +2799,9 @@ class FarmGame {
 
     this._drawDecorationShape(ctx, style, x, y, w, h);
     if (isCrafted) this._drawCraftedWoodGrain(x, y, w, h);
+    if (itemId === 'sign' && growthState && growthState.text) {
+      this._drawSignText(x, y, w, h, growthState.text);
+    }
 
     if (rotation) ctx.restore();
   }
@@ -2890,6 +2905,35 @@ class FarmGame {
     ctx.lineWidth = 1.5;
     if (east) { ctx.beginPath(); ctx.moveTo(cx, cy - railW / 2 + 1); ctx.lineTo(x + w, cy - railW / 2 + 1); ctx.stroke(); }
     if (west) { ctx.beginPath(); ctx.moveTo(cx, cy - railW / 2 + 1); ctx.lineTo(x, cy - railW / 2 + 1); ctx.stroke(); }
+  }
+
+  // The custom text a player paid to put on their Sign (see
+  // /api/shop/set-sign-text) — drawn matching the sign board's own
+  // position/tilt from the 'sign' shape below, small enough to fit a
+  // single tile's worth of board, wrapping onto a second line if needed.
+  _drawSignText(x, y, w, h, text) {
+    const ctx = this.ctx;
+    const cx = x + w / 2;
+    ctx.save();
+    ctx.translate(cx, y + h * 0.34);
+    ctx.rotate(-0.06);
+    ctx.fillStyle = '#3a2a1a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const words = text.split(' ');
+    if (text.length <= 8 || words.length === 1) {
+      ctx.font = `bold ${Math.floor(h * 0.11)}px Nunito, sans-serif`;
+      ctx.fillText(text, 0, 0, w * 0.6);
+    } else {
+      // Split roughly in half by word count so both lines stay short.
+      const mid = Math.ceil(words.length / 2);
+      const line1 = words.slice(0, mid).join(' ');
+      const line2 = words.slice(mid).join(' ');
+      ctx.font = `bold ${Math.floor(h * 0.09)}px Nunito, sans-serif`;
+      ctx.fillText(line1, 0, -h * 0.07, w * 0.6);
+      ctx.fillText(line2, 0, h * 0.07, w * 0.6);
+    }
+    ctx.restore();
   }
 
   _drawDecorationShape(ctx, style, x, y, w, h) {

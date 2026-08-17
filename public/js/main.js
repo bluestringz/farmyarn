@@ -982,6 +982,29 @@
       UI.toast('There is something built here.');
       return;
     }
+    // Tap a Sign (with no tool active) to set/change its custom text —
+    // costs coins every time, since it's a paid customization rather than
+    // a one-time unlock. A blank/cancelled prompt does nothing (no charge).
+    if (!state.tool && obj.object_type === 'decoration' && obj.item_id === 'sign' && !state.viewingUserId) {
+      let currentText = '';
+      if (obj.state) { try { currentText = JSON.parse(obj.state).text || ''; } catch (e) { /* ignore */ } }
+      const newText = prompt(`Customize this sign's text (🪙150, max 24 characters):`, currentText);
+      if (newText === null) return; // cancelled
+      const trimmed = newText.trim();
+      if (!trimmed) { UI.toast('Enter some text for the sign.'); return; }
+      (async () => {
+        try {
+          const res = await Api.setSignText(obj.id, trimmed);
+          state.me.coins = res.coins;
+          renderTopbar();
+          UI.toast(`Sign updated to "${res.text}"!`);
+          await refreshCurrentFarm();
+        } catch (err) {
+          UI.toast(err.message);
+        }
+      })();
+      return;
+    }
     // Flat, walkable decorations (a paved path, a pond) aren't something to
     // "interact with" — tapping one with no special tool active should just
     // walk the character there, same as tapping open grass.
