@@ -913,7 +913,7 @@
       return;
     }
 
-    const ENTERABLE_PEN_BUILDINGS = new Set(['chicken_coop', 'cow_barn', 'barn']);
+    const ENTERABLE_PEN_BUILDINGS = new Set(['chicken_coop', 'cow_barn', 'barn', 'mansion']);
     if (!state.inHouse && ENTERABLE_PEN_BUILDINGS.has(obj.item_id) && obj.object_type === 'building'
         && state.tool !== 'build' && state.tool !== 'plow' && state.tool !== 'plant' && state.tool !== 'harvest'
         && state.tool !== 'move' && state.tool !== 'remove') {

@@ -17,6 +17,7 @@ const ENTERABLE_BUILDING_DIMENSIONS = {
   chicken_coop: { width: 4, height: 3 },
   cow_barn: { width: 5, height: 3 },
   barn: { width: 4, height: 3 },
+  mansion: { width: 7, height: 4 }, // biggest indoor room in the game, matching its big outdoor footprint
 };
 
 // Which animal types are allowed to live inside each building type — a

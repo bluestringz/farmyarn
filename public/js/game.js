@@ -137,7 +137,7 @@ const CATEGORY_ACCENT = { building: '#c4552e', animal: '#e8a527', decoration: '#
 // they read as distinct structures rather than the same icon in a box.
 const BUILDING_STYLE = {
   farmhouse:    { shape: 'house',  roof: '#c0392b', roofDark: '#9c2f22', wall: '#f6ecd2', trim: '#8b5e34', door: '#6b4423', chimney: true,  windows: 2 },
-  mansion:      { shape: 'house',  roof: '#3a4a6b', roofDark: '#2c3a54', wall: '#faf6ec', trim: '#c9a545', door: '#5a3d1f', chimney: true,  windows: 4 },
+  mansion:      { shape: 'mansion', roof: '#5a5a5a', roofDark: '#464646', wall: '#e0973f', wallDark: '#c47f2f', trim: '#f3cb7a', door: '#6b4423' },
   barn:         { shape: 'barn',   roof: '#f4f4f4', roofDark: '#d8d8d8', wall: '#b6402c', trim: '#f4f4f4', door: '#5e3b1f', hayloft: true },
   cow_barn:     { shape: 'barn',   roof: '#f4f4f4', roofDark: '#d8d8d8', wall: '#8f2f22', trim: '#f4f4f4', door: '#5e3b1f', hayloft: true },
   storage_shed: { shape: 'shed',   roof: '#6b7f8f', roofDark: '#54626e', wall: '#d8c9a3', trim: '#6b4423', door: '#6b4423' },
@@ -2472,6 +2472,7 @@ class FarmGame {
     else if (style.shape === 'barn') this._drawHouseLike(x, y, w, h, style, 'barn');
     else if (style.shape === 'coop') this._drawHouseLike(x, y, w, h, style, 'coop');
     else if (style.shape === 'shed') this._drawHouseLike(x, y, w, h, style, 'shed');
+    else if (style.shape === 'mansion') this._drawMansion(x, y, w, h, style);
     else this._drawHouseLike(x, y, w, h, style, 'house');
 
     if (flipped) ctx.restore();
@@ -2479,6 +2480,126 @@ class FarmGame {
 
   // Shared silhouette for house/barn/shed/coop: wall block + triangular
   // (or barn-peaked) roof + door + windows, parameterized by style.
+  // A grand colonial-style mansion — flat gray roof, symmetric twin
+  // chimneys, a central triangular pediment with a semicircle window
+  // over two white pillars flanking the entrance, rows of windows
+  // (arched on the ground floor, rectangular above), and a white
+  // portico over the door. Distinct enough from the plain farmhouse
+  // silhouette to read as a prestige building, matching the reference
+  // look the player asked for.
+  _drawMansion(x, y, w, h, style) {
+    const ctx = this.ctx;
+    const roofH = h * 0.14;
+    const wallY = y + roofH;
+    const wallH = h - roofH;
+    const cx = x + w / 2;
+
+    // main roof
+    ctx.fillStyle = style.roof;
+    ctx.fillRect(x, y, w, roofH);
+    ctx.fillStyle = style.roofDark;
+    ctx.fillRect(x, y + roofH - h * 0.015, w, h * 0.015);
+
+    // twin chimneys
+    const chimW = w * 0.03, chimH = h * 0.16;
+    for (const cxOff of [w * 0.1, w * 0.9]) {
+      const chx = x + cxOff - chimW / 2;
+      ctx.fillStyle = style.wallDark || shade(style.wall, -20);
+      ctx.fillRect(chx, y - chimH * 0.55, chimW, chimH * 0.55 + roofH * 0.4);
+      ctx.fillStyle = style.roofDark;
+      ctx.beginPath();
+      ctx.moveTo(chx - chimW * 0.25, y - chimH * 0.55);
+      ctx.lineTo(chx + chimW / 2, y - chimH * 0.75);
+      ctx.lineTo(chx + chimW * 1.25, y - chimH * 0.55);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // wall body
+    const wallGrad = ctx.createLinearGradient(x, wallY, x, y + h);
+    wallGrad.addColorStop(0, style.wall);
+    wallGrad.addColorStop(1, style.wallDark || shade(style.wall, -15));
+    ctx.fillStyle = wallGrad;
+    ctx.fillRect(x, wallY, w, wallH);
+
+    // central pediment (triangular gable over the entrance, rising above the main roofline)
+    const pedW = w * 0.4, pedTopY = y - h * 0.12;
+    ctx.fillStyle = style.trim;
+    ctx.beginPath();
+    ctx.moveTo(cx - pedW / 2, wallY);
+    ctx.lineTo(cx, pedTopY);
+    ctx.lineTo(cx + pedW / 2, wallY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = shade(style.trim, -30);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // pediment cornice (the horizontal band the triangle sits on)
+    ctx.fillStyle = style.trim;
+    ctx.fillRect(cx - pedW / 2 - w * 0.02, wallY - h * 0.02, pedW + w * 0.04, h * 0.035);
+    // semicircle window in the pediment
+    ctx.fillStyle = '#bfe8fa';
+    ctx.beginPath();
+    ctx.arc(cx, wallY - h * 0.02, w * 0.045, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // two pillars supporting the pediment, flanking the entrance
+    const pillarW = w * 0.028, pillarH = wallH * 0.82, pillarY = wallY - h * 0.02;
+    ctx.fillStyle = style.trim;
+    ctx.fillRect(cx - pedW / 2 + w * 0.02, pillarY, pillarW, pillarH);
+    ctx.fillRect(cx + pedW / 2 - w * 0.02 - pillarW, pillarY, pillarW, pillarH);
+
+    // windows — arched on the ground floor, rectangular on the floor above,
+    // spread across both wings outside the pediment/pillars.
+    const winY1 = wallY + wallH * 0.16, winY2 = wallY + wallH * 0.56;
+    const winSize = Math.min(w, h) * 0.075;
+    const winSpots = [0.06, 0.15, 0.24, 0.76, 0.85, 0.94];
+    for (const spot of winSpots) {
+      const wx = x + w * spot - winSize / 2;
+      // upper rectangular window
+      ctx.fillStyle = '#bfe8fa';
+      ctx.fillRect(wx, winY1, winSize, winSize * 1.3);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(wx, winY1, winSize, winSize * 1.3);
+      ctx.beginPath();
+      ctx.moveTo(wx + winSize / 2, winY1); ctx.lineTo(wx + winSize / 2, winY1 + winSize * 1.3);
+      ctx.stroke();
+      // lower arched window
+      ctx.fillStyle = '#bfe8fa';
+      ctx.beginPath();
+      ctx.moveTo(wx, winY2 + winSize * 1.4);
+      ctx.lineTo(wx, winY2 + winSize * 0.5);
+      ctx.arc(wx + winSize / 2, winY2 + winSize * 0.5, winSize / 2, Math.PI, 0);
+      ctx.lineTo(wx + winSize, winY2 + winSize * 1.4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.stroke();
+    }
+
+    // portico (small white awning) over the entrance
+    const doorW = w * 0.05, doorH = wallH * 0.4;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(cx - w * 0.09, y + h - doorH - h * 0.07, w * 0.18, h * 0.03);
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.1, y + h - doorH - h * 0.04);
+    ctx.lineTo(cx, y + h - doorH - h * 0.09);
+    ctx.lineTo(cx + w * 0.1, y + h - doorH - h * 0.04);
+    ctx.closePath();
+    ctx.fill();
+
+    // door
+    ctx.fillStyle = style.door;
+    ctx.fillRect(cx - doorW / 2, y + h - doorH, doorW, doorH);
+    ctx.strokeStyle = shade(style.door, -20);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx - doorW / 2, y + h - doorH, doorW, doorH);
+  }
+
   _drawHouseLike(x, y, w, h, style, kind) {
     const ctx = this.ctx;
     const roofH = kind === 'barn' ? h * 0.42 : h * 0.36;

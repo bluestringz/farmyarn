@@ -482,7 +482,7 @@ function seedContent(db) {
       sprite=excluded.sprite, category=excluded.category
   `);
   const buildings = [
-    { id: 'farmhouse',    name: 'Farmhouse',    cost: 0,    required_level: 1, width: 2, height: 2, sprite: 'farmhouse', category: 'building' },
+    { id: 'farmhouse',    name: 'House',        cost: 100000, required_level: 1, width: 2, height: 2, sprite: 'farmhouse', category: 'building' },
     { id: 'mansion',      name: 'Mansion',       cost: 10000000, required_level: 1, width: 7, height: 4, sprite: 'mansion', category: 'building' },
     { id: 'barn',         name: 'Barn',         cost: 800,  required_level: 3, width: 3, height: 2, sprite: 'barn', category: 'building' },
     { id: 'silo',         name: 'Silo',         cost: 600,  required_level: 4, width: 1, height: 2, sprite: 'silo', category: 'building' },

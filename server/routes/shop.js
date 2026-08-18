@@ -131,7 +131,9 @@ module.exports = function shopRoutes(db) {
       return res.status(400).json({ error: 'Invalid category' });
     }
     if (category === 'building' && itemId === 'farmhouse') {
-      return res.status(400).json({ error: 'You already have a farmhouse — it was placed for free when you registered.' });
+      const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+      const existing = farm && db.prepare("SELECT 1 FROM farm_objects WHERE farm_id = ? AND item_id = 'farmhouse'").get(farm.id);
+      if (existing) return res.status(400).json({ error: 'You already have a house on your farm.' });
     }
     const qty = parseInt(quantity, 10) || 1;
     if (qty < 1 || qty > 99) return res.status(400).json({ error: 'Invalid quantity' });
@@ -306,9 +308,6 @@ module.exports = function shopRoutes(db) {
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
     const obj = db.prepare('SELECT * FROM farm_objects WHERE id = ? AND farm_id = ?').get(req.params.id, farm.id);
     if (!obj) return res.status(404).json({ error: 'Object not found on your farm' });
-    if (obj.item_id === 'farmhouse') {
-      return res.status(400).json({ error: "Your house can't be removed — it's the one building every farm needs." });
-    }
     db.prepare('DELETE FROM farm_objects WHERE id = ?').run(obj.id);
     res.json({ ok: true });
   });
