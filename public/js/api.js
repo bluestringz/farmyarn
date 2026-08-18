@@ -102,6 +102,7 @@ const Api = (() => {
       const params = new URLSearchParams();
       if (opts && opts.buildingId) params.set('buildingId', opts.buildingId);
       else if (opts && opts.space) params.set('space', opts.space);
+      if (opts && opts.floor) params.set('floor', opts.floor);
       const qs = params.toString();
       // Visiting a friend's building (opts.ownerId set) hits their
       // interior route instead of your own — same query params either way.

@@ -318,23 +318,27 @@
     const interior = await Api.myInterior(fetchOpts);
     game.setInteriorMode(interior);
     state.inHouse = true;
-    state.interiorSpace = { buildingType: interior.buildingType, buildingId: interior.buildingId || null, location: interior.location };
+    state.interiorSpace = {
+      buildingType: interior.buildingType, buildingId: interior.buildingId || null, location: interior.location,
+      floor: interior.floor || 1, maxFloor: interior.maxFloor || 1,
+    };
     // Shared presence for interiors too — a visitor and the owner (or two
     // visitors) standing in the SAME specific room now actually see each
     // other move around, the same way farm/market/park already work.
-    // interior.location is already unique per specific building (see
-    // server/lib/interiorSpaces.js), so keying on
+    // interior.location is already unique per specific building AND floor
+    // (see server/lib/interiorSpaces.js), so keying on
     // "interior:<ownerId>:<location>" naturally puts everyone looking at
     // that exact room together without colliding with a different one.
     const ownerId = state.viewingUserId || state.me.id;
     joinSpace(`interior:${ownerId}:${interior.location}`);
     clearPendingPlacement();
     setTool(null);
-    const label = { chicken_coop: 'chicken coop', cow_barn: 'cow barn', barn: 'barn', farmhouse: 'house' };
+    const label = { chicken_coop: 'chicken coop', cow_barn: 'cow barn', barn: 'barn', farmhouse: 'house', mansion: 'mansion' };
     const placeName = label[interior.buildingType] || 'building';
+    const floorLabel = (interior.maxFloor || 1) > 1 ? ` — Floor ${interior.floor || 1}` : '';
     const bannerText = state.viewingUserId
-      ? `Visiting ${state.viewingUsername || 'a friend'}'s ${placeName} (look only)`
-      : `Inside your ${placeName}`;
+      ? `Visiting ${state.viewingUsername || 'a friend'}'s ${placeName}${floorLabel} (look only)`
+      : `Inside your ${placeName}${floorLabel}`;
     if (bannerId === 'coop-banner') {
       document.getElementById('pen-banner-text').textContent = bannerText;
     } else {
@@ -345,11 +349,13 @@
   }
 
   async function enterHouse() { await enterInterior({ space: 'house' }, 'house-banner'); }
-  async function enterBuilding(obj) {
-    // Chicken coop, cow barn, and (plain) barn all use the same generic
+  async function enterBuilding(obj, floor) {
+    // Chicken coop, cow barn, barn, and mansion all use the same generic
     // per-building-instance room now — each specific building placed gets
     // its own separate interior (see server/lib/interiorSpaces.js).
-    await enterInterior({ buildingId: obj.id }, 'coop-banner');
+    // `floor` is only meaningful for multi-floor buildings (the mansion) —
+    // omitted/undefined defaults to floor 1 on the server.
+    await enterInterior({ buildingId: obj.id, floor }, 'coop-banner');
   }
 
   async function openSiloPanel() {
@@ -943,6 +949,24 @@
         && state.tool !== 'decorate' && state.tool !== 'move' && state.tool !== 'remove') {
       game.walkTo(obj.grid_x, obj.grid_y, null);
       await openStovePanel();
+      return;
+    }
+
+    // Staircase — tap it (with no tool active) to go up/down a floor in a
+    // multi-floor building (currently just the mansion). Available to
+    // owner and visitor alike, same as walking around the room already is.
+    if (obj.item_id === 'staircase' && obj.object_type === 'interior' && state.inHouse
+        && !state.tool) {
+      const current = state.interiorSpace.floor || 1;
+      const maxFloor = state.interiorSpace.maxFloor || 1;
+      const nextFloor = current >= maxFloor ? current - 1 : current + 1;
+      if (nextFloor < 1 || nextFloor > maxFloor) { UI.toast('Nowhere else to go.'); return; }
+      try {
+        await enterBuilding({ id: state.interiorSpace.buildingId }, nextFloor);
+        UI.toast(`Floor ${nextFloor}`);
+      } catch (err) {
+        UI.toast(err.message);
+      }
       return;
     }
 

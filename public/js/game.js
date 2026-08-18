@@ -1733,7 +1733,41 @@ class FarmGame {
     // Only reachable via a crafted_bench (the plain "bench" stays an
     // outdoor decoration, drawn separately in _drawDecorationShape) — see
     // the prefix-stripping above. Same look, just placeable indoors only.
-    if (itemId === 'bench') {
+    // A full-tile brick divider wall — lets a room be split into sections.
+    // Purely visual/decorative for now (doesn't block walking through it,
+    // same as every other piece of interior furniture).
+    if (itemId === 'wall') {
+      ctx.fillStyle = '#d8c9a3';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = '#8b5e34';
+      ctx.lineWidth = 1.2;
+      const brickH = h * 0.22;
+      for (let row = 0, ry = y; ry < y + h; row++, ry += brickH) {
+        const offset = (row % 2) * (w * 0.25);
+        for (let bx = x - w * 0.25 + offset; bx < x + w; bx += w * 0.5) {
+          ctx.strokeRect(Math.max(x, bx), ry, Math.min(w * 0.5, x + w - Math.max(x, bx)), Math.min(brickH, y + h - ry));
+        }
+      }
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+    } else if (itemId === 'staircase') {
+      // A simple wooden staircase, drawn as receding steps toward the
+      // top-right (up) with a railing along the open edge — tap it to go
+      // to the next floor (see handleObjectClick's staircase handler).
+      ctx.fillStyle = '#8b5e34';
+      const steps = 5;
+      for (let i = 0; i < steps; i++) {
+        const stepW = w * (1 - i * 0.15), stepH = h / steps;
+        ctx.fillStyle = i % 2 === 0 ? '#8b5e34' : '#a3743f';
+        ctx.fillRect(x, y + h - (i + 1) * stepH, stepW, stepH);
+        ctx.strokeStyle = OUTLINE;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y + h - (i + 1) * stepH, stepW, stepH);
+      }
+      ctx.fillStyle = '#4a3521';
+      ctx.fillRect(x, y, w * 0.06, h);
+    } else if (itemId === 'bench') {
       const bx = x + w * 0.14, by = y + h * 0.42, bw = w * 0.72;
       // No backrest bar (same reasoning as the outdoor bench in
       // _drawDecorationShape) — it visually cut across a seated

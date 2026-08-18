@@ -32,21 +32,36 @@ function isEnterableBuildingType(itemId) {
   return Object.prototype.hasOwnProperty.call(ENTERABLE_BUILDING_DIMENSIONS, itemId);
 }
 
-function locationForBuilding(buildingObjectId) {
-  return `indoor:${buildingObjectId}`;
+// Buildings with more than one floor — a staircase placed on any floor
+// takes you to the next one up/down. Floor 1 keeps the plain
+// `indoor:<buildingId>` location every other building uses; floor 2 (and
+// beyond, if ever added) gets `:<floor>` appended.
+const BUILDING_FLOOR_COUNT = { mansion: 2 };
+
+function locationForBuilding(buildingObjectId, floor) {
+  return floor && floor > 1 ? `indoor:${buildingObjectId}:${floor}` : `indoor:${buildingObjectId}`;
 }
 
 // Given a location string, returns the farm_objects.id it refers to, or
 // null if this isn't a per-building indoor location (e.g. it's the house,
-// or plain 'outdoor').
+// or plain 'outdoor'). Matches both floor 1 (`indoor:5`) and any other
+// floor (`indoor:5:2`).
 function buildingIdFromLocation(location) {
   if (typeof location !== 'string') return null;
-  const match = location.match(/^indoor:(\d+)$/);
+  const match = location.match(/^indoor:(\d+)(?::\d+)?$/);
   return match ? parseInt(match[1], 10) : null;
+}
+
+// The floor number a location string refers to — 1 for the house, plain
+// `indoor:<id>`, or anything without an explicit `:<floor>` suffix.
+function floorFromLocation(location) {
+  if (typeof location !== 'string') return 1;
+  const match = location.match(/^indoor:\d+:(\d+)$/);
+  return match ? parseInt(match[1], 10) : 1;
 }
 
 module.exports = {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
-  ENTERABLE_BUILDING_DIMENSIONS, BUILDING_ALLOWED_ANIMALS,
-  isEnterableBuildingType, locationForBuilding, buildingIdFromLocation,
+  ENTERABLE_BUILDING_DIMENSIONS, BUILDING_ALLOWED_ANIMALS, BUILDING_FLOOR_COUNT,
+  isEnterableBuildingType, locationForBuilding, buildingIdFromLocation, floorFromLocation,
 };

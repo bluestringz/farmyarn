@@ -5,7 +5,7 @@ const {
 } = require('../lib/gameLogic');
 const {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
-  ENTERABLE_BUILDING_DIMENSIONS, isEnterableBuildingType, locationForBuilding,
+  ENTERABLE_BUILDING_DIMENSIONS, BUILDING_FLOOR_COUNT, isEnterableBuildingType, locationForBuilding,
 } = require('../lib/interiorSpaces');
 
 const WATER_COST = 1; // coins per self-watering (smallest whole-coin stand-in for ~0.3 gold)
@@ -146,12 +146,17 @@ module.exports = function farmRoutes(db, io) {
       if (!isEnterableBuildingType(building.item_id)) {
         return res.status(400).json({ error: 'That building has no interior to enter' });
       }
+      const maxFloor = BUILDING_FLOOR_COUNT[building.item_id] || 1;
+      let floor = parseInt(req.query.floor, 10) || 1;
+      if (floor < 1) floor = 1;
+      if (floor > maxFloor) floor = maxFloor;
       const dims = ENTERABLE_BUILDING_DIMENSIONS[building.item_id];
-      const location = locationForBuilding(building.id);
+      const location = locationForBuilding(building.id, floor);
       const objects = db.prepare('SELECT * FROM farm_objects WHERE farm_id = ? AND location = ?').all(farm.id, location);
       return res.json({
         width: dims.width, height: dims.height, location,
         buildingType: building.item_id, buildingId: building.id,
+        floor, maxFloor,
         objects, serverTime: nowSec(),
       });
     }

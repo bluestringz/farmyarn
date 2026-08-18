@@ -612,6 +612,8 @@ function seedContent(db) {
     { id: 'fireplace', name: 'Fireplace',     cost: 200, required_level: 3, width: 1, height: 1, sprite: 'fireplace' },
     { id: 'stove',     name: 'Stove',         cost: 250, required_level: 1, width: 1, height: 1, sprite: 'stove' },
     { id: 'bookshelf', name: 'Bookshelf',     cost: 130, required_level: 2, width: 1, height: 1, sprite: 'bookshelf' },
+    { id: 'wall',       name: 'Wall',          cost: 20,  required_level: 1, width: 1, height: 1, sprite: 'wall' },
+    { id: 'staircase',  name: 'Staircase',     cost: 500, required_level: 1, width: 1, height: 1, sprite: 'staircase' },
     // Workshop-crafted furniture — never bought with coins in the Shop
     // (cost: 0, and hidden from the Shop's Interior tab in ui.js), made
     // instead from Wood at the Workshop building. Same look as their
