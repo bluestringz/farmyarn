@@ -682,6 +682,17 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
 .shop-card .shop-price { font-size: 12px; color: #8a6a12; font-weight: 700; }
 .shop-card .shop-level { font-size: 10px; color: var(--ink-soft); }
 
+.color-swatch-row { display: flex; gap: 6px; justify-content: center; margin: 4px 0; flex-wrap: wrap; }
+.color-swatch {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1.5px var(--wood-dark);
+  cursor: pointer;
+  padding: 0;
+}
+.color-swatch.selected { box-shadow: 0 0 0 2.5px var(--leaf); }
+
 .shop-card.workshop-card {
   position: relative;
   background: repeating-linear-gradient(135deg, #fdf3dd, #fdf3dd 10px, #faecc8 10px, #faecc8 20px);

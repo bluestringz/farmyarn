@@ -720,7 +720,8 @@
       }
       const location = locationForCurrentSpace();
       game.walkTo(p.x, p.y, null);
-      await Api.placeObject(p.category, p.itemId, p.x, p.y, p.rotation, location);
+      const savedColor = state.pendingBuildColors && state.pendingBuildColors[p.itemId];
+      await Api.placeObject(p.category, p.itemId, p.x, p.y, p.rotation, location, savedColor);
       UI.toast('Placed!');
       game.playAction(ACTION_ICON.build);
       clearPendingPlacement();
@@ -1083,7 +1084,7 @@
       // already placed one still renders correctly.
       catalogForRender = { ...state.catalog, interiors: state.catalog.interiors.filter((i) => i.id !== 'painting') };
     }
-    UI.renderShop(catalogForRender, category, state.me, async (cat, itemId, qty) => {
+    UI.renderShop(catalogForRender, category, state.me, async (cat, itemId, qty, color) => {
       try {
         if (cat === 'crops') {
           const quantity = qty || 1;
@@ -1115,6 +1116,16 @@
           const res = await Api.buyPlaceable(cat, itemId, 1);
           state.me.coins = res.coins;
           renderTopbar();
+          // House/Mansion's chosen wall color (picked in the Shop card
+          // before buying) gets remembered here and applied automatically
+          // the moment this item is actually placed — see confirmPlacement,
+          // which reads state.pendingBuildColors[itemId] into place-object's
+          // `color` field. Inventory itself is just a quantity counter with
+          // no room for per-unit metadata, so the color can't live there.
+          if (color) {
+            state.pendingBuildColors = state.pendingBuildColors || {};
+            state.pendingBuildColors[itemId] = color;
+          }
           const toolHint = cat === 'interior' ? 'Decorate (inside your house)' : cat === 'animal' ? 'Animal' : 'Build';
           UI.toast(`Bought! Pick "${toolHint}" on the toolbar to place it.`);
           await renderShopPanel(cat === 'interior' ? 'interiors' : cat === 'building' ? 'buildings' : cat === 'animal' ? 'animals' : 'decorations');

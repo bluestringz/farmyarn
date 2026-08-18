@@ -43,6 +43,15 @@ const UI = (() => {
   // client rather than in the database — it's static copy that never
   // varies per-user, so there's no reason to add yet another schema column
   // (and risk of a migration bug) just to store a sentence of flavor text.
+  // Preset wall-color choices for House and Mansion, shown as a swatch
+  // picker in the Shop card before buying — matches server/routes/shop.js's
+  // BUILDING_COLOR_OPTIONS whitelist exactly (the server rejects anything
+  // not in that list).
+  const BUILDING_COLOR_OPTIONS = {
+    farmhouse: ['#f6ecd2', '#dceaf0', '#e3f0dc', '#f5dbe6', '#e8e2f5', '#fbe8cf'],
+    mansion: ['#e0973f', '#f6ecd2', '#dceaf0', '#e3ded2', '#e8e2f5', '#e5d5c3'],
+  };
+
   const ITEM_DESCRIPTIONS = {
     // crops (seeds)
     wheat: 'Fast, cheap starter crop — good for quick coins while you level up.',
@@ -220,6 +229,11 @@ const UI = (() => {
       const qtyRow = isCrops && !locked
         ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
         : '';
+      const colorOptions = BUILDING_COLOR_OPTIONS[item.id];
+      const colorSwatches = colorOptions ? `
+        <div class="color-swatch-row" data-swatches-for="${item.id}">
+          ${colorOptions.map((c, i) => `<button type="button" class="color-swatch ${i === 0 ? 'selected' : ''}" data-color="${c}" style="background:${c}"></button>`).join('')}
+        </div>` : '';
       return `
         <div class="shop-card">
           <div class="shop-icon">${glyphMap[activeCategory]}</div>
@@ -228,6 +242,7 @@ const UI = (() => {
           ${durationLine}
           ${locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}
           ${ITEM_DESCRIPTIONS[item.id] ? `<div class="shop-desc">${ITEM_DESCRIPTIONS[item.id]}</div>` : ''}
+          ${colorSwatches}
           ${qtyRow}
           <button data-item="${item.id}" ${(locked || !affordable) ? 'disabled' : ''}>
             ${locked ? 'Locked' : isCrops ? 'Buy Seeds' : 'Buy'}
@@ -246,11 +261,20 @@ const UI = (() => {
     body.querySelectorAll('.shop-tab').forEach((btn) => {
       btn.addEventListener('click', () => onCategoryChange(btn.dataset.cat));
     });
+    body.querySelectorAll('.color-swatch').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const row = btn.closest('.color-swatch-row');
+        row.querySelectorAll('.color-swatch').forEach((s) => s.classList.remove('selected'));
+        btn.classList.add('selected');
+      });
+    });
     body.querySelectorAll('.shop-card button[data-item]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const qtyInput = body.querySelector(`input[data-qty-for="${btn.dataset.item}"]`);
         const qty = qtyInput ? Math.max(1, Math.min(99, parseInt(qtyInput.value, 10) || 1)) : 1;
-        onBuy(buyCategory, btn.dataset.item, qty);
+        const swatchRow = body.querySelector(`.color-swatch-row[data-swatches-for="${btn.dataset.item}"]`);
+        const selectedSwatch = swatchRow ? swatchRow.querySelector('.color-swatch.selected') : null;
+        onBuy(buyCategory, btn.dataset.item, qty, selectedSwatch ? selectedSwatch.dataset.color : undefined);
       });
     });
     body.querySelectorAll('.qty-max-btn').forEach((btn) => {

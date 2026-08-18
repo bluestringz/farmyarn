@@ -123,8 +123,8 @@ const Api = (() => {
     buyOutfit: (outfitId) => request('POST', '/api/shop/buy-outfit', { outfitId }),
     dye: (color) => request('POST', '/api/shop/dye', { color }),
     buyPlaceable: (category, itemId, quantity) => request('POST', '/api/shop/buy-placeable', { category, itemId, quantity }),
-    placeObject: (category, itemId, x, y, rotation, location) =>
-      request('POST', '/api/shop/place-object', { category, itemId, x, y, rotation, location }),
+    placeObject: (category, itemId, x, y, rotation, location, color) =>
+      request('POST', '/api/shop/place-object', { category, itemId, x, y, rotation, location, color }),
     moveObject: (objectId, x, y, rotation) => request('POST', '/api/shop/move-object', { objectId, x, y, rotation }),
     deleteObject: (objectId) => request('DELETE', `/api/shop/object/${objectId}`),
     collectAnimal: (objectId) => request('POST', '/api/shop/collect-animal', { objectId }),

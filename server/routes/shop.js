@@ -9,6 +9,15 @@ const {
 const DYE_COST = 25;
 const DYE_PALETTE = ['#c0392b', '#e8a527', '#4f8f2e', '#3d8fe0', '#8e44ad', '#e05a7e', '#4a3521', '#f4f4f4'];
 
+// Preset wall-color choices for House and Mansion — offered as a picker in
+// the Shop before buying, so not every player's home is identically
+// colored. Whitelisted (validated in /place-object) so an arbitrary color
+// string can't get stored via a hand-crafted request.
+const BUILDING_COLOR_OPTIONS = {
+  farmhouse: ['#f6ecd2', '#dceaf0', '#e3f0dc', '#f5dbe6', '#e8e2f5', '#fbe8cf'],
+  mansion: ['#e0973f', '#f6ecd2', '#dceaf0', '#e3ded2', '#e8e2f5', '#e5d5c3'],
+};
+
 // Given a `location` value ('outdoor', 'indoor', or 'indoor:<buildingId>'),
 // returns { width, height } for placement/overlap bounds-checking.
 function interiorBoundsFor(db, farmId, location) {
@@ -158,7 +167,7 @@ module.exports = function shopRoutes(db) {
   // the farm. location: 'outdoor' (default), 'indoor' (the house), or
   // 'indoor:<buildingId>' for a specific coop/barn/cow_barn's own room.
   router.post('/place-object', (req, res) => {
-    const { category, itemId, x, y, rotation, location } = req.body || {};
+    const { category, itemId, x, y, rotation, location, color } = req.body || {};
     if (!['building', 'decoration', 'animal', 'interior'].includes(category)) {
       return res.status(400).json({ error: 'Invalid category' });
     }
@@ -230,6 +239,12 @@ module.exports = function shopRoutes(db) {
     if (category === 'decoration' && def.growable) {
       const t = nowSec();
       state = JSON.stringify({ plantedAt: t, growthEndAt: t + def.growth_seconds, watered: 0 });
+    }
+    // House and Mansion have a few preset wall-color options so not every
+    // player's home looks identical — whitelisted per building type so an
+    // arbitrary/invalid color string can't get stored.
+    if (category === 'building' && BUILDING_COLOR_OPTIONS[itemId] && color && BUILDING_COLOR_OPTIONS[itemId].includes(color)) {
+      state = JSON.stringify({ color });
     }
 
     const info = db.prepare(`

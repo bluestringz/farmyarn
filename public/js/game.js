@@ -2424,7 +2424,9 @@ class FarmGame {
     const pw = w * TILE, ph = h * TILE;
 
     if (obj.object_type === 'building') {
-      this._drawBuilding(px, py, pw, ph, obj.item_id, obj.rotation || 0);
+      let customColor = null;
+      if (obj.state) { try { customColor = JSON.parse(obj.state).color || null; } catch (e) { customColor = null; } }
+      this._drawBuilding(px, py, pw, ph, obj.item_id, obj.rotation || 0, customColor);
     } else if (obj.object_type === 'decoration') {
       let growthState = null;
       if (obj.state) { try { growthState = JSON.parse(obj.state); } catch (e) { growthState = null; } }
@@ -2442,9 +2444,16 @@ class FarmGame {
   // Each footprint gets a real little structure instead of an emoji: ground
   // shadow, walls, a roof shape specific to the building type, a door, and
   // windows. Keeps everything on plain canvas primitives (no external art).
-  _drawBuilding(px, py, pw, ph, itemId, rotation) {
+  _drawBuilding(px, py, pw, ph, itemId, rotation, customColor) {
     const ctx = this.ctx;
-    const style = BUILDING_STYLE[itemId] || BUILDING_STYLE.farmhouse;
+    let style = BUILDING_STYLE[itemId] || BUILDING_STYLE.farmhouse;
+    // House/Mansion have a chosen wall color stored per-instance (see
+    // /place-object's `color` field) — override just the wall (and its
+    // shaded variant) rather than the whole style object, so the roof/trim/
+    // door stay their normal color and only the walls actually change.
+    if (customColor) {
+      style = { ...style, wall: customColor, wallDark: shade(customColor, -15) };
+    }
     const pad = Math.min(pw, ph) * 0.08;
     const x = px + pad, y = py + pad, w = pw - pad * 2, h = ph - pad * 2;
 
