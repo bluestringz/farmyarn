@@ -75,6 +75,16 @@
   </div>
 
   <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">💰 Shop Item Prices</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">Change any item's buy cost or sell price live — no restart needed. Only affects future purchases/sales; players who already own an item keep it, this doesn't retroactively charge/refund anyone.</p>
+    <input id="price-search-input" placeholder="Search item name...">
+    <table id="prices-table">
+      <thead><tr><th>Category</th><th>Item</th><th>Price Field</th><th>Current</th><th>New Price</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <input id="search-input" placeholder="Search username...">
     <button id="search-btn">Search</button>
     <table id="players-table">
@@ -134,6 +144,7 @@ async function showApp() {
   await loadStats();
   await loadPlayers();
   await loadMailbox();
+  await loadPrices();
 }
 
 async function loadStats() {
@@ -149,6 +160,54 @@ async function loadStats() {
   badge.textContent = s.pendingPasswordRequests > 0 ? `(${s.pendingPasswordRequests} pending)` : '';
   badge.style.color = s.pendingPasswordRequests > 0 ? '#c0392b' : '#8a5a34';
 }
+
+let allPrices = [];
+const TABLE_LABELS = { crop_types: 'Crop', building_types: 'Building', decoration_types: 'Decoration', animal_types: 'Animal', item_types: 'Item/Material', interior_types: 'Furniture' };
+const FIELD_LABELS = { seed_cost: 'Seed Cost', sell_price: 'Sell Price', cost: 'Buy Cost' };
+
+async function loadPrices() {
+  allPrices = await api('GET', '/api/admin/shop-prices');
+  renderPrices('');
+}
+
+function renderPrices(filter) {
+  const tbody = document.querySelector('#prices-table tbody');
+  const q = filter.trim().toLowerCase();
+  const rows = [];
+  for (const item of allPrices) {
+    if (q && !item.name.toLowerCase().includes(q)) continue;
+    for (const field of Object.keys(item.fields)) {
+      rows.push({ table: item.table, id: item.id, name: item.name, field, value: item.fields[field] });
+    }
+  }
+  tbody.innerHTML = rows.map((r) => `
+    <tr>
+      <td>${TABLE_LABELS[r.table] || r.table}</td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${FIELD_LABELS[r.field] || r.field}</td>
+      <td>🪙${r.value}</td>
+      <td><input type="number" class="price-input" min="0" value="${r.value}" data-table="${r.table}" data-id="${r.id}" data-field="${r.field}" style="width:90px"></td>
+      <td><button class="price-save-btn" data-table="${r.table}" data-id="${r.id}" data-field="${r.field}">Save</button></td>
+    </tr>`).join('') || '<tr><td colspan="6">No items match.</td></tr>';
+
+  tbody.querySelectorAll('.price-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const input = tbody.querySelector(`input[data-table="${btn.dataset.table}"][data-id="${btn.dataset.id}"][data-field="${btn.dataset.field}"]`);
+      const value = parseInt(input.value, 10);
+      if (!Number.isFinite(value) || value < 0) return alert('Enter a valid price.');
+      try {
+        await api('POST', '/api/admin/set-price', { table: btn.dataset.table, id: btn.dataset.id, field: btn.dataset.field, value });
+        await loadPrices();
+        document.getElementById('price-search-input').value = filter;
+        renderPrices(filter);
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('price-search-input').addEventListener('input', (e) => renderPrices(e.target.value));
 
 async function loadMailbox() {
   const rows = await api('GET', '/api/admin/password-requests');

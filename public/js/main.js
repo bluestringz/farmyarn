@@ -590,16 +590,27 @@
     const picker = document.getElementById('build-picker');
     const inv = await Api.inventory();
     const owned = [];
+    // Inside a coop/barn/cow_barn, only that specific building's allowed
+    // animal types are offered — the server enforces this regardless, but
+    // this keeps the picker from even showing a cow as an option inside a
+    // chicken coop. Outdoors (or a plain house — though this tool isn't
+    // reachable there), every owned animal is fair game.
+    const allowedInside = state.inHouse && isAnimalPenBuilding()
+      ? (BUILDING_ALLOWED_ANIMALS[state.interiorSpace.buildingType] || []) : null;
     inv.forEach((row) => {
       if (row.item_id.startsWith('animal_') && row.quantity > 0) {
         const itemId = row.item_id.slice('animal_'.length);
+        if (allowedInside && !allowedInside.includes(itemId)) return;
         const def = findDef('animal', itemId);
         if (def) owned.push({ ...def, _cat: 'animal', _owned: row.quantity });
       }
     });
     if (!owned.length) {
       picker.classList.add('hidden');
-      UI.toast("You haven't bought any animals yet — visit the Shop's Animals tab first!");
+      const hint = allowedInside
+        ? `You don't own any (${allowedInside.join('/')}) animals yet — buy some from the Shop's Animals tab!`
+        : "You haven't bought any animals yet — visit the Shop's Animals tab first!";
+      UI.toast(hint);
       return;
     }
     UI.renderPicker(picker, owned, 'animals', state.me, (id) => {
@@ -620,27 +631,9 @@
         if (def) owned.push({ ...def, _cat: 'interior', _owned: row.quantity });
       }
     });
-    // The coop and barn are pens, not just decor rooms — animals bought
-    // from the Shop can be placed inside them (only the ones that specific
-    // building allows — the server enforces this, this is just so the
-    // picker doesn't even show a cow as an option inside a chicken coop).
-    if (isAnimalPenBuilding()) {
-      const allowed = BUILDING_ALLOWED_ANIMALS[state.interiorSpace.buildingType] || [];
-      inv.forEach((row) => {
-        if (row.item_id.startsWith('animal_') && row.quantity > 0) {
-          const itemId = row.item_id.slice('animal_'.length);
-          if (!allowed.includes(itemId)) return;
-          const def = findDef('animal', itemId);
-          if (def) owned.push({ ...def, _cat: 'animal', _owned: row.quantity });
-        }
-      });
-    }
     if (!owned.length) {
       picker.classList.add('hidden');
-      const hint = isAnimalPenBuilding()
-        ? `You don't own any furniture or (${(BUILDING_ALLOWED_ANIMALS[state.interiorSpace.buildingType] || []).join('/')}) animals yet — buy some from the Shop!`
-        : "You don't own any furniture yet — buy some from the Shop's Interior tab!";
-      UI.toast(hint);
+      UI.toast("You don't own any furniture yet — buy some from the Shop's Interior tab!");
       return;
     }
     UI.renderPicker(picker, owned, 'buildings', state.me, (id) => {
@@ -819,7 +812,7 @@
         }
         game.playAction(ACTION_ICON.harvest);
         await refreshCurrentFarm();
-      } else if ((state.tool === 'build' || state.tool === 'decorate') && state.buildSelection) {
+      } else if ((state.tool === 'build' || state.tool === 'decorate' || state.tool === 'place-animal') && state.buildSelection) {
         if (state.viewingUserId) return;
         showPendingPlacement(x, y);
       }

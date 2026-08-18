@@ -66,6 +66,49 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     res.json({ ok: true });
   });
 
+  // Every catalog table that has a player-facing price, and which
+  // column(s) on it are safe to edit — whitelisted so /set-price can't be
+  // pointed at an arbitrary table/column via the request body.
+  const PRICE_TABLES = {
+    crop_types: ['seed_cost', 'sell_price'],
+    building_types: ['cost'],
+    decoration_types: ['cost'],
+    animal_types: ['cost'],
+    item_types: ['sell_price'],
+    interior_types: ['cost'],
+  };
+
+  // GET /api/admin/shop-prices — every catalog item across every
+  // price-bearing table, flattened into one list the admin panel can
+  // render as a single editable table.
+  router.get('/shop-prices', (req, res) => {
+    const rows = [];
+    for (const table of Object.keys(PRICE_TABLES)) {
+      const items = db.prepare(`SELECT * FROM ${table}`).all();
+      for (const item of items) {
+        rows.push({ table, id: item.id, name: item.name, fields: PRICE_TABLES[table].reduce((acc, f) => { acc[f] = item[f]; return acc; }, {}) });
+      }
+    }
+    res.json(rows);
+  });
+
+  // POST /api/admin/set-price { table, id, field, value } — edits a
+  // single price field on a single catalog item, live, no server restart
+  // needed (existing players already own copies of an item at whatever
+  // price they originally paid — this only affects future purchases/sales).
+  router.post('/set-price', (req, res) => {
+    const { table, id, field, value } = req.body || {};
+    const allowedFields = PRICE_TABLES[table];
+    if (!allowedFields || !allowedFields.includes(field)) {
+      return res.status(400).json({ error: 'Unknown table or field' });
+    }
+    const amount = parseInt(value, 10);
+    if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'Invalid price' });
+    const info = db.prepare(`UPDATE ${table} SET ${field} = ? WHERE id = ?`).run(amount, id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Item not found' });
+    res.json({ ok: true });
+  });
+
   // GET /api/admin/backup — downloads a full, consistent snapshot of the
   // live database as a .db file. Uses better-sqlite3's built-in backup()
   // (not just copying the raw file), which is safe to run while the

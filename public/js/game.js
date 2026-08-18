@@ -137,6 +137,7 @@ const CATEGORY_ACCENT = { building: '#c4552e', animal: '#e8a527', decoration: '#
 // they read as distinct structures rather than the same icon in a box.
 const BUILDING_STYLE = {
   farmhouse:    { shape: 'house',  roof: '#c0392b', roofDark: '#9c2f22', wall: '#f6ecd2', trim: '#8b5e34', door: '#6b4423', chimney: true,  windows: 2 },
+  mansion:      { shape: 'house',  roof: '#3a4a6b', roofDark: '#2c3a54', wall: '#faf6ec', trim: '#c9a545', door: '#5a3d1f', chimney: true,  windows: 4 },
   barn:         { shape: 'barn',   roof: '#f4f4f4', roofDark: '#d8d8d8', wall: '#b6402c', trim: '#f4f4f4', door: '#5e3b1f', hayloft: true },
   cow_barn:     { shape: 'barn',   roof: '#f4f4f4', roofDark: '#d8d8d8', wall: '#8f2f22', trim: '#f4f4f4', door: '#5e3b1f', hayloft: true },
   storage_shed: { shape: 'shed',   roof: '#6b7f8f', roofDark: '#54626e', wall: '#d8c9a3', trim: '#6b4423', door: '#6b4423' },
@@ -1235,7 +1236,14 @@ class FarmGame {
   _drawPeopleSorted() {
     const items = [];
     for (const actor of this.remotePlayers.values()) {
-      items.push({ sortY: actor.y + TILE * 0.28, draw: () => this._drawSimpleAvatar(actor) });
+      // Same restBoost reasoning as the local character below — without
+      // it, a friend sitting on a bench/chair sorted behind the furniture
+      // from everyone ELSE's point of view (their own screen looked fine
+      // to them, since their local character always got the boost, but
+      // remote viewers never applied it to what they saw of the OTHER
+      // person).
+      const actorRestBoost = actor.restPose ? TILE * 0.8 : 0;
+      items.push({ sortY: actor.y + TILE * 0.28 + actorRestBoost, draw: () => this._drawSimpleAvatar(actor) });
     }
     const c = this._character;
     // When sitting/lying, the character's world position gets snapped
@@ -1280,7 +1288,12 @@ class FarmGame {
       items.push({ sortY: (obj.grid_y + h) * TILE, draw: () => this._drawObjectItem(obj, t) });
     }
     for (const actor of this.remotePlayers.values()) {
-      items.push({ sortY: actor.y + TILE * 0.28, draw: () => this._drawSimpleAvatar(actor) });
+      // Same restBoost as the local character below — otherwise a friend
+      // sitting on outdoor bench/furniture sorted behind it from
+      // everyone else's point of view, even though it looked fine on
+      // their own screen (their local character always got the boost).
+      const actorRestBoost = actor.restPose ? TILE * 0.8 : 0;
+      items.push({ sortY: actor.y + TILE * 0.28 + actorRestBoost, draw: () => this._drawSimpleAvatar(actor) });
     }
     const c = this._character;
     // When sitting/lying, the character's world position gets snapped
