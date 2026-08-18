@@ -823,10 +823,6 @@
 
   async function handleObjectClick(obj) {
     if (state.tool === 'remove') {
-      if (obj.item_id === 'farmhouse') {
-        UI.toast("Your house can't be removed — it's the one building every farm needs.");
-        return;
-      }
       const label = obj.item_id.replace(/_/g, ' ');
       if (!confirm(`Remove this ${label}?`)) return;
       try {
@@ -1067,16 +1063,16 @@
       const outfits = await Api.outfits();
       catalogForRender = { ...state.catalog, outfits };
     } else if (category === 'buildings') {
-      // The farmhouse stays out of the shop list — it's given free at
-      // signup and can't be bought again. The Market Stall building is
-      // also hidden here — it's a different, confusing thing from the
-      // real rentable stalls in the shared Marketplace plaza (Api.rentStall
-      // / the Market screen), and having both made it look like buying
-      // this building was how you got a selling stall. Both stay in
-      // state.catalog.buildings itself (unfiltered) so the game's renderer
-      // can still look up their width/height for anyone who already placed
-      // one before this was hidden.
-      const hiddenFromShop = new Set(['farmhouse', 'market_stall']);
+      // The Market Stall building stays hidden here — it's a different,
+      // confusing thing from the real rentable stalls in the shared
+      // Marketplace plaza (Api.rentStall / the Market screen), and having
+      // both made it look like buying this building was how you got a
+      // selling stall. Stays in state.catalog.buildings itself
+      // (unfiltered) so the game's renderer can still look up its
+      // width/height for anyone who already placed one before this was
+      // hidden. The farmhouse ("House") is NOT hidden anymore — it can
+      // now be bought (and re-bought if removed) like any other building.
+      const hiddenFromShop = new Set(['market_stall']);
       catalogForRender = { ...state.catalog, buildings: state.catalog.buildings.filter((b) => !hiddenFromShop.has(b.id)) };
     } else if (category === 'interiors') {
       // Wall-hangable decor doesn't make sense yet — everything currently

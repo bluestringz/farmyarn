@@ -54,7 +54,7 @@ const UI = (() => {
     strawberry: 'A full day to grow, but one of the best sell prices in the game.',
     pumpkin: 'The ultimate crop — 2 full days to grow, huge payout when harvested.',
     // buildings
-    farmhouse: 'Your home — given free at signup. Walk in to decorate the inside.',
+    farmhouse: 'Your home — given free at signup. Walk in to decorate the inside. Can be removed, and rebought here if you do.',
     barn: 'Tap to go inside — houses Pigs and Sheep. Each barn you build has its own separate room.',
     silo: 'Tap it to turn wheat into animal feed — feed your animals here before you can collect from them.',
     well: 'Classic farm decoration — a water source for the homestead look.',
