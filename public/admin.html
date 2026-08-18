@@ -78,6 +78,9 @@
     <p style="font-weight:700;margin-bottom:4px;">💰 Shop Item Prices</p>
     <p style="font-size:12px;color:#8a5a34;margin-top:0;">Change any item's buy cost or sell price live — no restart needed. Only affects future purchases/sales; players who already own an item keep it, this doesn't retroactively charge/refund anyone.</p>
     <input id="price-search-input" placeholder="Search item name...">
+    <select id="price-category-filter" style="margin-left:8px;">
+      <option value="">All Categories</option>
+    </select>
     <table id="prices-table">
       <thead><tr><th>Category</th><th>Item</th><th>Price Field</th><th>Current</th><th>New Price</th><th></th></tr></thead>
       <tbody></tbody>
@@ -167,39 +170,63 @@ const FIELD_LABELS = { seed_cost: 'Seed Cost', sell_price: 'Sell Price', cost: '
 
 async function loadPrices() {
   allPrices = await api('GET', '/api/admin/shop-prices');
-  renderPrices('');
-}
-
-function renderPrices(filter) {
-  const tbody = document.querySelector('#prices-table tbody');
-  const q = filter.trim().toLowerCase();
-  const rows = [];
-  for (const item of allPrices) {
-    if (q && !item.name.toLowerCase().includes(q)) continue;
-    for (const field of Object.keys(item.fields)) {
-      rows.push({ table: item.table, id: item.id, name: item.name, field, value: item.fields[field] });
+  const categorySelect = document.getElementById('price-category-filter');
+  if (categorySelect.options.length <= 1) {
+    for (const table of Object.keys(TABLE_LABELS)) {
+      const opt = document.createElement('option');
+      opt.value = table;
+      opt.textContent = TABLE_LABELS[table];
+      categorySelect.appendChild(opt);
     }
   }
-  tbody.innerHTML = rows.map((r) => `
-    <tr>
-      <td>${TABLE_LABELS[r.table] || r.table}</td>
-      <td>${escapeHtml(r.name)}</td>
-      <td>${FIELD_LABELS[r.field] || r.field}</td>
-      <td>🪙${r.value}</td>
-      <td><input type="number" class="price-input" min="0" value="${r.value}" data-table="${r.table}" data-id="${r.id}" data-field="${r.field}" style="width:90px"></td>
-      <td><button class="price-save-btn" data-table="${r.table}" data-id="${r.id}" data-field="${r.field}">Save</button></td>
-    </tr>`).join('') || '<tr><td colspan="6">No items match.</td></tr>';
+  renderPrices();
+}
 
-  tbody.querySelectorAll('.price-save-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const input = tbody.querySelector(`input[data-table="${btn.dataset.table}"][data-id="${btn.dataset.id}"][data-field="${btn.dataset.field}"]`);
+function renderPrices() {
+  const tbody = document.querySelector('#prices-table tbody');
+  const q = document.getElementById('price-search-input').value.trim().toLowerCase();
+  const categoryFilter = document.getElementById('price-category-filter').value;
+  const items = allPrices.filter((item) => {
+    if (categoryFilter && item.table !== categoryFilter) return false;
+    if (q && !item.name.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  // One row per ITEM now, not one row per price field — an item with
+  // multiple price fields (a crop's seed cost AND sell price) gets a
+  // dropdown to pick which one this row is currently editing, instead of
+  // permanently taking up a separate line for each field.
+  tbody.innerHTML = items.map((item) => {
+    const fieldKeys = Object.keys(item.fields);
+    const fieldOptions = fieldKeys.map((f) => `<option value="${f}">${FIELD_LABELS[f] || f}</option>`).join('');
+    const firstValue = item.fields[fieldKeys[0]];
+    return `
+    <tr data-table="${item.table}" data-id="${item.id}">
+      <td>${TABLE_LABELS[item.table] || item.table}</td>
+      <td>${escapeHtml(item.name)}</td>
+      <td><select class="price-field-select">${fieldOptions}</select></td>
+      <td class="price-current">🪙${firstValue}</td>
+      <td><input type="number" class="price-input" min="0" value="${firstValue}" style="width:90px"></td>
+      <td><button class="price-save-btn">Save</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6">No items match.</td></tr>';
+
+  tbody.querySelectorAll('tr[data-table]').forEach((tr) => {
+    const item = items.find((i) => i.table === tr.dataset.table && String(i.id) === tr.dataset.id);
+    const select = tr.querySelector('.price-field-select');
+    const input = tr.querySelector('.price-input');
+    const currentCell = tr.querySelector('.price-current');
+    select.addEventListener('change', () => {
+      const val = item.fields[select.value];
+      input.value = val;
+      currentCell.textContent = '🪙' + val;
+    });
+    tr.querySelector('.price-save-btn').addEventListener('click', async () => {
       const value = parseInt(input.value, 10);
       if (!Number.isFinite(value) || value < 0) return alert('Enter a valid price.');
       try {
-        await api('POST', '/api/admin/set-price', { table: btn.dataset.table, id: btn.dataset.id, field: btn.dataset.field, value });
+        await api('POST', '/api/admin/set-price', { table: tr.dataset.table, id: tr.dataset.id, field: select.value, value });
         await loadPrices();
-        document.getElementById('price-search-input').value = filter;
-        renderPrices(filter);
       } catch (err) {
         alert('Error: ' + err.message);
       }
@@ -207,7 +234,8 @@ function renderPrices(filter) {
   });
 }
 
-document.getElementById('price-search-input').addEventListener('input', (e) => renderPrices(e.target.value));
+document.getElementById('price-search-input').addEventListener('input', () => renderPrices());
+document.getElementById('price-category-filter').addEventListener('change', () => renderPrices());
 
 async function loadMailbox() {
   const rows = await api('GET', '/api/admin/password-requests');
