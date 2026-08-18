@@ -15,7 +15,10 @@ const DYE_PALETTE = ['#c0392b', '#e8a527', '#4f8f2e', '#3d8fe0', '#8e44ad', '#e0
 // string can't get stored via a hand-crafted request.
 const BUILDING_COLOR_OPTIONS = {
   farmhouse: ['#f6ecd2', '#dceaf0', '#e3f0dc', '#f5dbe6', '#e8e2f5', '#fbe8cf'],
-  mansion: ['#e0973f', '#f6ecd2', '#dceaf0', '#e3ded2', '#e8e2f5', '#e5d5c3'],
+  // Mansion uses real illustrated art per color (not a hex tint) — these
+  // are asset-file keys (public/assets/buildings/mansion_<key>.png), not
+  // CSS colors, matched exactly by the frontend's color swatch picker.
+  mansion: ['orange', 'green', 'teal', 'blue', 'purple', 'pink', 'red'],
 };
 
 // Given a `location` value ('outdoor', 'indoor', or 'indoor:<buildingId>'),

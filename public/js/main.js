@@ -706,7 +706,14 @@
   // only the house is still the plain fixed 'indoor' value.
   function locationForCurrentSpace() {
     if (!state.inHouse) return 'outdoor';
-    if (state.interiorSpace && state.interiorSpace.buildingId) return `indoor:${state.interiorSpace.buildingId}`;
+    if (state.interiorSpace && state.interiorSpace.buildingId) {
+      const floor = state.interiorSpace.floor || 1;
+      // Placing furniture (like a second staircase) while standing on
+      // floor 2 must land it on floor 2's own location, not silently fall
+      // back to floor 1 — floor 1 and floor 2 are otherwise identical
+      // `indoor:<buildingId>` strings apart from this suffix.
+      return floor > 1 ? `indoor:${state.interiorSpace.buildingId}:${floor}` : `indoor:${state.interiorSpace.buildingId}`;
+    }
     return 'indoor'; // house (also the safe default for older sessions)
   }
 

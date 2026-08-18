@@ -21,6 +21,21 @@ function getSprite(key) {
   }
   return SPRITE_CACHE[key];
 }
+
+// ---- Building sprite assets ----
+// Same lazy-load-and-cache pattern as character sprites, for buildings
+// that use a real illustrated image instead of procedurally-drawn shapes
+// (currently just the Mansion).
+const BUILDING_SPRITE_BASE = '/assets/buildings/';
+const BUILDING_SPRITE_CACHE = {};
+function getBuildingSprite(key) {
+  if (!BUILDING_SPRITE_CACHE[key]) {
+    const img = new Image();
+    img.src = `${BUILDING_SPRITE_BASE}${key}.png`;
+    BUILDING_SPRITE_CACHE[key] = img;
+  }
+  return BUILDING_SPRITE_CACHE[key];
+}
 // Preload the full set immediately so the very first frame has them ready —
 // every direction now has its own dedicated 2-frame walk cycle for both
 // genders (no more mirroring, no more idle-only directions), which is what
@@ -2515,7 +2530,7 @@ class FarmGame {
     else if (style.shape === 'barn') this._drawHouseLike(x, y, w, h, style, 'barn');
     else if (style.shape === 'coop') this._drawHouseLike(x, y, w, h, style, 'coop');
     else if (style.shape === 'shed') this._drawHouseLike(x, y, w, h, style, 'shed');
-    else if (style.shape === 'mansion') this._drawMansion(x, y, w, h, style);
+    else if (style.shape === 'mansion') this._drawMansionSprite(x, y, w, h, customColor);
     else this._drawHouseLike(x, y, w, h, style, 'house');
 
     if (flipped) ctx.restore();
@@ -2530,6 +2545,38 @@ class FarmGame {
   // portico over the door. Distinct enough from the plain farmhouse
   // silhouette to read as a prestige building, matching the reference
   // look the player asked for.
+  // The real illustrated Mansion artwork (see public/assets/buildings/
+  // mansion_<color>.png) — drawn as-is, no tinting, since each color is a
+  // genuinely separate hand-picked piece of art rather than one image
+  // recolored. Scaled to fit the building's footprint while preserving
+  // the image's own aspect ratio (so it's never stretched/distorted), and
+  // centered within that footprint. Falls back to a plain rect if the
+  // image hasn't finished loading yet, so there's never a blank gap on
+  // the very first frame.
+  _drawMansionSprite(x, y, w, h, customColor) {
+    const ctx = this.ctx;
+    const spriteKey = customColor ? `mansion_${customColor}` : 'mansion';
+    const img = getBuildingSprite(spriteKey);
+    if (!img.complete || !img.naturalWidth) {
+      ctx.fillStyle = '#e0973f';
+      ctx.fillRect(x, y, w, h);
+      return;
+    }
+    const imgRatio = img.naturalWidth / img.naturalHeight;
+    const boxRatio = w / h;
+    let dw, dh;
+    if (imgRatio > boxRatio) {
+      dw = w;
+      dh = w / imgRatio;
+    } else {
+      dh = h;
+      dw = h * imgRatio;
+    }
+    const dx = x + (w - dw) / 2;
+    const dy = y + (h - dh); // anchor to the bottom of the footprint, not vertically centered — a building's "feet" should sit on the ground line, not float in the middle of its tile box
+    ctx.drawImage(img, dx, dy, dw, dh);
+  }
+
   _drawMansion(x, y, w, h, style) {
     const ctx = this.ctx;
     const roofH = h * 0.14;

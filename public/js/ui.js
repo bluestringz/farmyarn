@@ -44,13 +44,17 @@ const UI = (() => {
   // varies per-user, so there's no reason to add yet another schema column
   // (and risk of a migration bug) just to store a sentence of flavor text.
   // Preset wall-color choices for House and Mansion, shown as a swatch
-  // picker in the Shop card before buying — matches server/routes/shop.js's
-  // BUILDING_COLOR_OPTIONS whitelist exactly (the server rejects anything
-  // not in that list).
+  // picker in the Shop card before buying. House swatches are CSS colors
+  // (matches server's BUILDING_COLOR_OPTIONS hex values exactly — the
+  // server rejects anything not in that list). Mansion swatches are
+  // instead small thumbnails of the actual illustrated art per color
+  // (public/assets/buildings/mansion_<key>.png) — there's no hex tint
+  // involved, each color is a genuinely different piece of art, so the
+  // picker shows that art directly instead of a flat color circle.
   const BUILDING_COLOR_OPTIONS = {
     farmhouse: ['#f6ecd2', '#dceaf0', '#e3f0dc', '#f5dbe6', '#e8e2f5', '#fbe8cf'],
-    mansion: ['#e0973f', '#f6ecd2', '#dceaf0', '#e3ded2', '#e8e2f5', '#e5d5c3'],
   };
+  const MANSION_COLOR_OPTIONS = ['orange', 'green', 'teal', 'blue', 'purple', 'pink', 'red'];
 
   const ITEM_DESCRIPTIONS = {
     // crops (seeds)
@@ -230,7 +234,12 @@ const UI = (() => {
         ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
         : '';
       const colorOptions = BUILDING_COLOR_OPTIONS[item.id];
-      const colorSwatches = colorOptions ? `
+      const isMansion = item.id === 'mansion';
+      const colorSwatches = isMansion
+        ? `<div class="color-swatch-row" data-swatches-for="${item.id}">
+            ${MANSION_COLOR_OPTIONS.map((c, i) => `<button type="button" class="color-swatch mansion-swatch ${i === 0 ? 'selected' : ''}" data-color="${c}" style="background-image:url('/assets/buildings/mansion_${c}.png')"></button>`).join('')}
+          </div>`
+        : colorOptions ? `
         <div class="color-swatch-row" data-swatches-for="${item.id}">
           ${colorOptions.map((c, i) => `<button type="button" class="color-swatch ${i === 0 ? 'selected' : ''}" data-color="${c}" style="background:${c}"></button>`).join('')}
         </div>` : '';

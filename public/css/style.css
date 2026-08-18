@@ -692,6 +692,12 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   padding: 0;
 }
 .color-swatch.selected { box-shadow: 0 0 0 2.5px var(--leaf); }
+.color-swatch.mansion-swatch {
+  width: 36px; height: 26px;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+}
 
 .shop-card.workshop-card {
   position: relative;
