@@ -18,7 +18,7 @@ const BUILDING_COLOR_OPTIONS = {
   // Mansion uses real illustrated art per color (not a hex tint) — these
   // are asset-file keys (public/assets/buildings/mansion_<key>.png), not
   // CSS colors, matched exactly by the frontend's color swatch picker.
-  mansion: ['orange', 'green', 'teal', 'blue', 'purple', 'pink', 'red'],
+  mansion: ['orange', 'green', 'teal', 'blue', 'purple', 'pink', 'red', 'white'],
 };
 
 // Given a `location` value ('outdoor', 'indoor', or 'indoor:<buildingId>'),

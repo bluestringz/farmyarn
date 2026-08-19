@@ -859,16 +859,23 @@ class FarmGame {
       const dy = pos.y - this._lastPointer.y;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this._dragMoved = true;
 
-      // Water tool: acting on each new tile the pointer passes over,
-      // instead of panning — lets you hold and drag across a whole plot
-      // to water it in one motion rather than tapping tile by tile.
+      // Water/Plow/Plant/Harvest: acting on each new tile the pointer
+      // passes over, instead of panning — lets you hold and drag across a
+      // whole plot to act on it in one motion rather than tapping tile by
+      // tile. Also checks for an OBJECT on that tile (a tree, specifically
+      // — watering/harvesting a tree goes through onObjectClick, not
+      // onTileClick, since a tree is a farm_object, not a plain crop tile)
+      // so dragging across trees works the same way dragging across open
+      // crop tiles does, instead of needing a separate tap per tree.
       if (this.dragActEnabled && this.onTileClick) {
         const world = this.screenToWorld(pos.x, pos.y);
         const tile = this.worldToTile(world.x, world.y);
         const last = this._lastDragActedTile;
         if (!last || last.x !== tile.x || last.y !== tile.y) {
           this._lastDragActedTile = tile;
-          this.onTileClick(tile.x, tile.y);
+          const obj = this._objectAt(tile.x, tile.y);
+          if (obj && this.onObjectClick) this.onObjectClick(obj);
+          else this.onTileClick(tile.x, tile.y);
         }
         this._lastPointer = pos;
         return;

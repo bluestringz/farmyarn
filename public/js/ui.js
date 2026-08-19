@@ -54,7 +54,7 @@ const UI = (() => {
   const BUILDING_COLOR_OPTIONS = {
     farmhouse: ['#f6ecd2', '#dceaf0', '#e3f0dc', '#f5dbe6', '#e8e2f5', '#fbe8cf'],
   };
-  const MANSION_COLOR_OPTIONS = ['orange', 'green', 'teal', 'blue', 'purple', 'pink', 'red'];
+  const MANSION_COLOR_OPTIONS = ['orange', 'green', 'teal', 'blue', 'purple', 'pink', 'red', 'white'];
 
   const ITEM_DESCRIPTIONS = {
     // crops (seeds)

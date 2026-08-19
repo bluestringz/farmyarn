@@ -524,7 +524,9 @@
     // Watering supports hold-and-drag across a whole plot instead of one
     // tap per tile — every other tool keeps the normal single-tap
     // behavior (a drag still just pans the map for those).
-    game.setDragActEnabled(tool === 'water');
+    // Water/Plow/Plant/Harvest all support hold-and-drag across a whole
+    // plot in one motion instead of tapping tile by tile.
+    game.setDragActEnabled(tool === 'water' || tool === 'plow' || tool === 'plant' || tool === 'harvest');
     game.setActiveTool(tool);
     document.getElementById('seed-picker').classList.add('hidden');
     document.getElementById('build-picker').classList.add('hidden');
