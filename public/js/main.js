@@ -1015,6 +1015,10 @@
         await Api.feedAnimal(obj.id);
         UI.toast('Fed! 🌾');
         game.playAction('🌾');
+        // Animal pens (coop/barn) are an interior space, so refreshCurrentFarm()
+        // no-ops while inside one — refresh the interior too so the feed
+        // indicator updates immediately instead of only on re-entry.
+        if (state.inHouse) await refreshInterior();
         await refreshCurrentFarm();
       } catch (err) {
         UI.toast(err.message);
@@ -1043,6 +1047,10 @@
         await refreshPlayer();
         UI.toast(`Collected ${res.productQuantity > 1 ? `${res.productQuantity}x ${res.product}` : res.product}!`);
         game.playAction(ACTION_ICON.collect);
+        // Same interior-refresh fix as feeding above — animal pens are
+        // interior spaces, so this makes the badge flip to "needs feeding"
+        // right after collecting instead of waiting for a re-entry.
+        if (state.inHouse) await refreshInterior();
         await refreshCurrentFarm();
       } catch (err) {
         UI.toast(err.message);
