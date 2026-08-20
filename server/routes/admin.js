@@ -4,7 +4,7 @@ const os = require('os');
 const fs = require('fs');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
-const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY } = require('../lib/gameLogic');
+const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY, getTimerSetting, DEFAULT_TIMERS } = require('../lib/gameLogic');
 const { DB_PATH } = require('../db/migrate');
 
 module.exports = function adminRoutes(db, onlineUsers, io) {
@@ -106,6 +106,85 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'Invalid price' });
     const info = db.prepare(`UPDATE ${table} SET ${field} = ? WHERE id = ?`).run(amount, id);
     if (info.changes === 0) return res.status(404).json({ error: 'Item not found' });
+    res.json({ ok: true });
+  });
+
+  // ---- Timers (Admin Panel > ⏱️ Timers) ----
+  // Two kinds of tunable timer:
+  //  - PER-ITEM: a column that already lives on a specific catalog row
+  //    (how long ONE crop type takes to grow, how long ONE animal type
+  //    takes to produce). Same shape as PRICE_TABLES above.
+  //  - GLOBAL: a rule that applies across every item of a kind at once
+  //    (how long ANY unfed animal survives, how long ANY unwatered crop
+  //    survives) — these aren't columns on a catalog table, so they're
+  //    stored in the game_settings key/value table instead (see
+  //    gameLogic.js DEFAULT_TIMERS / getTimerSetting for the read side).
+  const TIMER_TABLES = {
+    crop_types: ['growth_seconds'],
+    animal_types: ['production_seconds'],
+  };
+  const TIMER_FIELD_LABELS = { growth_seconds: 'Growth Time', production_seconds: 'Production Time' };
+
+  // key -> { label, category } — category groups these in the admin UI
+  // filter alongside the per-item tables (Crops / Animals / Global Rules).
+  const GLOBAL_TIMERS = {
+    crop_death_unwatered_seconds: { label: 'Crop dies if left unwatered', category: 'crop_types' },
+    crop_wither_unharvested_seconds: { label: 'Crop withers if left un-harvested', category: 'crop_types' },
+    animal_starve_seconds: { label: 'Animal dies if not fed', category: 'animal_types' },
+  };
+
+  // GET /api/admin/timers — every tunable timer, per-item AND global,
+  // flattened into one list the admin panel renders as a single table
+  // (with a category filter, same UX as Shop Prices).
+  router.get('/timers', (req, res) => {
+    const rows = [];
+    for (const table of Object.keys(TIMER_TABLES)) {
+      const items = db.prepare(`SELECT * FROM ${table}`).all();
+      for (const item of items) {
+        for (const field of TIMER_TABLES[table]) {
+          rows.push({
+            kind: 'item', table, id: item.id, name: item.name, field,
+            label: TIMER_FIELD_LABELS[field] || field, valueSeconds: item[field],
+          });
+        }
+      }
+    }
+    for (const key of Object.keys(GLOBAL_TIMERS)) {
+      const def = GLOBAL_TIMERS[key];
+      rows.push({
+        kind: 'global', table: def.category, id: key, name: def.label,
+        field: key, label: def.label, valueSeconds: getTimerSetting(db, key),
+      });
+    }
+    res.json(rows);
+  });
+
+  // POST /api/admin/set-timer { table, id, field, valueSeconds } — edits
+  // a PER-ITEM timer column (crop growth time, animal production time).
+  router.post('/set-timer', (req, res) => {
+    const { table, id, field, valueSeconds } = req.body || {};
+    const allowedFields = TIMER_TABLES[table];
+    if (!allowedFields || !allowedFields.includes(field)) {
+      return res.status(400).json({ error: 'Unknown table or field' });
+    }
+    const seconds = parseInt(valueSeconds, 10);
+    if (!Number.isFinite(seconds) || seconds < 1) return res.status(400).json({ error: 'Enter a duration of at least 1 second' });
+    const info = db.prepare(`UPDATE ${table} SET ${field} = ? WHERE id = ?`).run(seconds, id);
+    if (info.changes === 0) return res.status(404).json({ error: 'Item not found' });
+    res.json({ ok: true });
+  });
+
+  // POST /api/admin/set-global-timer { key, valueSeconds } — edits a
+  // GLOBAL rule (the animal starve window, crop death/wither windows).
+  // Upserts into game_settings; takes effect immediately, no restart
+  // needed, since gameLogic.js reads this table live on every farm load.
+  router.post('/set-global-timer', (req, res) => {
+    const { key, valueSeconds } = req.body || {};
+    if (!GLOBAL_TIMERS[key]) return res.status(400).json({ error: 'Unknown timer' });
+    const seconds = parseInt(valueSeconds, 10);
+    if (!Number.isFinite(seconds) || seconds < 1) return res.status(400).json({ error: 'Enter a duration of at least 1 second' });
+    db.prepare('INSERT INTO game_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(key, seconds);
     res.json({ ok: true });
   });
 

@@ -37,18 +37,37 @@ function initFarmTiles(db, farmId, width, height) {
   tx();
 }
 
+// Default values (seconds) for the global, admin-tunable timers below —
+// used whenever game_settings has no row for that key yet (i.e. an admin
+// has never overridden it). See ADMIN PANEL > Timers > Global Rules.
+const DEFAULT_TIMERS = {
+  crop_death_unwatered_seconds: 12 * 3600,
+  crop_wither_unharvested_seconds: 12 * 3600,
+  animal_starve_seconds: 24 * 3600,
+};
+
+// Reads one tunable global timer (in seconds) from game_settings, falling
+// back to its hardcoded default if the admin hasn't overridden it. Cheap
+// single-row lookup — called at most a few times per farm load, so no
+// caching needed.
+function getTimerSetting(db, key) {
+  const row = db.prepare('SELECT value FROM game_settings WHERE key = ?').get(key);
+  return row ? row.value : DEFAULT_TIMERS[key];
+}
+
 // Resolve (lazily update) crop states for a farm based on server time.
 // This is called whenever a farm is loaded/queried so growth is always accurate
 // regardless of whether the owner was online.
 // How long a crop is allowed to sit before it's considered abandoned:
-//  - UNWATERED crops die outright 12 hours after being planted.
-//  - Crops that finished growing but sat un-harvested for 12 hours past
+//  - UNWATERED crops die outright N hours after being planted.
+//  - Crops that finished growing but sat un-harvested for N hours past
 //    that wither instead (still visible/clearable, just yield nothing).
-const CROP_DEATH_UNWATERED_SECONDS = 12 * 3600;
-const CROP_WITHER_UNHARVESTED_SECONDS = 12 * 3600;
+// Both windows are admin-tunable (see DEFAULT_TIMERS / game_settings above).
 
 function resolveCropStates(db, farmId) {
   const t = nowSec();
+  const CROP_DEATH_UNWATERED_SECONDS = getTimerSetting(db, 'crop_death_unwatered_seconds');
+  const CROP_WITHER_UNHARVESTED_SECONDS = getTimerSetting(db, 'crop_wither_unharvested_seconds');
   // A crop only actually finishes growing once it's been watered at least
   // once — watering was previously just an optional 10%-faster speed
   // boost, meaning a crop still fully matured on its own even if you never
@@ -78,16 +97,17 @@ function resolveCropStates(db, farmId) {
   `).run(farmId, t, CROP_WITHER_UNHARVESTED_SECONDS);
 }
 
-// A chicken/pig/sheep/cow that hasn't been fed in a full day dies — same
-// "lazily settle on read" pattern as crop growth/death above, called
-// wherever a farm's objects get fetched (both outdoor AND indoor, since
-// animals can live in the coop/barn now too — see interiorSpaces.js).
+// A chicken/pig/sheep/cow that hasn't been fed within the starve window
+// dies — same "lazily settle on read" pattern as crop growth/death above,
+// called wherever a farm's objects get fetched (both outdoor AND indoor,
+// since animals can live in the coop/barn now too — see interiorSpaces.js).
 // Reference point is whichever is more recent: the last time it was fed,
 // or when it was placed (for an animal that's never been fed at all).
-const ANIMAL_STARVE_SECONDS = 24 * 3600;
+// Window length is admin-tunable (see DEFAULT_TIMERS / game_settings above).
 
 function resolveAnimalDeaths(db, farmId) {
   const t = nowSec();
+  const ANIMAL_STARVE_SECONDS = getTimerSetting(db, 'animal_starve_seconds');
   const animals = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND object_type = 'animal'").all(farmId);
   for (const animal of animals) {
     let state = null;
@@ -255,9 +275,9 @@ function isReservedName(name) {
   if (RESERVED_NAME_SUBSTRINGS.some((term) => normalized.includes(term))) return true;
   return RESERVED_NAME_EXACT.some((term) => new RegExp(`^${term}\\d*$`).test(normalized));
 }
-
 module.exports = {
   nowSec, xpForLevel, levelForXp, xpProgress, initFarmTiles, resolveCropStates, resolveAnimalDeaths,
   grantRewards, addInventory, notify, resolveEnergy, spendEnergy, addEnergy, MAX_ENERGY,
   isReservedName, startResting, stopResting, resolveEquippedOutfit, rollHarvestQuantity, rollAnimalQuantity,
+  getTimerSetting, DEFAULT_TIMERS,
 };

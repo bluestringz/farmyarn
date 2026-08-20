@@ -284,6 +284,17 @@ function migrate(db) {
   CREATE INDEX IF NOT EXISTS idx_objects_farm ON farm_objects(farm_id);
   CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
   CREATE INDEX IF NOT EXISTS idx_friends_users ON friends(requester_id, receiver_id);
+
+  -- Small key/value store for global, admin-tunable game rules that aren't
+  -- tied to any single catalog item (e.g. the animal starve timer, which
+  -- applies to every animal type rather than living on animal_types). Value
+  -- is always an integer number of seconds. Missing key = fall back to the
+  -- hardcoded default in gameLogic.js, so this table only needs a row once
+  -- an admin actually changes something away from default.
+  CREATE TABLE IF NOT EXISTS game_settings (
+    key TEXT PRIMARY KEY,
+    value INTEGER NOT NULL
+  );
   `);
 
   addColumnsIfMissing(db);

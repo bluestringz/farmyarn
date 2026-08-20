@@ -177,6 +177,11 @@ class FarmGame {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.camera = { x: 0, y: 0, scale: 1 };
+    // Once the player manually pinch/scroll-zooms, their chosen zoom level
+    // should stick across entering/exiting the house, market, park, etc.
+    // instead of snapping back to the auto-fit default every time. Only
+    // resetView() (the explicit "fix my view" button) clears this.
+    this._userZoomed = false;
     this.farm = null;
     this.mode = 'outdoor'; // 'outdoor' | 'indoor' | 'market'
     this.interior = null; // { width, height, objects, serverTime } when mode === 'indoor'
@@ -739,7 +744,12 @@ class FarmGame {
   _centerCameraFor(gridW, gridH) {
     const worldW = gridW * TILE, worldH = gridH * TILE;
     const rect = this.canvas.getBoundingClientRect();
-    this.camera.scale = Math.min(2, Math.min(rect.width / worldW, rect.height / worldH) * 0.9) || 1;
+    // Only auto-fit the zoom if the player hasn't manually zoomed yet —
+    // once they have, keep their chosen scale and just re-center the
+    // (possibly differently-sized) space around it.
+    if (!this._userZoomed) {
+      this.camera.scale = Math.min(2, Math.min(rect.width / worldW, rect.height / worldH) * 0.9) || 1;
+    }
     this.camera.x = (rect.width - worldW * this.camera.scale) / 2;
     this.camera.y = (rect.height - worldH * this.camera.scale) / 2;
   }
@@ -748,6 +758,9 @@ class FarmGame {
   // whichever space the player is currently in, in case scale/position
   // ever end up looking off (e.g. from repeated pinch-zooming).
   resetView() {
+    // The one explicit way to get back to the auto-fit zoom, since normal
+    // navigation now preserves whatever zoom the player last set.
+    this._userZoomed = false;
     if (this.mode === 'indoor' && this.interior) {
       this._centerCameraFor(this.interior.width, this.interior.height);
     } else if (this.mode === 'market') {
@@ -762,7 +775,10 @@ class FarmGame {
     const worldW = this.farm.width * TILE;
     const worldH = this.farm.height * TILE;
     const rect = this.canvas.getBoundingClientRect();
-    this.camera.scale = Math.min(1, Math.min(rect.width / worldW, rect.height / worldH) * 0.95) || 1;
+    // Same "keep the player's manual zoom" treatment as _centerCameraFor.
+    if (!this._userZoomed) {
+      this.camera.scale = Math.min(1, Math.min(rect.width / worldW, rect.height / worldH) * 0.95) || 1;
+    }
     this.camera.x = (rect.width - worldW * this.camera.scale) / 2;
     this.camera.y = (rect.height - worldH * this.camera.scale) / 2;
   }
@@ -946,6 +962,9 @@ class FarmGame {
     const after = this.screenToWorld(sx, sy);
     this.camera.x += (after.x - before.x) * this.camera.scale;
     this.camera.y += (after.y - before.y) * this.camera.scale;
+    // From here on, entering/exiting the house/market/park should keep this
+    // zoom level instead of snapping back to the auto-fit default.
+    this._userZoomed = true;
   }
 
   _handleTap(sx, sy) {

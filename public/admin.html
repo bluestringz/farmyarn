@@ -88,6 +88,20 @@
   </div>
 
   <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">⏱️ Timers</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">Control how long things take, in hours — how long a crop takes to grow, how long an animal takes to give product, and the global rules for when a neglected crop/animal dies. Changes apply live, no restart needed.</p>
+    <select id="timer-category-filter">
+      <option value="">All Categories</option>
+      <option value="crop_types">🌾 Crops</option>
+      <option value="animal_types">🐄 Animals</option>
+    </select>
+    <table id="timers-table">
+      <thead><tr><th>Category</th><th>Type</th><th>Name</th><th>Setting</th><th>Current</th><th>New (hours)</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <input id="search-input" placeholder="Search username...">
     <button id="search-btn">Search</button>
     <table id="players-table">
@@ -148,6 +162,7 @@ async function showApp() {
   await loadPlayers();
   await loadMailbox();
   await loadPrices();
+  await loadTimers();
 }
 
 async function loadStats() {
@@ -236,6 +251,62 @@ function renderPrices() {
 
 document.getElementById('price-search-input').addEventListener('input', () => renderPrices());
 document.getElementById('price-category-filter').addEventListener('change', () => renderPrices());
+
+// ---- Timers ----
+let allTimers = [];
+
+async function loadTimers() {
+  allTimers = await api('GET', '/api/admin/timers');
+  renderTimers();
+}
+
+function fmtHours(seconds) {
+  const hrs = seconds / 3600;
+  // Trim trailing zeros (6 not 6.00, 1.5 not 1.50) but keep decimals when needed.
+  return (Math.round(hrs * 100) / 100).toString();
+}
+
+function renderTimers() {
+  const tbody = document.querySelector('#timers-table tbody');
+  const categoryFilter = document.getElementById('timer-category-filter').value;
+  const rows = allTimers.filter((r) => !categoryFilter || r.table === categoryFilter);
+
+  tbody.innerHTML = rows.map((r) => {
+    const rowKey = `${r.kind}:${r.table}:${r.id}:${r.field}`;
+    const typeLabel = r.kind === 'item' ? 'Per-Item' : '🌐 Global Rule';
+    const nameLabel = r.kind === 'item' ? escapeHtml(r.name) : '<em>applies to all</em>';
+    return `
+    <tr data-row-key="${rowKey}" data-kind="${r.kind}" data-table="${r.table}" data-id="${r.id}" data-field="${r.field}">
+      <td>${TABLE_LABELS[r.table] || r.table}</td>
+      <td>${typeLabel}</td>
+      <td>${nameLabel}</td>
+      <td>${escapeHtml(r.label)}</td>
+      <td class="timer-current">${fmtHours(r.valueSeconds)}h</td>
+      <td><input type="number" class="timer-input" min="0.01" step="0.01" value="${fmtHours(r.valueSeconds)}" style="width:90px"></td>
+      <td><button class="timer-save-btn">Save</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7">No timers match.</td></tr>';
+
+  tbody.querySelectorAll('tr[data-row-key]').forEach((tr) => {
+    tr.querySelector('.timer-save-btn').addEventListener('click', async () => {
+      const hours = parseFloat(tr.querySelector('.timer-input').value);
+      if (!Number.isFinite(hours) || hours <= 0) return alert('Enter a valid number of hours.');
+      const valueSeconds = Math.round(hours * 3600);
+      try {
+        if (tr.dataset.kind === 'item') {
+          await api('POST', '/api/admin/set-timer', { table: tr.dataset.table, id: tr.dataset.id, field: tr.dataset.field, valueSeconds });
+        } else {
+          await api('POST', '/api/admin/set-global-timer', { key: tr.dataset.field, valueSeconds });
+        }
+        await loadTimers();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('timer-category-filter').addEventListener('change', () => renderTimers());
 
 async function loadMailbox() {
   const rows = await api('GET', '/api/admin/password-requests');
