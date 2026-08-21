@@ -10,6 +10,10 @@
     viewingUserId: null,  // null = own farm, otherwise the farm being visited
     inHouse: false,        // whether we're currently in the interior view
     inMarket: false,        // whether we're currently in the marketplace plaza
+    inPark: false,          // whether we're currently in Central Park
+    inCasino: false,        // whether we're currently inside the Casino (nested inside Park)
+    casinoFloor: null,      // 1 or 2 while inCasino
+    heldCasinoLock: null,   // machineId of the casino machine this player currently has locked, if any
     marketStalls: [],
     tool: null,            // 'plow' | 'plant' | 'water' | 'harvest' | 'build' | 'remove' | 'decorate' | null
     buildSelection: null,  // { category, itemId, def } chosen from a picker, not yet placed
@@ -1290,6 +1294,7 @@
     game.setParkMode();
     game.onParkBenchClick = handleParkBenchClick;
     game.onParkCartClick = handleParkCartClick;
+    game.onParkCasinoClick = enterCasino;
     state.inPark = true;
     joinSpace('park');
     setTool(null);
@@ -1298,6 +1303,17 @@
   }
 
   async function exitPark() {
+    // Tapping "Home"/a friend/the Event Place while inside the Casino
+    // should cleanly back out of it too, not just leave the state stuck —
+    // game.exitParkMode() below sets mode='outdoor' directly regardless of
+    // whatever mode we were actually in, so this just needs to reset the
+    // Casino-specific state/banner alongside it.
+    if (state.inCasino) {
+      releaseCasinoLock();
+      state.inCasino = false;
+      state.casinoFloor = null;
+      document.getElementById('casino-banner').classList.add('hidden');
+    }
     if (state.me.isResting) {
       try {
         const res = await Api.stopResting();
@@ -1311,6 +1327,144 @@
     state.inPark = false;
     document.getElementById('park-banner').classList.add('hidden');
     await loadOwnFarm(); // rejoins the outdoor farm space
+  }
+
+  // ---- Casino (nested inside the Park) ----
+  // Entirely client-side layout (see CASINO_* constants in game.js) — no
+  // server data to fetch on entry, same as the Park itself. Only the bet
+  // config (odds/costs) and the actual bet result come from the server.
+  async function enterCasino() {
+    state.inCasino = true;
+    state.casinoFloor = 1;
+    game.setCasinoMode(1);
+    game.onCasinoMachineClick = handleCasinoMachineClick;
+    game.onCasinoStairsClick = handleCasinoStairsClick;
+    joinSpace('casino:1');
+    document.getElementById('park-banner').classList.add('hidden');
+    document.getElementById('casino-banner').classList.remove('hidden');
+  }
+
+  async function exitCasino() {
+    releaseCasinoLock();
+    state.inCasino = false;
+    state.casinoFloor = null;
+    game.exitCasinoMode();
+    document.getElementById('casino-banner').classList.add('hidden');
+    document.getElementById('park-banner').classList.remove('hidden');
+    joinSpace('park');
+  }
+
+  function handleCasinoStairsClick(toFloor) {
+    releaseCasinoLock();
+    state.casinoFloor = toFloor;
+    game.setCasinoMode(toFloor);
+    joinSpace('casino:' + toFloor);
+    UI.toast(`Floor ${toFloor}`);
+  }
+
+  // Releases whatever machine this player currently has locked (if any) —
+  // called before changing floors/leaving the Casino, and whenever the
+  // side panel closes, so a machine never stays stuck "in use" just
+  // because the player walked away instead of formally cancelling.
+  function releaseCasinoLock() {
+    if (state.heldCasinoLock && state.socket) {
+      state.socket.emit('casino:unlock', { machineId: state.heldCasinoLock });
+    }
+    state.heldCasinoLock = null;
+  }
+
+  // Claims the specific physical machine (via the server's casino:lock
+  // socket event — the actual "1 player at a time" enforcement, not just
+  // a client-side guess) before opening its bet panel. If someone else
+  // already has it, shows whose it is instead of opening the panel.
+  function handleCasinoMachineClick(machineId, machineType) {
+    if (!state.socket) return;
+    releaseCasinoLock(); // only ever hold one machine at a time
+    state.socket.emit('casino:lock', { machineId }, (result) => {
+      if (!result || !result.ok) {
+        UI.toast(result && result.username ? `Ginagamit pa ni ${result.username} 🔒` : 'That machine is busy right now.');
+        return;
+      }
+      state.heldCasinoLock = machineId;
+      openCasinoPanel(machineId, machineType);
+    });
+  }
+
+  // Bet config (odds/costs) rarely changes mid-session, but it's cheap
+  // enough (one small GET) to just refetch each time the panel opens
+  // rather than caching it and risking a stale display.
+  async function openCasinoPanel(machineId, machineType) {
+    try {
+      const allConfig = await Api.casinoConfig();
+      const machine = allConfig[machineType];
+      if (!machine) return;
+      UI.openPanel(`🎰 ${machine.label} #${machineId.replace(/^\D+_/, '')}`);
+
+      // Every machine now has its own dedicated pick -> play -> animate ->
+      // show-result panel (color swatches + drop for Color Game, spinning
+      // reels for Lucky 777, a claw grab for the Claw Machine) instead of
+      // a generic bet-amount button grid — each onPlay callback does the
+      // actual bet + local state sync, and returns the raw result so the
+      // panel can drive its own reveal animation from it.
+      if (machineType === 'color_game') {
+        UI.renderColorGamePanel(machine, state.me, async (bet, color) => {
+          const res = await Api.casinoBet(machineType, bet, color);
+          state.me.coins = res.coins;
+          state.me.energy = res.energy;
+          state.me.premiumCurrency = res.premiumCurrency;
+          renderTopbar();
+          if (res.win) game.playAction('🎉');
+          return res;
+        });
+        return;
+      }
+      if (machineType === 'slot_777') {
+        UI.renderSlotPanel(machine, state.me, async (bet) => {
+          const res = await Api.casinoBet(machineType, bet);
+          state.me.coins = res.coins;
+          state.me.energy = res.energy;
+          state.me.premiumCurrency = res.premiumCurrency;
+          renderTopbar();
+          if (res.win) game.playAction('🎉');
+          return res;
+        });
+        return;
+      }
+      if (machineType === 'claw_machine') {
+        UI.renderClawPanel(machine, state.me, async () => {
+          const res = await Api.casinoBet(machineType, machine.betOptions[0]);
+          state.me.coins = res.coins;
+          state.me.energy = res.energy;
+          state.me.premiumCurrency = res.premiumCurrency;
+          renderTopbar();
+          if (res.win) game.playAction('🎉');
+          return res;
+        });
+        return;
+      }
+
+      UI.renderCasinoPanel(machine, state.me, async (bet) => {
+        try {
+          const res = await Api.casinoBet(machineType, bet);
+          state.me.coins = res.coins;
+          state.me.energy = res.energy;
+          state.me.premiumCurrency = res.premiumCurrency;
+          renderTopbar();
+          if (res.win) {
+            const rewardText = res.ppReward > 0 ? `+${res.ppReward} PP 💎` : `+${res.energyReward} ⚡ Energy`;
+            UI.toast(`🎉 ${res.tier.label}! ${rewardText}`);
+            game.playAction('🎉');
+          } else {
+            UI.toast('No win this time — try again!');
+          }
+          await openCasinoPanel(machineId, machineType); // refresh the coins/energy shown in the panel
+        } catch (err) {
+          UI.toast(err.message);
+        }
+      });
+    } catch (err) {
+      UI.toast(err.message);
+    }
   }
 
   async function handleParkBenchClick(bench) {
@@ -1384,7 +1538,7 @@
       onRemoveListing: async (listingId) => {
         try {
           await Api.removeListing(listingId);
-          UI.toast('Listing removed — items returned to your Bag.');
+          UI.toast('Listing removed.');
           await renderStallDetailPanel(stallId);
         } catch (err) { UI.toast(err.message); }
       },
@@ -1406,6 +1560,7 @@
         } catch (err) { UI.toast(err.message); }
       },
       getInventory: () => Api.inventory(),
+      getOwnedOutfits: () => Api.outfits(),
     });
   }
 
@@ -1446,12 +1601,16 @@
         errEl.textContent = err.message;
       }
     });
-    document.getElementById('side-panel-close').addEventListener('click', UI.closePanel);
+    document.getElementById('side-panel-close').addEventListener('click', () => {
+      releaseCasinoLock();
+      UI.closePanel();
+    });
     document.getElementById('visiting-return-btn').addEventListener('click', loadOwnFarm);
     document.getElementById('house-exit-btn').addEventListener('click', exitHouse);
     document.getElementById('coop-exit-btn').addEventListener('click', exitHouse);
     document.getElementById('market-exit-btn').addEventListener('click', exitMarket);
     document.getElementById('park-exit-btn').addEventListener('click', exitPark);
+    document.getElementById('casino-exit-btn').addEventListener('click', exitCasino);
     document.getElementById('daily-reward-btn').addEventListener('click', claimDailyReward);
     refreshNotifBadge();
     setInterval(refreshNotifBadge, 15000);
@@ -1527,8 +1686,7 @@
       const r = res.reward;
       let msg = `Day ${res.streakDay} reward: `;
       if (r.coins) msg += `🪙${r.coins} `;
-      if (r.xp) msg += `${r.xp}XP `;
-      if (r.item) msg += `1× ${r.item} `;
+      if (r.energy) msg += `⚡${r.energy} `;
       UI.toast(msg.trim());
       await refreshPlayer();
     } catch (err) {
@@ -1581,6 +1739,17 @@
     });
     socket.on('presence:left', ({ userId }) => {
       game.removeRemotePlayer(userId);
+    });
+
+    // ---- Casino machine occupancy ("1 player at a time per machine") ----
+    socket.on('casino:locks-snapshot', ({ locks }) => {
+      game.setCasinoLocksSnapshot(locks);
+    });
+    socket.on('casino:machine-locked', ({ machineId, username }) => {
+      game.setCasinoMachineLocked(machineId, username);
+    });
+    socket.on('casino:machine-unlocked', ({ machineId }) => {
+      game.setCasinoMachineUnlocked(machineId);
     });
 
     // ---- Chat ----

@@ -96,19 +96,81 @@ const PARK_BENCH_POSITIONS = [
   { x: 3, y: 4 }, { x: 6, y: 4 }, { x: 9, y: 4 }, { x: 12, y: 4 },
   { x: 3, y: 10 }, { x: 6, y: 10 }, { x: 9, y: 10 }, { x: 12, y: 10 },
 ];
+// Casino building footprint, upper-left of the Park — same size as the
+// Mansion's outdoor footprint (7x4), per the reference art. Tapping ANY
+// tile inside this box enters it (see onParkCasinoClick in the park tap
+// handler below), same forgiving whole-building-is-clickable behavior as
+// the snack carts.
+const CASINO_BUILDING = { x: 0, y: 0, width: 7, height: 4 };
 const PARK_TREE_POSITIONS = [
-  { x: 1, y: 1 }, { x: 14, y: 1 }, { x: 1, y: 12 }, { x: 14, y: 12 },
+  { x: 1, y: 5 }, { x: 14, y: 1 }, { x: 1, y: 12 }, { x: 14, y: 12 },
   { x: 7, y: 1 }, { x: 8, y: 12 },
 ];
 // Snack carts — tap one to buy straight into your Bag (see main.js's
 // handleParkCartClick / /api/farm/park-buy-snack). Placed together near
 // the tree in the upper-left corner (with some breathing room between
 // them) so they read as a little snack corner instead of being scattered
-// randomly across the park.
+// randomly across the park. Shifted down to y:5 (was y:3) to sit clear of
+// the Casino building's footprint above them.
 const PARK_CART_POSITIONS = [
-  { x: 2, y: 3, itemId: 'ice_cream', label: 'Ice Cream 🍦', cost: 75 },
-  { x: 4, y: 3, itemId: 'hotdog', label: 'Hotdog 🌭', cost: 100 },
+  { x: 2, y: 5, itemId: 'ice_cream', label: 'Ice Cream 🍦', cost: 75 },
+  { x: 4, y: 5, itemId: 'hotdog', label: 'Hotdog 🌭', cost: 100 },
 ];
+
+// ---- Casino interior (inside the Park building above) ----
+// Same room WIDTH as the Mansion (the biggest interior in the game), but
+// taller — 3 floors now, one machine TYPE per floor with 15 physical
+// copies of it laid out in a 5x3 grid, so 15 players can each be on their
+// own Color Game/Claw Machine/Slot machine at once instead of fighting
+// over one shared machine (see the casino:lock/casino:unlock socket
+// events for the actual "1 player at a time per physical machine" rule —
+// this is just the layout). Entirely fixed/hardcoded, no per-player
+// ownership or furniture placement, same "no server data to fetch, layout
+// known client-side" simplicity as the Park itself.
+const CASINO_INTERIOR_WIDTH = 15;
+const CASINO_INTERIOR_HEIGHT = 12;
+const CASINO_MACHINE_COLS = [1, 4, 7, 10, 13];
+const CASINO_MACHINE_ROWS = [4, 7, 10];
+const CASINO_STAIRS_ROW = 1;
+
+// Builds the 15 grid positions (5 cols x 3 rows) for one floor's machine
+// type, each with a globally-unique instance id (e.g. 'color_game_7') —
+// that id is what the lock system above keys on, and what's sent as
+// `machine` (the bet TYPE is derived from it, see machineTypeFromId
+// below) to the betting API.
+function buildMachineGrid(type) {
+  const positions = [];
+  let n = 1;
+  for (const y of CASINO_MACHINE_ROWS) {
+    for (const x of CASINO_MACHINE_COLS) {
+      positions.push({ id: `${type}_${n}`, type, x, y });
+      n++;
+    }
+  }
+  return positions;
+}
+
+function machineTypeFromId(machineId) {
+  return machineId.replace(/_\d+$/, '');
+}
+
+const CASINO_FLOOR_LAYOUT = {
+  1: {
+    machines: buildMachineGrid('color_game'),
+    stairs: [{ x: 7, y: CASINO_STAIRS_ROW, direction: 'up', toFloor: 2 }],
+  },
+  2: {
+    machines: buildMachineGrid('claw_machine'),
+    stairs: [
+      { x: 5, y: CASINO_STAIRS_ROW, direction: 'up', toFloor: 3 },
+      { x: 9, y: CASINO_STAIRS_ROW, direction: 'down', toFloor: 1 },
+    ],
+  },
+  3: {
+    machines: buildMachineGrid('slot_777'),
+    stairs: [{ x: 7, y: CASINO_STAIRS_ROW, direction: 'down', toFloor: 2 }],
+  },
+};
 
 const MARKET_STALL_POSITIONS = (() => {
   const xs = [1, 4, 7, 10, 13];
@@ -194,6 +256,10 @@ class FarmGame {
     this.onMarketStallClick = null; // callback(stall)
     this.onParkBenchClick = null; // callback(benchPosition)
     this.onParkCartClick = null; // callback(cartPosition)
+    this.onParkCasinoClick = null; // callback() — tapped the Casino building in the Park
+    this.onCasinoMachineClick = null; // callback(machineId, machineType) — tapped a betting machine inside the Casino
+    this.onCasinoStairsClick = null;  // callback(toFloor) — tapped a Casino staircase
+    this.casinoLocks = new Map(); // machineId -> username currently occupying it (visual only — see casino:lock socket flow for actual enforcement)
     this.highlightFn = null; // (x,y) => 'valid'|'invalid'|null, drawn as overlay
     this._ghost = null; // { category, itemId, x, y, rotation, def } pending-placement preview
 
@@ -334,6 +400,18 @@ class FarmGame {
 
   clearRemotePlayers() {
     this.remotePlayers.clear();
+  }
+
+  // ---- Casino machine occupancy (visual only — see casino:lock socket
+  // flow in main.js for the actual "1 player at a time" enforcement) ----
+  setCasinoLocksSnapshot(locks) {
+    this.casinoLocks = new Map((locks || []).map((l) => [l.machineId, l.username]));
+  }
+  setCasinoMachineLocked(machineId, username) {
+    this.casinoLocks.set(machineId, username);
+  }
+  setCasinoMachineUnlocked(machineId) {
+    this.casinoLocks.delete(machineId);
   }
 
   // Speech bubble above the local player's head (global chat while visible
@@ -708,6 +786,31 @@ class FarmGame {
     if (this.farm) this._centerCamera();
   }
 
+  // ---- Casino (nested inside the Park) ----
+  setCasinoMode(floor) {
+    this.mode = 'casino';
+    this.casinoFloor = floor || 1;
+    this._centerCameraFor(CASINO_INTERIOR_WIDTH, CASINO_INTERIOR_HEIGHT);
+    const wx = (CASINO_INTERIOR_WIDTH / 2) * TILE, wy = (CASINO_INTERIOR_HEIGHT * 0.75) * TILE;
+    this._character.x = wx; this._character.y = wy;
+    this._character.targetX = wx; this._character.targetY = wy;
+    this._character.moving = false;
+  }
+
+  // Exits back to the PARK (not the farm) — the Casino is nested inside
+  // it, same as a coop is nested inside a farm, so leaving one floor up
+  // lands you right back where you tapped the building.
+  exitCasinoMode() {
+    this.mode = 'park';
+    this.casinoFloor = null;
+    this._centerCameraFor(PARK_WIDTH, PARK_HEIGHT);
+    const wx = (CASINO_BUILDING.x + CASINO_BUILDING.width / 2) * TILE;
+    const wy = (CASINO_BUILDING.y + CASINO_BUILDING.height + 0.5) * TILE;
+    this._character.x = wx; this._character.y = wy;
+    this._character.targetX = wx; this._character.targetY = wy;
+    this._character.moving = false;
+  }
+
   // The Marketplace and house interior are entirely separate grids from the
   // farm — a character position picked up while in one of those (e.g.
   // standing at market tile (8,10)) is meaningless back on the farm grid,
@@ -765,6 +868,8 @@ class FarmGame {
       this._centerCameraFor(this.interior.width, this.interior.height);
     } else if (this.mode === 'market') {
       this._centerCameraFor(MARKET_WIDTH, MARKET_HEIGHT);
+    } else if (this.mode === 'casino') {
+      this._centerCameraFor(CASINO_INTERIOR_WIDTH, CASINO_INTERIOR_HEIGHT);
     } else {
       this._centerCamera();
     }
@@ -990,6 +1095,10 @@ class FarmGame {
 
     if (this.mode === 'park') {
       if (tile.x < 0 || tile.y < 0 || tile.x >= PARK_WIDTH || tile.y >= PARK_HEIGHT) return;
+      if (tile.x >= CASINO_BUILDING.x && tile.x < CASINO_BUILDING.x + CASINO_BUILDING.width &&
+          tile.y >= CASINO_BUILDING.y && tile.y < CASINO_BUILDING.y + CASINO_BUILDING.height) {
+        if (this.onParkCasinoClick) { this.onParkCasinoClick(); return; }
+      }
       const bench = PARK_BENCH_POSITIONS.find((p) => p.x === tile.x && p.y === tile.y);
       if (bench && this.onParkBenchClick) {
         this.onParkBenchClick(bench);
@@ -998,6 +1107,25 @@ class FarmGame {
       const cart = PARK_CART_POSITIONS.find((p) => p.x === tile.x && p.y === tile.y);
       if (cart && this.onParkCartClick) {
         this.onParkCartClick(cart);
+        return;
+      }
+      this.walkTo(tile.x, tile.y, null);
+      return;
+    }
+
+    if (this.mode === 'casino') {
+      if (tile.x < 0 || tile.y < 0 || tile.x >= CASINO_INTERIOR_WIDTH || tile.y >= CASINO_INTERIOR_HEIGHT) return;
+      const layout = CASINO_FLOOR_LAYOUT[this.casinoFloor] || CASINO_FLOOR_LAYOUT[1];
+      const machine = layout.machines.find((m) => m.x === tile.x && m.y === tile.y);
+      if (machine) {
+        this.walkTo(machine.x, machine.y, null);
+        if (this.onCasinoMachineClick) this.onCasinoMachineClick(machine.id, machine.type);
+        return;
+      }
+      const stairs = (layout.stairs || []).find((s) => s.x === tile.x && s.y === tile.y);
+      if (stairs) {
+        this.walkTo(stairs.x, stairs.y, null);
+        if (this.onCasinoStairsClick) this.onCasinoStairsClick(stairs.toFloor);
         return;
       }
       this.walkTo(tile.x, tile.y, null);
@@ -1159,6 +1287,18 @@ class FarmGame {
       this._drawParkBorder();
       ctx.restore();
       this._drawWeatherOverlay(rect);
+      return;
+    }
+
+    if (this.mode === 'casino') {
+      ctx.save();
+      ctx.translate(this.camera.x, this.camera.y);
+      ctx.scale(this.camera.scale, this.camera.scale);
+      this._drawCasinoRoom();
+      this._drawCasinoFloorContents(this.casinoFloor || 1);
+      this._drawPeopleSorted();
+      this._drawCharacterOverlay();
+      ctx.restore();
       return;
     }
 
@@ -1581,12 +1721,59 @@ class FarmGame {
     for (const { x, y } of PARK_TREE_POSITIONS) {
       this._drawDecorationShape(ctx, DECORATION_STYLE.tree, x * TILE, y * TILE, TILE, TILE);
     }
+    this._drawCasinoBuilding();
     for (const { x, y } of PARK_BENCH_POSITIONS) {
       this._drawDecorationShape(ctx, DECORATION_STYLE.bench, x * TILE, y * TILE, TILE, TILE);
     }
     for (const cart of PARK_CART_POSITIONS) {
       this._drawSnackCart(cart.x * TILE, cart.y * TILE, cart.itemId);
     }
+  }
+
+  // The Casino building, drawn as real illustrated art (same technique as
+  // _drawMansionSprite — scaled to fit the footprint while preserving the
+  // image's own aspect ratio, anchored to the bottom of the footprint so
+  // it sits on the ground instead of floating). A pulsing "CASINO — tap to
+  // enter" marquee label floats above it, since (unlike outdoor farm
+  // buildings) there's no separate door tile — the whole footprint is
+  // clickable (see the park tap handler above).
+  _drawCasinoBuilding() {
+    const ctx = this.ctx;
+    const x = CASINO_BUILDING.x * TILE, y = CASINO_BUILDING.y * TILE;
+    const w = CASINO_BUILDING.width * TILE, h = CASINO_BUILDING.height * TILE;
+    const img = getBuildingSprite('casino');
+    if (!img.complete || !img.naturalWidth) {
+      ctx.fillStyle = '#2a1a40';
+      ctx.fillRect(x, y, w, h);
+      return;
+    }
+    const imgRatio = img.naturalWidth / img.naturalHeight;
+    const boxRatio = w / h;
+    let dw, dh;
+    if (imgRatio > boxRatio) {
+      dw = w;
+      dh = w / imgRatio;
+    } else {
+      dh = h;
+      dw = h * imgRatio;
+    }
+    const dx = x + (w - dw) / 2;
+    const dy = y + (h - dh);
+    ctx.drawImage(img, dx, dy, dw, dh);
+
+    // Soft pulsing glow + "tap to enter" marquee text, so the building
+    // reads as interactive rather than pure scenery.
+    const pulse = 0.55 + 0.25 * Math.sin(Date.now() / 400);
+    ctx.save();
+    ctx.font = `bold ${Math.floor(TILE * 0.32)}px 'Baloo 2', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `rgba(255,215,90,${pulse})`;
+    ctx.strokeStyle = 'rgba(60,20,10,0.9)';
+    ctx.lineWidth = 3;
+    const labelX = x + w / 2, labelY = y - TILE * 0.15;
+    ctx.strokeText('🎰 Tap to Enter', labelX, labelY);
+    ctx.fillText('🎰 Tap to Enter', labelX, labelY);
+    ctx.restore();
   }
 
   // A little vendor cart — canopy + counter + wheels, tinted per snack and
@@ -1652,6 +1839,280 @@ class FarmGame {
     ctx.strokeStyle = '#8a5a34';
     ctx.lineWidth = 3;
     ctx.strokeRect(-1, -1, w + 2, h + 2);
+  }
+
+  // ---- Casino interior rendering ----
+  // Deep red/maroon checkerboard carpet + gold trim, distinct from the
+  // plain wood-plank house interior — reads as a casino floor at a glance.
+  _drawCasinoRoom() {
+    const ctx = this.ctx;
+    const w = CASINO_INTERIOR_WIDTH * TILE, h = CASINO_INTERIOR_HEIGHT * TILE;
+    const carpetColors = ['#6b1420', '#7d1828'];
+    for (let y = 0; y < CASINO_INTERIOR_HEIGHT; y++) {
+      for (let x = 0; x < CASINO_INTERIOR_WIDTH; x++) {
+        ctx.fillStyle = carpetColors[(x + y) % 2];
+        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+      }
+    }
+    ctx.strokeStyle = 'rgba(232,197,71,0.3)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= CASINO_INTERIOR_WIDTH; x++) {
+      ctx.beginPath(); ctx.moveTo(x * TILE, 0); ctx.lineTo(x * TILE, h); ctx.stroke();
+    }
+
+    // dark wallpapered back wall strip along the top, gold-trimmed
+    ctx.fillStyle = '#241332';
+    ctx.fillRect(0, -TILE * 0.6, w, TILE * 0.6);
+    ctx.strokeStyle = '#e8c547';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(0, -TILE * 0.6, w, TILE * 0.6);
+
+    // gold room border
+    ctx.strokeStyle = '#e8c547';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(-1, -1, w + 2, h + 2);
+  }
+
+  _drawCasinoFloorContents(floor) {
+    const layout = CASINO_FLOOR_LAYOUT[floor] || CASINO_FLOOR_LAYOUT[1];
+    for (const m of layout.machines) {
+      this._drawCasinoMachine(m.id, m.type, m.x * TILE, m.y * TILE, TILE, TILE);
+    }
+    for (const s of layout.stairs || []) {
+      this._drawCasinoStaircase(s.x * TILE, s.y * TILE, TILE, TILE, s.direction);
+    }
+  }
+
+  // Dispatches to the right cabinet shape per machine, plus a shared
+  // ground shadow and a small "#N" badge above every machine (the floor
+  // is single-type, so the cabinet art alone already says WHICH game this
+  // is — the badge just tells 15 identical copies apart). If someone else
+  // currently has this exact machine locked (see the casino:lock socket
+  // flow), it's dimmed with a red "IN USE — <name>" overlay instead.
+  _drawCasinoMachine(machineId, type, px, py, tw, th) {
+    const ctx = this.ctx;
+    const cabH = th * 1.7; // taller than 1 tile, anchored to the bottom of the footprint
+    const x = px, y = py + th - cabH;
+    const w = tw;
+    const lockedBy = this.casinoLocks && this.casinoLocks.get(machineId);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(px + tw / 2, py + th * 0.94, tw * 0.44, th * 0.12, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    if (lockedBy) ctx.globalAlpha = 0.55;
+    if (type === 'color_game') this._drawColorGameCabinet(x, y, w, cabH);
+    else if (type === 'claw_machine') this._drawClawMachineCabinet(x, y, w, cabH);
+    else if (type === 'slot_777') this._drawSlot777Cabinet(x, y, w, cabH);
+    ctx.restore();
+
+    const badge = '#' + machineId.replace(/^\D+_/, '');
+    ctx.save();
+    ctx.font = `bold ${Math.floor(th * 0.22)}px 'Baloo 2', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.lineWidth = 3;
+    ctx.fillStyle = '#fff6e3';
+    const lx = x + w / 2, ly = y - th * 0.12;
+    ctx.strokeText(badge, lx, ly);
+    ctx.fillText(badge, lx, ly);
+    ctx.restore();
+
+    if (lockedBy) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(160,20,20,0.35)';
+      ctx.fillRect(x, y, w, cabH);
+      ctx.font = `bold ${Math.floor(th * 0.16)}px 'Baloo 2', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+      ctx.lineWidth = 3;
+      ctx.fillStyle = '#ffdede';
+      const ly2 = y + cabH * 0.5;
+      ctx.strokeText('🔒 IN USE', x + w / 2, ly2 - th * 0.14);
+      ctx.fillText('🔒 IN USE', x + w / 2, ly2 - th * 0.14);
+      ctx.strokeText(lockedBy, x + w / 2, ly2 + th * 0.1);
+      ctx.fillText(lockedBy, x + w / 2, ly2 + th * 0.1);
+      ctx.restore();
+    }
+  }
+
+  // "Color Game" cabinet — a carnival drop-box: a teal crate with an
+  // open top (small colored cube prizes visible inside) and a handle up
+  // top, sitting on a stand with a 2x3 grid of the 6 color swatches on
+  // its front face — matches the reference photo the player shared.
+  _drawColorGameCabinet(x, y, w, h) {
+    const ctx = this.ctx;
+    const colors = ['#e8c547', '#f4f4f4', '#e05a7e', '#3d8fe0', '#c0392b', '#4f8f2e']; // yellow, white, pink, blue, red, green
+
+    // legs/stand
+    const boxY = y + h * 0.18, boxH = h * 0.5;
+    ctx.strokeStyle = '#2a6e6e';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.12, boxY + boxH); ctx.lineTo(x + w * 0.08, y + h);
+    ctx.moveTo(x + w * 0.88, boxY + boxH); ctx.lineTo(x + w * 0.92, y + h);
+    ctx.stroke();
+
+    // handle frame up top
+    ctx.strokeStyle = '#2a6e6e';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.38, boxY); ctx.lineTo(x + w * 0.38, y);
+    ctx.lineTo(x + w * 0.62, y); ctx.lineTo(x + w * 0.62, boxY);
+    ctx.stroke();
+
+    // crate body
+    ctx.fillStyle = '#2fa9a9';
+    ctx.fillRect(x + w * 0.08, boxY, w * 0.84, boxH);
+    ctx.strokeStyle = '#1f7a7a';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x + w * 0.08, boxY, w * 0.84, boxH);
+
+    // open top opening (orange interior) with a couple of small prize
+    // cubes peeking out
+    const openY = boxY + boxH * 0.06, openH = boxH * 0.3;
+    ctx.fillStyle = '#e8a527';
+    ctx.fillRect(x + w * 0.16, openY, w * 0.68, openH);
+    const cubeColors = [colors[3], colors[4], colors[1]];
+    cubeColors.forEach((c, i) => {
+      ctx.fillStyle = c;
+      const cw = w * 0.13;
+      ctx.fillRect(x + w * (0.3 + i * 0.16), openY + openH * 0.25, cw, cw);
+    });
+
+    // 2x3 grid of color swatches on the lower front face
+    const gridY = boxY + boxH * 0.44, gridH = boxH * 0.5;
+    const gx = x + w * 0.16, gw = w * 0.68;
+    const cols = 3, rows = 2;
+    const cellW = gw / cols, cellH = gridH / rows;
+    colors.forEach((c, i) => {
+      const cx2 = gx + (i % cols) * cellW, cy2 = gridY + Math.floor(i / cols) * cellH;
+      ctx.fillStyle = c;
+      ctx.fillRect(cx2 + 2, cy2 + 2, cellW - 4, cellH - 4);
+      ctx.strokeStyle = '#1f7a7a';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(cx2 + 2, cy2 + 2, cellW - 4, cellH - 4);
+    });
+  }
+
+  // Glass-box arcade claw machine — plush prizes inside, claw + rail at
+  // top, a coin slot + red joystick knob on the cabinet face.
+  _drawClawMachineCabinet(x, y, w, h) {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#c0392b';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#5e1a12';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // glass viewing window
+    const gx = x + w * 0.1, gy = y + h * 0.08, gw = w * 0.8, gh = h * 0.5;
+    ctx.fillStyle = 'rgba(180,220,255,0.35)';
+    ctx.fillRect(gx, gy, gw, gh);
+    ctx.strokeStyle = '#2a1a10';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(gx, gy, gw, gh);
+
+    // plush prizes (little colored circles) sitting at the bottom of the glass
+    const plushColors = ['#f4c95d', '#e05a7e', '#4f8f2e', '#3d8fe0'];
+    plushColors.forEach((c, i) => {
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(gx + gw * (0.18 + i * 0.22), gy + gh * 0.78, gw * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // claw + rail
+    ctx.strokeStyle = '#e8c547';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(gx, gy + gh * 0.15); ctx.lineTo(gx + gw, gy + gh * 0.15); ctx.stroke();
+    const clawX = gx + gw * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(clawX, gy + gh * 0.15); ctx.lineTo(clawX, gy + gh * 0.4);
+    ctx.moveTo(clawX - gw * 0.06, gy + gh * 0.4); ctx.lineTo(clawX, gy + gh * 0.5); ctx.lineTo(clawX + gw * 0.06, gy + gh * 0.4);
+    ctx.stroke();
+
+    // coin slot + joystick knob on the lower cabinet face
+    ctx.fillStyle = '#2a1a10';
+    ctx.fillRect(x + w * 0.15, y + h * 0.68, w * 0.18, h * 0.05);
+    ctx.fillStyle = '#e8c547';
+    ctx.beginPath(); ctx.arc(x + w * 0.75, y + h * 0.75, w * 0.09, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // "Lucky 777" slot machine cabinet — a screen showing three symbols
+  // (cherries either side, "7" in the middle, hinting at the jackpot) and
+  // a side lever, classic one-armed-bandit silhouette.
+  _drawSlot777Cabinet(x, y, w, h) {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#241332';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#e8c547';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+
+    // screen
+    const sx = x + w * 0.1, sy = y + h * 0.1, sw = w * 0.7, sh = h * 0.4;
+    ctx.fillStyle = '#111';
+    ctx.fillRect(sx, sy, sw, sh);
+    ctx.strokeStyle = '#e8c547';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(sx, sy, sw, sh);
+    ctx.font = `bold ${Math.floor(sh * 0.7)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#e8c547';
+    ctx.fillText('7', sx + sw * 0.22, sy + sh * 0.55);
+    ctx.fillStyle = '#f4f4f4';
+    ctx.fillText('7', sx + sw * 0.5, sy + sh * 0.55);
+    ctx.fillStyle = '#e8c547';
+    ctx.fillText('7', sx + sw * 0.78, sy + sh * 0.55);
+
+    // side lever
+    ctx.strokeStyle = '#8b5e34';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.92, y + h * 0.2);
+    ctx.lineTo(x + w * 0.92, y + h * 0.02);
+    ctx.stroke();
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath(); ctx.arc(x + w * 0.92, y + h * 0.02, w * 0.07, 0, Math.PI * 2); ctx.fill();
+
+    // coin tray
+    ctx.fillStyle = '#5e3b1f';
+    ctx.fillRect(x + w * 0.15, y + h * 0.82, w * 0.7, h * 0.1);
+  }
+
+  // Gold-trimmed staircase — same receding-steps shape as the house
+  // furniture staircase, but themed to the Casino, plus an up/down arrow
+  // so it's obvious which way this particular staircase goes on sight.
+  _drawCasinoStaircase(px, py, w, h, direction) {
+    const ctx = this.ctx;
+    const x = px, y = py;
+    const steps = 5;
+    for (let i = 0; i < steps; i++) {
+      const stepW = w * (1 - i * 0.15), stepH = h / steps;
+      ctx.fillStyle = i % 2 === 0 ? '#8b5e34' : '#a3743f';
+      ctx.fillRect(x, y + h - (i + 1) * stepH, stepW, stepH);
+      ctx.strokeStyle = '#2a1a10';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y + h - (i + 1) * stepH, stepW, stepH);
+    }
+    ctx.fillStyle = '#e8c547';
+    ctx.fillRect(x, y, w * 0.06, h);
+
+    ctx.save();
+    ctx.font = `bold ${Math.floor(h * 0.5)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#e8c547';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    const arrow = direction === 'up' ? '▲' : '▼';
+    ctx.strokeText(arrow, x + w / 2, y - h * 0.1);
+    ctx.fillText(arrow, x + w / 2, y - h * 0.1);
+    ctx.restore();
   }
 
   // ---- Interior room rendering ----

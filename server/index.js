@@ -41,6 +41,7 @@ app.use('/api/friends', auth, require('./routes/friends')(db, io));
 app.use('/api/player', auth, require('./routes/player')(db));
 app.use('/api/chat', auth, require('./routes/chat')(db, io));
 app.use('/api/admin', auth, requireAdmin, require('./routes/admin')(db, onlineUsers, io));
+app.use('/api/casino', auth, require('./routes/casino')(db));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: Date.now() }));
 
@@ -138,6 +139,29 @@ function leaveSpace(socket, spaceId) {
   }
 }
 
+// ---- Casino machine locks: "1 player at a time per machine" ----
+// Purely in-memory/ephemeral (resets on server restart, same as
+// spaceOccupants above) — there's nothing here worth persisting to the
+// database, it's just "is anyone standing at this specific machine right
+// now". machineId -> { userId, username, socketId, space }. `space` is
+// whichever casino floor room the lock was taken in (e.g. 'casino:2'),
+// so a release only needs to broadcast to players who could actually see
+// that machine.
+const casinoMachineLocks = new Map();
+
+// Releases every lock this socket currently holds (called on disconnect
+// and on leaving any space — a player walking off a machine's floor, or
+// changing floors, shouldn't leave it stuck "in use" forever for everyone
+// else).
+function releaseCasinoLocksFor(socket) {
+  for (const [machineId, lock] of casinoMachineLocks.entries()) {
+    if (lock.socketId === socket.id) {
+      casinoMachineLocks.delete(machineId);
+      io.to(lock.space).emit('casino:machine-unlocked', { machineId });
+    }
+  }
+}
+
 io.on('connection', (socket) => {
   const uid = socket.userId;
   socket.join(`user:${uid}`);
@@ -158,6 +182,19 @@ io.on('connection', (socket) => {
     // tell the newly-joined player who's already here, and tell everyone else about them
     socket.emit('presence:roster', { space, occupants: occupantList(space).filter((o) => o.userId !== uid) });
     socket.to(space).emit('presence:joined', info);
+
+    // If this is a Casino floor, also hand the newly-joined player a
+    // snapshot of whichever machines on THIS floor are already locked by
+    // someone else — same "catch the new arrival up on current state"
+    // idea as presence:roster above, just for machine occupancy instead
+    // of player positions.
+    if (space.startsWith('casino:')) {
+      const locks = [];
+      for (const [machineId, lock] of casinoMachineLocks.entries()) {
+        if (lock.space === space) locks.push({ machineId, username: lock.username });
+      }
+      socket.emit('casino:locks-snapshot', { locks });
+    }
   });
 
   socket.on('space:move', ({ space, x, y }) => {
@@ -187,10 +224,45 @@ io.on('connection', (socket) => {
   socket.on('space:leave', ({ space }) => {
     leaveSpace(socket, space);
     socket.currentSpace = null;
+    releaseCasinoLocksFor(socket);
+  });
+
+  // "Claim" a specific casino machine before opening its bet panel, so
+  // only one player can be actively betting on any one physical machine
+  // at a time — everyone else sees it as occupied and picks a different
+  // one of the 15 copies instead of queueing behind a single machine.
+  // ack({ok:true}) to claim successfully; ack({ok:false, username}) if
+  // someone else already has it (or it's already this same player's own
+  // lock, which also counts as success — reopening the same machine's
+  // panel shouldn't fail).
+  socket.on('casino:lock', ({ machineId }, ack) => {
+    if (typeof ack !== 'function') return;
+    if (!machineId || !socket.currentSpace || !socket.currentSpace.startsWith('casino:')) {
+      return ack({ ok: false });
+    }
+    const existing = casinoMachineLocks.get(machineId);
+    if (existing && existing.userId !== uid) {
+      return ack({ ok: false, username: existing.username });
+    }
+    casinoMachineLocks.set(machineId, { userId: uid, username: socket.username, socketId: socket.id, space: socket.currentSpace });
+    socket.to(socket.currentSpace).emit('casino:machine-locked', { machineId, username: socket.username });
+    ack({ ok: true });
+  });
+
+  // Releases a machine this player currently holds — called when they
+  // close the bet panel, change floors, or leave the Casino. A no-op if
+  // they don't actually hold it (already released, or never had it).
+  socket.on('casino:unlock', ({ machineId }) => {
+    const existing = casinoMachineLocks.get(machineId);
+    if (existing && existing.socketId === socket.id) {
+      casinoMachineLocks.delete(machineId);
+      socket.to(existing.space).emit('casino:machine-unlocked', { machineId });
+    }
   });
 
   socket.on('disconnect', () => {
     if (socket.currentSpace) leaveSpace(socket, socket.currentSpace);
+    releaseCasinoLocksFor(socket);
 
     const set = onlineUsers.get(uid);
     if (set) {

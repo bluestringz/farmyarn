@@ -3,17 +3,16 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
-const { grantRewards, resolveEnergy, nowSec, xpProgress, isReservedName, startResting, stopResting, resolveEquippedOutfit } = require('../lib/gameLogic');
+const { grantRewards, resolveEnergy, addEnergy, nowSec, xpProgress, isReservedName, startResting, stopResting, resolveEquippedOutfit } = require('../lib/gameLogic');
 const { publicUser } = require('./auth');
 
+// Alternates coins/energy day to day — nothing else (no items, no xp,
+// no bonus days). Only 2 entries needed: the `% DAILY_REWARDS.length`
+// lookup below naturally keeps alternating coins/energy/coins/energy...
+// forever as the streak grows, without needing a padded 7-day list.
 const DAILY_REWARDS = [
   { day: 1, coins: 100 },
-  { day: 2, coins: 150 },
-  { day: 3, coins: 200 },
-  { day: 4, coins: 0, item: 'seed_pack' },
-  { day: 5, coins: 0, item: 'decoration_pack' },
-  { day: 6, coins: 0, xp: 20 },
-  { day: 7, coins: 500, special: true },
+  { day: 2, energy: 100 },
 ];
 
 module.exports = function playerRoutes(db) {
@@ -211,13 +210,14 @@ module.exports = function playerRoutes(db) {
     db.prepare('INSERT INTO daily_rewards_claimed (user_id, streak_day, claimed_date) VALUES (?, ?, ?)')
       .run(req.userId, streakDay, today);
 
-    const granted = grantRewards(db, req.userId, { coins: reward.coins || 0, xp: reward.xp || 0 });
-    if (reward.item) {
-      const { addInventory } = require('../lib/gameLogic');
-      addInventory(db, req.userId, reward.item, 1);
-    }
+    // Coins day: grantRewards handles it (and any incidental level-up
+    // energy bonus). Energy day: credited directly via addEnergy instead
+    // — grantRewards only knows about coins/xp, not a standalone energy
+    // grant.
+    const granted = reward.coins ? grantRewards(db, req.userId, { coins: reward.coins }) : { coins: null, xp: null, level: null };
+    const energyAfter = reward.energy ? addEnergy(db, req.userId, reward.energy) : granted.energy;
 
-    res.json({ ok: true, streakDay, reward, balances: granted });
+    res.json({ ok: true, streakDay, reward, balances: { ...granted, energy: energyAfter } });
   });
 
   return router;

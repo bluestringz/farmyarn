@@ -424,8 +424,19 @@ const UI = (() => {
         const deco = (catalog.decorations || []).find((d) => d.id === id.slice('decoration_'.length));
         if (deco) return deco.name;
       }
+      const outfit = (catalog.outfits || []).find((o) => o.id === id);
+      if (outfit) return `${outfit.name} Costume`;
       const item = (catalog.items || []).find((i) => i.id === id);
       return item ? item.name : id;
+    };
+    // "3d 4h", "6h", "42m" — short countdown for a costume listing's
+    // remaining rental time, same idea as UI.formatDuration but framed as
+    // a countdown rather than a flat duration label.
+    const timeLeft = (expiresAt) => {
+      if (expiresAt === null || expiresAt === undefined) return 'never expires';
+      const secs = expiresAt - Math.floor(Date.now() / 1000);
+      if (secs <= 0) return 'expired';
+      return formatDuration(secs) + ' left';
     };
 
     let html = '';
@@ -455,10 +466,10 @@ const UI = (() => {
         html += '<div class="panel-section-title">Currently listed</div>';
         html += listings.map((l) => `
           <div class="list-row">
-            <div class="row-icon">🏷️</div>
+            <div class="row-icon">${l.listingType === 'outfit' ? '👕' : '🏷️'}</div>
             <div class="row-main">
-              <div class="row-title">${nameFor(l.itemId)} × ${l.quantity}</div>
-              <div class="row-sub">🪙 ${l.price} each</div>
+              <div class="row-title">${nameFor(l.itemId)}${l.listingType === 'outfit' ? '' : ` × ${l.quantity}`}</div>
+              <div class="row-sub">🪙 ${l.price}${l.listingType === 'outfit' ? ` — ${timeLeft(l.expiresAt)}` : ' each'}</div>
             </div>
             <div class="row-actions"><button class="secondary" data-remove-listing="${l.id}">Remove</button></div>
           </div>`).join('');
@@ -484,15 +495,17 @@ const UI = (() => {
       if (listings.length) {
         html += listings.map((l) => `
           <div class="list-row">
-            <div class="row-icon">🏷️</div>
+            <div class="row-icon">${l.listingType === 'outfit' ? '👕' : '🏷️'}</div>
             <div class="row-main">
-              <div class="row-title">${nameFor(l.itemId)} × ${l.quantity} available</div>
-              <div class="row-sub">🪙 ${l.price} each</div>
+              <div class="row-title">${nameFor(l.itemId)}${l.listingType === 'outfit' ? '' : ` × ${l.quantity} available`}</div>
+              <div class="row-sub">🪙 ${l.price}${l.listingType === 'outfit' ? ` — ${timeLeft(l.expiresAt)} if you buy now` : ' each'}</div>
             </div>
           </div>
           <div class="mkt-form">
-            <input type="number" class="mkt-buy-qty" data-buy-qty-for="${l.id}" min="1" max="${l.quantity}" value="1">
-            <button data-buy-listing="${l.id}">Buy</button>
+            ${l.listingType === 'outfit'
+              ? `<button data-buy-listing="${l.id}">Buy</button>`
+              : `<input type="number" class="mkt-buy-qty" data-buy-qty-for="${l.id}" min="1" max="${l.quantity}" value="1">
+                 <button data-buy-listing="${l.id}">Buy</button>`}
           </div>`).join('');
       } else {
         html += `<div class="empty-state">Nothing for sale here right now.</div>`;
@@ -519,7 +532,8 @@ const UI = (() => {
 
     const listForm = document.getElementById('mkt-list-form');
     if (listForm) {
-      handlers.getInventory().then((inv) => {
+      const qtyInput = document.getElementById('mkt-list-qty');
+      Promise.all([handlers.getInventory(), handlers.getOwnedOutfits()]).then(([inv, outfits]) => {
         // Seeds ARE sellable here — this is the one place they can be sold
         // at all (the Shop won't buy them back, on purpose, so they hold
         // real value — see server/routes/farm.js's /sell route). Only
@@ -533,12 +547,33 @@ const UI = (() => {
           isCraftedFurniture(r.item_id) ||
           !['building_', 'decoration_', 'animal_', 'interior_'].some((p) => r.item_id.startsWith(p)));
         const select = document.getElementById('mkt-list-item');
-        select.innerHTML = sellable.map((r) => `<option value="${r.item_id}">${nameFor(r.item_id)} (have ${r.quantity})</option>`).join('')
-          || '<option value="">Nothing to sell</option>';
+        // Costumes you own (and aren't already listed) show up in the SAME
+        // picker as ordinary items — its 7-day rental clock keeps running
+        // the whole time it sits here (see the server route), so an
+        // expiring-soon one is flagged right in the option label.
+        const listedOutfitIds = new Set(listings.filter((l) => l.listingType === 'outfit').map((l) => l.itemId));
+        const sellableOutfits = outfits.filter((o) => o.owned && o.cost > 0 && !listedOutfitIds.has(o.id));
+        select.innerHTML = [
+          ...sellable.map((r) => `<option value="${r.item_id}" data-qty-max="${r.quantity}">${nameFor(r.item_id)} (have ${r.quantity})</option>`),
+          ...sellableOutfits.map((o) => `<option value="${o.id}" data-outfit="1">${o.name} Costume (${timeLeft(o.expiresAt)})</option>`),
+        ].join('') || '<option value="">Nothing to sell</option>';
+
+        const syncQtyField = () => {
+          const opt = select.options[select.selectedIndex];
+          const isOutfit = opt && opt.dataset.outfit === '1';
+          qtyInput.disabled = isOutfit;
+          qtyInput.value = isOutfit ? '1' : qtyInput.value;
+          qtyInput.placeholder = isOutfit ? 'Quantity (always 1)' : 'Quantity';
+        };
+        select.addEventListener('change', syncQtyField);
+        syncQtyField();
       });
       document.getElementById('mkt-list-submit').addEventListener('click', () => {
-        const itemId = document.getElementById('mkt-list-item').value;
-        const qty = parseInt(document.getElementById('mkt-list-qty').value, 10);
+        const select = document.getElementById('mkt-list-item');
+        const itemId = select.value;
+        const opt = select.options[select.selectedIndex];
+        const isOutfit = opt && opt.dataset.outfit === '1';
+        const qty = isOutfit ? 1 : parseInt(qtyInput.value, 10);
         const price = parseInt(document.getElementById('mkt-list-price').value, 10);
         if (!itemId || !qty || !price) { toast('Fill in item, quantity, and price'); return; }
         handlers.onList(itemId, qty, price);
@@ -858,7 +893,316 @@ const UI = (() => {
     });
   }
 
-  return { toast, openPanel, closePanel, panelBody, renderShop, renderInventory, renderFriends, renderNotifications, renderPicker, renderStallDetail, renderSiloPanel, renderStovePanel, renderStoragePanel, renderWorkshopPanel, formatDuration, timeAgo };
+  // Casino betting panel — shared shape for all 3 machines (Color Game,
+  // Claw Machine, Lucky 777). One "Play" button per bet option (Claw
+  // Machine only has one, since its bet is fixed at 800); an odds table
+  // underneath lists every prize tier so the player knows the real chances
+  // before betting, same "show the math" spirit as Silo/Stove/Workshop
+  // showing exact costs before crafting.
+  function renderCasinoPanel(machine, me, onBet) {
+    const body = panelBody();
+    const coins = me.coins || 0;
+    const energy = me.energy || 0;
+    body.innerHTML = `
+      <p class="panel-hint">🪙 ${coins} coins · ⚡ ${energy} energy — each play costs your bet in coins PLUS ${machine.energyCostPerBet} energy, win or lose.</p>
+      <div class="shop-grid">
+        ${machine.betOptions.map((bet) => {
+          const disabled = coins < bet || energy < machine.energyCostPerBet;
+          return `
+          <div class="shop-card">
+            <div class="shop-icon">🎲</div>
+            <div class="shop-name">Bet 🪙${bet}</div>
+            <div class="shop-price">+${machine.energyCostPerBet} ⚡ energy</div>
+            <button data-bet="${bet}" ${disabled ? 'disabled' : ''}>Play</button>
+          </div>`;
+        }).join('')}
+      </div>
+      <p class="panel-hint" style="margin-top:12px;font-weight:700;">Possible rewards:</p>
+      <p class="panel-hint">
+        ${machine.tiers.map((t) => {
+          const reward = t.ppFlat != null
+            ? `${t.ppFlat} PP 💎`
+            : t.energyFlat != null
+              ? `${t.energyFlat} ⚡ energy`
+              : `${Math.round(t.betMultiplier * 100)}% of bet in ⚡ energy`;
+          return `${t.label} → ${reward}`;
+        }).join('<br>')}
+      </p>
+    `;
+    body.querySelectorAll('button[data-bet]').forEach((btn) => {
+      btn.addEventListener('click', () => onBet(parseInt(btn.dataset.bet, 10)));
+    });
+  }
+
+  // Color Game — pick a color, pick a bet, hit START, watch 3 blocks
+  // drop. onPlay(bet, color) must return a Promise resolving to the bet
+  // result (including `reveal`, the 3 colors that dropped) — this
+  // function owns the whole pick -> play -> animate -> show-result loop
+  // itself, unlike renderCasinoPanel above (used by the other two
+  // machines, which just fire one bet per button tap).
+  const COLOR_HEX = { red: '#c0392b', yellow: '#e8c547', white: '#f4f4f4', pink: '#e05a7e', blue: '#3d8fe0', green: '#4f8f2e' };
+  function renderColorGamePanel(machine, me, onPlay) {
+    const body = panelBody();
+    let selectedBet = machine.betOptions[0];
+    let selectedColor = null;
+    let playing = false;
+
+    function render() {
+      const coins = me.coins || 0;
+      const energy = me.energy || 0;
+      body.innerHTML = `
+        <p class="panel-hint">🪙 ${coins} coins · ⚡ ${energy} energy — each drop costs your bet in coins PLUS ${machine.energyCostPerBet} energy, win or lose.</p>
+        <div class="panel-section-title">1. Pick your bet</div>
+        <div class="cg-bet-row">
+          ${machine.betOptions.map((bet) => `<button type="button" class="cg-bet-pill ${bet === selectedBet ? 'cg-selected' : ''}" data-bet="${bet}">🪙${bet}</button>`).join('')}
+        </div>
+        <div class="panel-section-title">2. Pick your color</div>
+        <div class="cg-swatch-grid">
+          ${machine.colorPalette.map((c) => `<div class="cg-swatch ${c === selectedColor ? 'cg-selected' : ''}" data-color="${c}" style="background:${COLOR_HEX[c] || '#ccc'}" title="${c}"></div>`).join('')}
+        </div>
+        <div class="cg-drop-row" id="cg-drop-row"></div>
+        <div class="cg-result-text" id="cg-result-text"></div>
+        <button id="cg-start-btn" style="width:100%" ${(!selectedColor || playing || coins < selectedBet || energy < machine.energyCostPerBet) ? 'disabled' : ''}>${playing ? 'Dropping...' : 'START'}</button>
+        <p class="panel-hint" style="margin-top:12px;font-weight:700;">Possible rewards: <span style="font-weight:400;">(🟡 = your chosen color)</span></p>
+        <div>
+          ${machine.tiers.map((t) => {
+            const dots = Array.from({ length: 3 }, (_, i) => `<span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid #5e3b1f;background:${i < t.matchCount ? '#e8c547' : 'transparent'};"></span>`).join(' ');
+            return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <div style="display:flex;gap:3px;flex-shrink:0;">${dots}</div>
+              <span class="panel-hint" style="margin:0;">${t.label} → ${Math.round(t.betMultiplier * 100)}% of bet in ⚡ energy</span>
+            </div>`;
+          }).join('')}
+        </div>
+      `;
+      body.querySelectorAll('button[data-bet]').forEach((btn) => {
+        btn.addEventListener('click', () => { selectedBet = parseInt(btn.dataset.bet, 10); render(); });
+      });
+      body.querySelectorAll('.cg-swatch').forEach((el) => {
+        el.addEventListener('click', () => { selectedColor = el.dataset.color; render(); });
+      });
+      const startBtn = document.getElementById('cg-start-btn');
+      if (startBtn) startBtn.addEventListener('click', startDrop);
+    }
+
+    async function startDrop() {
+      if (playing || !selectedColor) return;
+      playing = true;
+      render();
+      try {
+        const res = await onPlay(selectedBet, selectedColor);
+        const dropRow = document.getElementById('cg-drop-row');
+        dropRow.innerHTML = res.reveal.map(() => `<div class="cg-block"></div>`).join('');
+        const blocks = dropRow.querySelectorAll('.cg-block');
+        res.reveal.forEach((c, i) => {
+          setTimeout(() => {
+            const el = blocks[i];
+            if (!el) return;
+            el.style.background = COLOR_HEX[c] || '#ccc';
+            el.classList.add('cg-dropped');
+            if (c === selectedColor) el.classList.add('cg-match');
+          }, i * 180);
+        });
+        setTimeout(() => {
+          playing = false;
+          render();
+          // render() just rebuilt the body (clearing the drop row/result
+          // text) — replay the SAME reveal state onto the fresh elements
+          // so the finished drop + result stay visible for this round.
+          const freshDropRow = document.getElementById('cg-drop-row');
+          const freshResultText = document.getElementById('cg-result-text');
+          freshDropRow.innerHTML = res.reveal.map((c) => `<div class="cg-block cg-dropped${c === selectedColor ? ' cg-match' : ''}" style="background:${COLOR_HEX[c] || '#ccc'};opacity:1;transform:none"></div>`).join('');
+          if (res.win) {
+            const rewardText = res.ppReward > 0 ? `+${res.ppReward} PP 💎` : `+${res.energyReward} ⚡ Energy`;
+            freshResultText.textContent = `🎉 ${res.tier.label}! ${rewardText}`;
+            freshResultText.style.color = '#4f8f2e';
+          } else {
+            freshResultText.textContent = 'No match this time — try again!';
+            freshResultText.style.color = '#c0392b';
+          }
+        }, res.reveal.length * 180 + 450);
+      } catch (err) {
+        playing = false;
+        render();
+        toast(err.message);
+      }
+    }
+
+    render();
+  }
+
+  // Lucky 777 — pick a bet (each amount costs a different amount of
+  // Energy — see machine.energyCostByBet), hit START, watch the 3 reels
+  // spin and land. Same pick -> play -> animate -> show-result loop shape
+  // as renderColorGamePanel above.
+  const SYMBOL_DISPLAY = { seven: '7', bar: 'BAR', bell: '🔔', cherry: '🍒', pp_logo: '💎' };
+  function renderSlotPanel(machine, me, onPlay) {
+    const body = panelBody();
+    let selectedBet = machine.betOptions[0];
+    let playing = false;
+
+    function render() {
+      const coins = me.coins || 0;
+      const energy = me.energy || 0;
+      const cost = machine.energyCostByBet[selectedBet];
+      body.innerHTML = `
+        <p class="panel-hint">🪙 ${coins} coins · ⚡ ${energy} energy — bigger bets cost more energy per spin.</p>
+        <div class="panel-section-title">Pick your bet</div>
+        <div class="cg-bet-row">
+          ${machine.betOptions.map((bet) => `<button type="button" class="cg-bet-pill ${bet === selectedBet ? 'cg-selected' : ''}" data-bet="${bet}">🪙${bet} (⚡${machine.energyCostByBet[bet]})</button>`).join('')}
+        </div>
+        <div class="cg-drop-row" id="slot-reel-row">
+          ${[0, 1, 2].map(() => `<div class="cg-block slot-reel">?</div>`).join('')}
+        </div>
+        <div class="cg-result-text" id="slot-result-text"></div>
+        <button id="slot-start-btn" style="width:100%" ${(playing || coins < selectedBet || energy < cost) ? 'disabled' : ''}>${playing ? 'Spinning...' : 'START'}</button>
+        <p class="panel-hint" style="margin-top:12px;font-weight:700;">Possible rewards:</p>
+        <div>
+          ${machine.tiers.map((t) => {
+            const reward = t.ppFlat != null ? `${t.ppFlat} PP 💎` : `${Math.round(t.betMultiplier * 100)}% of bet in ⚡ energy`;
+            const symbols = Array(t.matchCount).fill(SYMBOL_DISPLAY[t.symbol] || t.symbol)
+              .map((s) => `<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:#fff6e3;border:2px solid #5e3b1f;border-radius:4px;font-weight:800;font-size:13px;${t.symbol === 'seven' ? 'color:#c0392b;' : 'color:#2a1a10;'}">${s}</span>`)
+              .join('');
+            return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <div style="display:flex;gap:3px;flex-shrink:0;">${symbols}</div>
+              <span class="panel-hint" style="margin:0;">${t.label} → ${reward}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      `;
+      body.querySelectorAll('button[data-bet]').forEach((btn) => {
+        btn.addEventListener('click', () => { selectedBet = parseInt(btn.dataset.bet, 10); render(); });
+      });
+      const startBtn = document.getElementById('slot-start-btn');
+      if (startBtn) startBtn.addEventListener('click', startSpin);
+    }
+
+    async function startSpin() {
+      if (playing) return;
+      playing = true;
+      render();
+      const reelRow = document.getElementById('slot-reel-row');
+      const reels = reelRow.querySelectorAll('.slot-reel');
+      // Quick random-cycling "spin" flourish before the real result comes
+      // back, so it doesn't feel like a single instant flip even on a
+      // fast connection.
+      const spinPool = machine.reelSymbols;
+      const spinTimer = setInterval(() => {
+        reels.forEach((el) => { el.textContent = SYMBOL_DISPLAY[spinPool[Math.floor(Math.random() * spinPool.length)]]; });
+      }, 80);
+      try {
+        const res = await onPlay(selectedBet);
+        setTimeout(() => {
+          clearInterval(spinTimer);
+          res.reveal.forEach((s, i) => {
+            setTimeout(() => {
+              const el = reels[i];
+              if (!el) return;
+              el.textContent = SYMBOL_DISPLAY[s] || s;
+              el.style.opacity = '1';
+              el.style.background = '#fff6e3';
+              if (s === 'seven') el.style.color = '#c0392b';
+              else el.style.color = '#2a1a10';
+              const isMatchSymbol = res.tier && res.tier && s === (machine.tiers.find((t) => t.id === res.tier.id) || {}).symbol;
+              if (isMatchSymbol) el.classList.add('cg-match');
+            }, i * 250);
+          });
+          setTimeout(() => {
+            playing = false;
+            const resultText = res.win
+              ? `🎉 ${res.tier.label}! ${res.ppReward > 0 ? `+${res.ppReward} PP 💎` : `+${res.energyReward} ⚡ Energy`}`
+              : 'No match this time — try again!';
+            const resultColor = res.win ? '#4f8f2e' : '#c0392b';
+            render();
+            const freshReelRow = document.getElementById('slot-reel-row');
+            const freshReels = freshReelRow.querySelectorAll('.slot-reel');
+            res.reveal.forEach((s, i) => {
+              const el = freshReels[i];
+              el.textContent = SYMBOL_DISPLAY[s] || s;
+              el.style.opacity = '1';
+              el.style.color = s === 'seven' ? '#c0392b' : '#2a1a10';
+              el.style.background = '#fff6e3';
+              const symbolForTier = res.tier && (machine.tiers.find((t) => t.id === res.tier.id) || {}).symbol;
+              if (symbolForTier && s === symbolForTier) el.classList.add('cg-match');
+            });
+            const freshResultText = document.getElementById('slot-result-text');
+            freshResultText.textContent = resultText;
+            freshResultText.style.color = resultColor;
+          }, res.reveal.length * 250 + 400);
+        }, 500);
+      } catch (err) {
+        clearInterval(spinTimer);
+        playing = false;
+        render();
+        toast(err.message);
+      }
+    }
+
+    render();
+  }
+
+  // Claw Machine — one fixed bet (800 coins), no picking involved: just
+  // tap Grab! and watch the claw come up with something (or nothing).
+  function renderClawPanel(machine, me, onPlay) {
+    const body = panelBody();
+    let playing = false;
+    const bet = machine.betOptions[0];
+
+    function render() {
+      const coins = me.coins || 0;
+      const energy = me.energy || 0;
+      body.innerHTML = `
+        <p class="panel-hint">🪙 ${coins} coins · ⚡ ${energy} energy — each grab costs 🪙${bet} + ${machine.energyCostPerBet} ⚡ energy, win or lose.</p>
+        <div class="cg-drop-row" style="min-height:70px;">
+          <div class="cg-block" id="claw-icon" style="width:64px;height:64px;font-size:32px;display:flex;align-items:center;justify-content:center;background:#fff6e3;">🕳️</div>
+        </div>
+        <div class="cg-result-text" id="claw-result-text"></div>
+        <button id="claw-grab-btn" style="width:100%" ${(playing || coins < bet || energy < machine.energyCostPerBet) ? 'disabled' : ''}>${playing ? 'Grabbing...' : '🕹️ Grab!'}</button>
+        <p class="panel-hint" style="margin-top:12px;font-weight:700;">Possible rewards:</p>
+        <p class="panel-hint">
+          ${machine.tiers.map((t) => {
+            const reward = t.ppFlat != null ? `${t.ppFlat} PP 💎` : `${t.energyFlat} ⚡ energy`;
+            return `${t.icon} ${t.label} → ${reward}`;
+          }).join('<br>')}
+        </p>
+      `;
+      const grabBtn = document.getElementById('claw-grab-btn');
+      if (grabBtn) grabBtn.addEventListener('click', startGrab);
+    }
+
+    async function startGrab() {
+      if (playing) return;
+      playing = true;
+      render();
+      const clawIcon = document.getElementById('claw-icon');
+      clawIcon.textContent = '🕹️';
+      clawIcon.style.transition = 'transform 0.4s ease';
+      clawIcon.style.transform = 'translateY(10px)';
+      try {
+        const res = await onPlay();
+        setTimeout(() => {
+          playing = false;
+          const resultText = res.win
+            ? `🎉 Got it! ${res.ppReward > 0 ? `+${res.ppReward} PP 💎` : `+${res.energyReward} ⚡ Energy`}`
+            : 'Missed — the claw came up empty!';
+          const resultColor = res.win ? '#4f8f2e' : '#c0392b';
+          render();
+          const freshIcon = document.getElementById('claw-icon');
+          freshIcon.textContent = res.icon || '🫙';
+          const freshResultText = document.getElementById('claw-result-text');
+          freshResultText.textContent = resultText;
+          freshResultText.style.color = resultColor;
+        }, 500);
+      } catch (err) {
+        playing = false;
+        render();
+        toast(err.message);
+      }
+    }
+
+    render();
+  }
+
+  return { toast, openPanel, closePanel, panelBody, renderShop, renderInventory, renderFriends, renderNotifications, renderPicker, renderStallDetail, renderSiloPanel, renderStovePanel, renderStoragePanel, renderWorkshopPanel, renderCasinoPanel, renderColorGamePanel, renderSlotPanel, renderClawPanel, formatDuration, timeAgo };
 })();
 
 window.UI = UI;

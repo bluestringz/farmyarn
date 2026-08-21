@@ -154,12 +154,20 @@ function migrate(db) {
   -- listing_price/listing_quantity columns on marketplace_stalls above
   -- (kept, unused going forward, purely so an old row's data isn't lost —
   -- see the one-time migration in addColumnsIfMissing).
+  -- listing_type distinguishes an ordinary stackable inventory item ('item',
+  -- the default) from a costume ('outfit') — a costume listing is always
+  -- quantity 1 (owned_outfits only ever holds one of a given costume per
+  -- player) and carries its OWN expires_at, since a costume's 7-day rental
+  -- clock keeps running the whole time it's sitting in a stall — see
+  -- server/routes/marketplace.js for the full listing/buying logic.
   CREATE TABLE IF NOT EXISTS marketplace_listings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stall_id INTEGER NOT NULL REFERENCES marketplace_stalls(id) ON DELETE CASCADE,
     item_id TEXT NOT NULL,
     price INTEGER NOT NULL,
     quantity INTEGER NOT NULL DEFAULT 0,
+    listing_type TEXT NOT NULL DEFAULT 'item',
+    expires_at INTEGER,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
 
@@ -340,6 +348,13 @@ function addColumnsIfMissing(db) {
   const ownedOutfitCols = db.prepare("PRAGMA table_info(owned_outfits)").all().map((c) => c.name);
   if (!ownedOutfitCols.includes('expires_at')) {
     db.exec('ALTER TABLE owned_outfits ADD COLUMN expires_at INTEGER');
+  }
+  const marketplaceListingCols = db.prepare("PRAGMA table_info(marketplace_listings)").all().map((c) => c.name);
+  if (!marketplaceListingCols.includes('listing_type')) {
+    db.exec("ALTER TABLE marketplace_listings ADD COLUMN listing_type TEXT NOT NULL DEFAULT 'item'");
+  }
+  if (!marketplaceListingCols.includes('expires_at')) {
+    db.exec('ALTER TABLE marketplace_listings ADD COLUMN expires_at INTEGER');
   }
   if (!existingCols.includes('equipped_outfit')) {
     db.exec('ALTER TABLE users ADD COLUMN equipped_outfit TEXT');
