@@ -80,6 +80,7 @@
     <div class="topbar-stats">
       <div class="stat-pill coins"><span class="stat-icon">🪙</span><span id="stat-coins">0</span></div>
       <div class="stat-pill premium"><span class="stat-icon">💎</span><span id="stat-premium">0</span></div>
+      <div class="stat-pill gm-points hidden" id="stat-gm-pill" title="GM Points — only an admin can grant these"><span class="stat-icon">🎖️</span><span id="stat-gm">0</span></div>
       <div class="stat-pill energy"><span class="stat-icon">⚡</span><span id="stat-energy">0</span></div>
       <button class="stat-pill daily-btn" id="daily-reward-btn"><span class="stat-icon">🎁</span>Daily</button>
     </div>
@@ -243,23 +244,6 @@
     </div>
   </div>
 
-  <!-- FORGOT PASSWORD MODAL — shown from the login screen. Doesn't send a
-       real email; it files a request an admin can see and act on from the
-       admin panel's mailbox (see /admin.html). -->
-  <div id="forgot-password-modal" class="modal-overlay hidden">
-    <div class="modal-card">
-      <h2>Forgot your password?</h2>
-      <p>Enter your username and (optionally) a note to help an admin recognize you. An admin will reset your password and let you know your new one.</p>
-      <input type="text" id="forgot-password-username" placeholder="Your username">
-      <input type="text" id="forgot-password-message" maxlength="300" placeholder="Optional note (e.g. how to reach you)">
-      <div class="modal-error" id="forgot-password-error"></div>
-      <div style="display:flex; gap:8px;">
-        <button class="btn" id="forgot-password-cancel" style="flex:1">Cancel</button>
-        <button class="btn btn-primary" id="forgot-password-submit" style="flex:1">Send request</button>
-      </div>
-    </div>
-  </div>
-
   <!-- ACCOUNT SETTINGS MODAL — change password while logged in. -->
   <div id="account-settings-modal" class="modal-overlay hidden">
     <div class="modal-card">
@@ -271,6 +255,31 @@
         <button class="btn" id="account-settings-cancel" style="flex:1">Cancel</button>
         <button class="btn btn-primary" id="account-settings-submit" style="flex:1">Save</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- FORGOT PASSWORD MODAL — shown from the LOGIN screen, before the player
+     is authenticated, so this must live OUTSIDE #game-screen (which stays
+     display:none — via its own "hidden" class — until after login). It
+     used to be nested inside #game-screen; clicking the link on the login
+     screen removed ITS OWN .hidden class, but the modal stayed invisible
+     because its parent was still hidden, then would only actually become
+     visible once #game-screen's hidden class was cleared by a LATER
+     login — i.e. exactly the "nothing happens until I log into a
+     different account" bug. Doesn't send a real email; it files a
+     request an admin can see and act on from the admin panel's mailbox
+     (see /admin.html). -->
+<div id="forgot-password-modal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <h2>Forgot your password?</h2>
+    <p>Enter your username and (optionally) a note to help an admin recognize you. An admin will reset your password and let you know your new one.</p>
+    <input type="text" id="forgot-password-username" placeholder="Your username">
+    <input type="text" id="forgot-password-message" maxlength="300" placeholder="Optional note (e.g. how to reach you)">
+    <div class="modal-error" id="forgot-password-error"></div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn" id="forgot-password-cancel" style="flex:1">Cancel</button>
+      <button class="btn btn-primary" id="forgot-password-submit" style="flex:1">Send request</button>
     </div>
   </div>
 </div>

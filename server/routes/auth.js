@@ -172,6 +172,7 @@ function publicUser(user) {
     xp: user.xp,
     coins: user.coins,
     premiumCurrency: user.premium_currency,
+    gmPoints: user.gm_points,
     energy: user.energy,
     isResting: !!user.is_resting,
     maxEnergy: MAX_ENERGY,

@@ -194,6 +194,16 @@
     document.getElementById('player-name').textContent = m.displayName || m.username;
     document.getElementById('stat-coins').textContent = m.coins;
     document.getElementById('stat-premium').textContent = m.premiumCurrency || 0;
+    // GM Points is a rare, admin-only-granted currency — the pill stays
+    // hidden entirely until a player actually has some, instead of always
+    // showing a "0" most players will never care about.
+    const gmPill = document.getElementById('stat-gm-pill');
+    if ((m.gmPoints || 0) > 0) {
+      document.getElementById('stat-gm').textContent = m.gmPoints;
+      gmPill.classList.remove('hidden');
+    } else {
+      gmPill.classList.add('hidden');
+    }
     document.getElementById('stat-energy').textContent = `${m.energy ?? 0}/${m.maxEnergy ?? 20}${m.isResting ? ' 💤' : ''}`;
     const xp = m.xpProgress;
     document.getElementById('xp-bar-label').textContent = `Lvl ${xp.level}`;
@@ -1105,7 +1115,7 @@
 
   async function renderShopPanel(category) {
     let catalogForRender = state.catalog;
-    if (category === 'outfits') {
+    if (category === 'outfits' || category === 'special_outfits') {
       const outfits = await Api.outfits();
       catalogForRender = { ...state.catalog, outfits };
     } else if (category === 'buildings') {
@@ -1140,7 +1150,7 @@
           await renderShopPanel('crops');
           return;
         }
-        if (cat === 'outfits') {
+        if (cat === 'outfits' || cat === 'special_outfits') {
           const outfits = await Api.outfits();
           const target = outfits.find((o) => o.id === itemId);
           if (target && target.owned) {
@@ -1150,11 +1160,12 @@
             const res = await Api.buyOutfit(itemId);
             state.me.coins = res.coins;
             state.me.premiumCurrency = res.premiumCurrency;
+            state.me.gmPoints = res.gmPoints;
             renderTopbar();
             UI.toast('New outfit bought and worn!');
           }
           await refreshPlayer();
-          await renderShopPanel('outfits');
+          await renderShopPanel(cat);
           return;
         }
         if (['building', 'decoration', 'animal', 'interior'].includes(cat)) {

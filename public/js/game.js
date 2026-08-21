@@ -46,7 +46,7 @@ const SPRITE_DIRECTIONS = ['down', 'up', 'left', 'right'];
 // the base 'classic' look, which has no prefix). Adding a new one just
 // means dropping the files in public/assets/characters/ following the same
 // {gender}_{outfitKey}_walk_{dir}_{1|2}.png naming and listing it here.
-const SPRITE_OUTFIT_KEYS = ['green', 'gentleman', 'winter', 'festival'];
+const SPRITE_OUTFIT_KEYS = ['green', 'gentleman', 'winter', 'festival', 'lancer', 'sorcerer', 'swordsman'];
 const SPRITE_CACHE_KNOWN = new Set();
 ['male', 'female'].forEach((g) => {
   getSprite(`${g}_walk_down_1`); // frame 1 of "down" also serves as that gender's idle pose
@@ -79,6 +79,34 @@ function spriteKeyFor(gender, facingDir, walkFrame, moving, outfitKey) {
   const key = `${prefix}_walk_${dir}_${frame}`;
   return SPRITE_CACHE_KNOWN.has(key) ? key : `${g}_walk_${dir}_${frame}`;
 }
+
+// Ground-aura color per Special Outfit (see _drawSpecialAura) — an
+// outfitKey NOT in this map (every ordinary costume) simply gets no aura
+// at all.
+const SPECIAL_AURA_RGB = {
+  lancer: '61,143,224',
+  sorcerer: '176,96,224',
+  swordsman: '244,201,93',
+};
+
+// The special-outfit sprites hold their weapon out to one side (a spear,
+// staff, or sword), so the character's actual BODY/feet aren't perfectly
+// centered in the image the way ordinary costumes are — drawing the aura
+// at a flat, un-adjusted cx makes it look off-center under the visible
+// character even though it's correctly centered on the image's own
+// bounding box. Each value is how far the feet sit from the image's
+// horizontal center, as a fraction of the image's width (negative = feet
+// left of center, positive = right) — precomputed once per
+// gender/costume/direction by measuring where the opaque pixels in the
+// bottom of each sprite actually sit, not a guess.
+const SPECIAL_AURA_OFFSET = {
+  male_lancer_walk_down: -0.0522, male_lancer_walk_up: 0.0846, male_lancer_walk_left: -0.125, male_lancer_walk_right: 0.0524,
+  male_sorcerer_walk_down: -0.105, male_sorcerer_walk_up: 0.0748, male_sorcerer_walk_left: -0.119, male_sorcerer_walk_right: 0.1068,
+  male_swordsman_walk_down: -0.02, male_swordsman_walk_up: -0.0158, male_swordsman_walk_left: 0.0119, male_swordsman_walk_right: -0.0412,
+  female_lancer_walk_down: -0.0849, female_lancer_walk_up: 0.0868, female_lancer_walk_left: -0.0889, female_lancer_walk_right: 0.0725,
+  female_sorcerer_walk_down: -0.0818, female_sorcerer_walk_up: 0.0482, female_sorcerer_walk_left: -0.0532, female_sorcerer_walk_right: 0.0165,
+  female_swordsman_walk_down: -0.0106, female_swordsman_walk_up: -0.0172, female_swordsman_walk_left: 0.0116, female_swordsman_walk_right: -0.0349,
+};
 
 // Fixed layout for the shared Marketplace plaza: 20 stalls in a 5×4 grid
 // around a central fountain, so it reads as an actual town square you walk
@@ -2538,6 +2566,8 @@ class FarmGame {
     ctx.ellipse(cx, groundY + 1, 9, 3, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    this._drawSpecialAura(cx, groundY, c.outfitKey, c.gender, c.facingDir);
+
     const img = getSprite(spriteKeyFor(c.gender, c.facingDir, c.walkFrame, c.moving, c.outfitKey));
     if (img && img.complete && img.naturalWidth > 0) {
       const displayHeight = TILE * 1.45;
@@ -2634,6 +2664,170 @@ class FarmGame {
   // depth-sorting against crops/objects. Action icon + chat bubble are
   // intentionally separate (see _drawCharacterOverlay) since those should
   // always render on top regardless of sort order.
+  // Rare, admin-granted Special Outfits (Lancer/Sorcerer/Swordsman) get an
+  // animated magic aura on the ground beneath the character instead of
+  // just being another recolor — a pulsing glow puddle, spinning swirl
+  // arcs, particles orbiting at ground level, and flickering upward light
+  // rays. Everything here is driven off performance.now(), so nothing is
+  // ever a static sticker — it's constantly rotating/pulsing/bobbing.
+  // Color varies per costume to match its own palette rather than reusing
+  // one generic glow for all three.
+  // Rare, admin-granted Special Outfits (Lancer/Sorcerer/Swordsman) get an
+  // animated summoning-circle aura on the ground beneath the character:
+  // a glowing rune ring with tick marks, a counter-rotating star pattern
+  // inside it, and glowing orbs that float and orbit at varying heights
+  // above the ground (not just flat dots) — closer to a real "magic
+  // circle" effect than a plain glow. Real bloom via ctx.shadowBlur, not
+  // just semi-transparent strokes, so it actually reads as glowing.
+  // Everything here is driven off performance.now(), so nothing is ever a
+  // static sticker. Color varies per costume to match its own palette.
+  _drawSpecialAura(cx, groundY, outfitKey, gender, facingDir) {
+    const rgb = SPECIAL_AURA_RGB[outfitKey];
+    if (!rgb) return;
+    const ctx = this.ctx;
+    const t = performance.now() / 1000;
+    const R = TILE * 0.62;
+
+    // Shift the aura's center to line up under the character's actual
+    // feet (see SPECIAL_AURA_OFFSET above) rather than the sprite image's
+    // raw bounding-box center, which the weapon held out to one side
+    // throws off.
+    const g = gender === 'female' ? 'female' : 'male';
+    const dir = SPRITE_DIRECTIONS.includes(facingDir) ? facingDir : 'down';
+    const offsetRatio = SPECIAL_AURA_OFFSET[`${g}_${outfitKey}_walk_${dir}`] || 0;
+    const img = getSprite(spriteKeyFor(gender, facingDir, 0, false, outfitKey));
+    const displayHeight = TILE * 1.45;
+    const displayWidth = (img && img.naturalWidth) ? displayHeight * (img.naturalWidth / img.naturalHeight) : 0;
+    cx += offsetRatio * displayWidth;
+
+    ctx.save();
+    ctx.translate(cx, groundY);
+    // Additive blending — where glowing shapes overlap they blow out toward
+    // white/bright instead of just staying flat-colored, which is what
+    // actually reads as "glowing light" rather than a plain colored outline
+    // (a much bigger visual difference here than shadowBlur alone).
+    ctx.globalCompositeOperation = 'lighter';
+
+    // ---- Ground glow puddle — bright and broad ----
+    const pulse = 0.45 + 0.18 * Math.sin(t * 2.2); // -10% brightness
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.3);
+    grad.addColorStop(0, `rgba(${rgb},${pulse})`);
+    grad.addColorStop(0.5, `rgba(${rgb},${pulse * 0.5})`);
+    grad.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, R * 1.3, R * 1.3 * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ---- Rotating rune rings (flattened to the ground-plane perspective) ----
+    // ctx.shadowBlur is genuinely expensive per DRAW CALL in Canvas2D (most
+    // engines re-run a real blur every time), so the earlier version of
+    // this — 16 separate tick strokes plus the ring circle, each with
+    // shadowBlur active, times 2 passes, times orbs too — added up to
+    // ~48 blurred draws per character per frame and visibly dropped FPS.
+    // Same visual, far fewer blurred draw calls: the ring circle AND all
+    // 16 ticks are now one combined path per pass (1 stroke() instead of
+    // 17), and the orbs' outer glow below uses a radial gradient instead
+    // of shadowBlur (gradients are cheap; blur is not).
+    ctx.save();
+    ctx.scale(1, 0.42);
+
+    // Outer ring: a solid circle plus radiating tick marks around the rim,
+    // like a summoning circle — slowly spins one way. Each pass (thick
+    // blurred glow underneath, thin near-white core on top) is ONE stroke
+    // call covering the circle + all ticks together.
+    ctx.save();
+    ctx.rotate(t * 0.9);
+    const tickCount = 16;
+    const buildRingPath = () => {
+      ctx.beginPath();
+      ctx.arc(0, 0, R, 0, Math.PI * 2);
+      for (let i = 0; i < tickCount; i++) {
+        const a = (i / tickCount) * Math.PI * 2;
+        const inner = R * 0.86, outer = R * 1.05;
+        ctx.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
+        ctx.lineTo(Math.cos(a) * outer, Math.sin(a) * outer);
+      }
+    };
+    ctx.shadowColor = `rgba(${rgb},0.9)`;
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = `rgba(${rgb},0.81)`;
+    ctx.lineWidth = 5;
+    buildRingPath();
+    ctx.stroke();
+    ctx.shadowBlur = 0; // core pass needs no blur of its own — the glow pass underneath already provides it
+    ctx.strokeStyle = 'rgba(255,255,255,0.81)';
+    ctx.lineWidth = 1.6;
+    buildRingPath();
+    ctx.stroke();
+    ctx.restore();
+
+    // Inner ring: a 5-point star/rune pattern, counter-rotating against the
+    // outer ring so the whole thing reads as two independently-turning
+    // gears rather than one flat spinning circle. Connecting every 2nd
+    // vertex of a 5-gon traces a proper 5-point star in one continuous
+    // path (works because gcd(5,2)=1 — a 6-gon skip-2 would just retrace
+    // a triangle twice instead). Same single-blurred-pass-plus-cheap-core
+    // treatment as the outer ring above.
+    ctx.save();
+    ctx.rotate(-t * 1.3);
+    const starPoints = 5;
+    const starPath = () => {
+      ctx.beginPath();
+      for (let i = 0; i <= starPoints; i++) {
+        const a = (i * 2 * (Math.PI * 2)) / starPoints;
+        const x = Math.cos(a) * R * 0.7, y = Math.sin(a) * R * 0.7;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    };
+    ctx.shadowColor = `rgba(${rgb},0.9)`;
+    ctx.shadowBlur = 11;
+    ctx.strokeStyle = `rgba(${rgb},0.77)`;
+    ctx.lineWidth = 4;
+    starPath();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,0.77)';
+    ctx.lineWidth = 1.3;
+    starPath();
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.restore(); // end flattened scale
+
+    // ---- Floating glowing orbs, orbiting at varying heights above the
+    // ground ring (some low, some up near head height), each pulsing and
+    // gently bobbing independently. The soft halo is a small radial
+    // gradient (cheap) instead of shadowBlur, with a plain bright core
+    // circle on top — same glowing look, no blur cost at all.
+    const orbCount = 6;
+    for (let i = 0; i < orbCount; i++) {
+      const angle = t * 1.1 + (i / orbCount) * Math.PI * 2;
+      const orbitR = R * (0.85 + 0.15 * Math.sin(t * 1.7 + i));
+      const px = Math.cos(angle) * orbitR;
+      const py = Math.sin(angle) * orbitR * 0.42;
+      const floatHeight = TILE * (0.35 + 0.4 * (i % 3) / 2) + Math.sin(t * 2.5 + i * 1.3) * 6;
+      const orbY = py - floatHeight;
+      const orbPulse = 0.63 + 0.27 * Math.sin(t * 3 + i * 2); // -10% brightness
+
+      const haloGrad = ctx.createRadialGradient(px, orbY, 0, px, orbY, 7);
+      haloGrad.addColorStop(0, `rgba(${rgb},${orbPulse})`);
+      haloGrad.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.fillStyle = haloGrad;
+      ctx.beginPath();
+      ctx.arc(px, orbY, 7, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = `rgba(255,255,255,${orbPulse})`;
+      ctx.beginPath();
+      ctx.arc(px, orbY, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
   _drawCharacter() {
     const ctx = this.ctx;
     const c = this._character;
@@ -2643,6 +2837,8 @@ class FarmGame {
     ctx.beginPath();
     ctx.ellipse(cx, groundY + 1, 9, 3, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    this._drawSpecialAura(cx, groundY, c.outfitKey, c.gender, c.facingDir);
 
     const img = getSprite(spriteKeyFor(c.gender, c.facingDir, c.walkFrame, c.moving, c.outfitKey));
     if (!img || !img.complete || img.naturalWidth <= 0) return;

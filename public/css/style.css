@@ -281,6 +281,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 .stat-pill.coins { color: #8a6a12; }
 .stat-pill.premium { color: #7a3ea1; }
+.stat-pill.gm-points { color: #b8860b; }
 .stat-pill.energy { color: #1e8a4a; }
 .daily-btn { border: 2px solid var(--sun-dark); background: var(--sun); cursor: pointer; }
 

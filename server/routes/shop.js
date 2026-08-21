@@ -74,8 +74,6 @@ module.exports = function shopRoutes(db) {
   });
 
   // POST /api/shop/buy-outfit  { outfitId } — buys (if not already owned) and equips immediately
-  const OUTFIT_RENTAL_SECONDS = 7 * 86400; // 7 days per purchase/renewal
-
   router.post('/buy-outfit', (req, res) => {
     const { outfitId } = req.body || {};
     const outfit = db.prepare('SELECT * FROM outfit_types WHERE id = ?').get(outfitId);
@@ -102,11 +100,17 @@ module.exports = function shopRoutes(db) {
         const daysLeft = Math.ceil((owned.expires_at - t) / 86400);
         return res.status(400).json({ error: `You already have this costume — it's active for ${daysLeft} more day${daysLeft === 1 ? '' : 's'}` });
       }
-      const newExpiry = t + OUTFIT_RENTAL_SECONDS;
-      if ((user.premium_currency || 0) < outfit.cost) {
-        return res.status(400).json({ error: `Not enough Premium Points — need ${outfit.cost}, have ${user.premium_currency || 0}` });
+      const newExpiry = t + outfit.rental_days * 86400;
+      // Special Outfits (currency='gm_points') can ONLY be paid for with
+      // GM Points — an admin-only-granted currency (see admin panel > Give
+      // GM Points) — never with regular Premium Points, no matter how much
+      // PP the player has.
+      const currencyField = outfit.currency === 'gm_points' ? 'gm_points' : 'premium_currency';
+      const currencyLabel = outfit.currency === 'gm_points' ? 'GM Points' : 'Premium Points';
+      if ((user[currencyField] || 0) < outfit.cost) {
+        return res.status(400).json({ error: `Not enough ${currencyLabel} — need ${outfit.cost}, have ${user[currencyField] || 0}` });
       }
-      db.prepare('UPDATE users SET premium_currency = premium_currency - ? WHERE id = ?').run(outfit.cost, req.userId);
+      db.prepare(`UPDATE users SET ${currencyField} = ${currencyField} - ? WHERE id = ?`).run(outfit.cost, req.userId);
       if (owned) {
         db.prepare('UPDATE owned_outfits SET expires_at = ? WHERE id = ?').run(newExpiry, owned.id);
       } else {
@@ -117,9 +121,12 @@ module.exports = function shopRoutes(db) {
     // Switching outfits clears any custom dye — dye is a per-shirt tint, not a permanent trait.
     db.prepare('UPDATE users SET equipped_outfit = ?, dye_color = NULL WHERE id = ?').run(outfitId, req.userId);
 
-    const updated = db.prepare('SELECT coins, premium_currency FROM users WHERE id = ?').get(req.userId);
+    const updated = db.prepare('SELECT coins, premium_currency, gm_points FROM users WHERE id = ?').get(req.userId);
     const finalOwned = db.prepare('SELECT expires_at FROM owned_outfits WHERE user_id = ? AND outfit_id = ?').get(req.userId, outfitId);
-    res.json({ ok: true, outfitId, purchased, expiresAt: finalOwned ? finalOwned.expires_at : null, coins: updated.coins, premiumCurrency: updated.premium_currency });
+    res.json({
+      ok: true, outfitId, purchased, expiresAt: finalOwned ? finalOwned.expires_at : null,
+      coins: updated.coins, premiumCurrency: updated.premium_currency, gmPoints: updated.gm_points,
+    });
   });
 
   // POST /api/shop/dye  { color } — recolors the shirt of the currently equipped outfit

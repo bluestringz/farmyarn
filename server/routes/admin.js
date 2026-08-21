@@ -6,6 +6,7 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY, getTimerSetting, DEFAULT_TIMERS } = require('../lib/gameLogic');
 const { DB_PATH } = require('../db/migrate');
+const { listOddsFields, oddsKey, getOverrideBp, setOverrideBp, clearOverride } = require('../lib/casinoConfig');
 
 module.exports = function adminRoutes(db, onlineUsers, io) {
   const router = express.Router();
@@ -188,6 +189,52 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     res.json({ ok: true });
   });
 
+  // ---- Casino Odds (Admin Panel > 🎰 Casino Odds) ----
+  // Every individually-editable win-chance/weight knob across the 3
+  // casino machines (see server/lib/casinoConfig.js's listOddsFields for
+  // the flattened list) — edits here take effect immediately for every
+  // player, since /api/casino/config and /api/casino/bet both read the
+  // SAME live-with-overrides config on every request.
+  router.get('/casino-odds', (req, res) => {
+    const rows = listOddsFields().map((f) => {
+      const bp = getOverrideBp(db, oddsKey(f.machine, f.tierId, f.field));
+      const value = bp === null ? f.defaultValue : bp / 100;
+      return {
+        machine: f.machine, tierId: f.tierId, field: f.field, unit: f.unit,
+        label: f.label, value, defaultValue: f.defaultValue, isOverridden: bp !== null,
+      };
+    });
+    res.json(rows);
+  });
+
+  // POST /api/admin/set-casino-odds { machine, tierId, field, value } —
+  // edits one knob. `value` is the real number shown in the admin table
+  // (a percent like 0.07, or a slot_777 weight like 1.2) — stored
+  // internally as basis points (value*100) since game_settings only
+  // holds integers, converted back on every read.
+  router.post('/set-casino-odds', (req, res) => {
+    const { machine, tierId, field, value } = req.body || {};
+    const match = listOddsFields().find((f) => f.machine === machine && f.tierId === tierId && f.field === field);
+    if (!match) return res.status(400).json({ error: 'Unknown odds field' });
+    const num = parseFloat(value);
+    if (!Number.isFinite(num) || num < 0) return res.status(400).json({ error: 'Enter a number 0 or greater' });
+    setOverrideBp(db, oddsKey(machine, tierId, field), Math.round(num * 100));
+    res.json({ ok: true });
+  });
+
+  // POST /api/admin/reset-casino-odds { machine, tierId, field } — clears
+  // ONE knob's override, snapping it back to the hardcoded default. Omit
+  // all three to reset EVERY casino odds override at once.
+  router.post('/reset-casino-odds', (req, res) => {
+    const { machine, tierId, field } = req.body || {};
+    if (machine && tierId && field) {
+      clearOverride(db, oddsKey(machine, tierId, field));
+    } else {
+      db.prepare("DELETE FROM game_settings WHERE key LIKE 'casino:%'").run();
+    }
+    res.json({ ok: true });
+  });
+
   // GET /api/admin/backup — downloads a full, consistent snapshot of the
   // live database as a .db file. Uses better-sqlite3's built-in backup()
   // (not just copying the raw file), which is safe to run while the
@@ -242,7 +289,7 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
 
   router.get('/players', (req, res) => {
     const q = (req.query.q || '').toString().trim();
-    const cols = 'id, username, display_name, level, xp, energy, coins, premium_currency, is_admin, is_banned, suspended_until, created_at, last_login';
+    const cols = 'id, username, display_name, level, xp, energy, coins, premium_currency, gm_points, is_admin, is_banned, suspended_until, created_at, last_login';
     const rows = q
       ? db.prepare(`SELECT ${cols} FROM users WHERE username LIKE ? OR display_name LIKE ? ORDER BY id DESC LIMIT 100`).all(`%${q}%`, `%${q}%`)
       : db.prepare(`SELECT ${cols} FROM users ORDER BY id DESC LIMIT 100`).all();
@@ -317,6 +364,21 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     const newBalance = Math.max(0, (user.premium_currency || 0) + amount);
     db.prepare('UPDATE users SET premium_currency = ? WHERE id = ?').run(newBalance, user.id);
     res.json({ ok: true, premiumCurrency: newBalance });
+  });
+
+  // POST /api/admin/players/:id/give-gm-points { amount } — top up a
+  // player's GM Points, the ADMIN-ONLY currency Special Outfits (see
+  // outfit_types where currency='gm_points') are bought with. There's no
+  // other way for a player to earn these — this is the only route that
+  // can grant them, by design.
+  router.post('/players/:id/give-gm-points', (req, res) => {
+    const amount = parseInt(req.body && req.body.amount, 10);
+    if (!Number.isFinite(amount) || amount === 0) return res.status(400).json({ error: 'amount must be a non-zero number' });
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const newBalance = Math.max(0, (user.gm_points || 0) + amount);
+    db.prepare('UPDATE users SET gm_points = ? WHERE id = ?').run(newBalance, user.id);
+    res.json({ ok: true, gmPoints: newBalance });
   });
 
   router.post('/players/:id/give-item', (req, res) => {

@@ -129,10 +129,67 @@ const UI = (() => {
       { key: 'decorations', label: 'Decor' },
       { key: 'interiors', label: 'Interior' },
       { key: 'outfits', label: 'Outfits' },
+      { key: 'special_outfits', label: '⭐ Special' },
     ];
     const tabs = categories.map((c) =>
       `<button class="shop-tab ${c.key === activeCategory ? 'active' : ''}" data-cat="${c.key}">${c.label}</button>`
     ).join('');
+
+    // Shared card markup for both the regular Outfits tab (Premium Points,
+    // 7-day rental) and the Special Outfits tab (GM Points, 14-day rental,
+    // admin-granted currency only) — same shape, different currency/cost
+    // labels, so this one function covers both instead of duplicating the
+    // whole template.
+    function renderOutfitCard(item, opts) {
+      const locked = player.level < item.required_level;
+      const owned = item.owned;
+      const equipped = item.equipped;
+      const balance = opts.balance;
+      const affordable = balance >= item.cost;
+      const isRental = item.cost > 0;
+      let expiryLine = '';
+      if (isRental && item.expiresAt) {
+        const daysLeft = Math.max(0, Math.ceil((item.expiresAt * 1000 - Date.now()) / 86400000));
+        expiryLine = owned
+          ? `<div class="shop-level">Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}</div>`
+          : `<div class="shop-level" style="color:#c0392b">Rental expired</div>`;
+      }
+      return `
+        <div class="shop-card">
+          <canvas class="outfit-preview" width="70" height="90" data-preview-outfit="${item.id}"></canvas>
+          <div class="shop-name">${item.name}</div>
+          <div class="shop-price">${isRental ? `${opts.icon} ${item.cost} for ${item.rental_days} days` : 'Free'}</div>
+          ${expiryLine}
+          ${locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}
+          ${ITEM_DESCRIPTIONS[item.id] ? `<div class="shop-desc">${ITEM_DESCRIPTIONS[item.id]}</div>` : ''}
+          <button data-item="${item.id}" ${(locked || (!owned && !affordable) || (equipped && owned)) ? 'disabled' : ''}>
+            ${equipped && owned ? 'Equipped' : owned ? 'Wear' : locked ? 'Locked' : isRental ? `Rent (${item.rental_days} days)` : 'Wear'}
+          </button>
+        </div>`;
+    }
+
+    if (activeCategory === 'special_outfits') {
+      const items = (catalog.outfits || [])
+        .filter((o) => o.gender === 'unisex' || o.gender === player.gender)
+        .filter((o) => o.currency === 'gm_points');
+      const cards = items.map((item) => renderOutfitCard(item, { icon: '🎖️', balance: player.gmPoints || 0 })).join('')
+        || `<div class="empty-state">Nothing here yet.</div>`;
+      body.innerHTML = `<div class="shop-tabs">${tabs}</div>
+        <p class="panel-hint">🎖️ ${player.gmPoints || 0} GM Points — a rare currency only an admin can grant you. Special Outfits are 14-day rentals costing GM Points, never Premium Points.</p>
+        <div class="shop-grid">${cards}</div>`;
+
+      body.querySelectorAll('canvas[data-preview-outfit]').forEach((canvas) => {
+        const outfit = items.find((o) => o.id === canvas.dataset.previewOutfit);
+        if (window.drawMiniCharacter) window.drawMiniCharacter(canvas, player.gender, outfit, outfit.equipped ? player.dyeColor : null);
+      });
+      body.querySelectorAll('.shop-tab').forEach((btn) => {
+        btn.addEventListener('click', () => onCategoryChange(btn.dataset.cat));
+      });
+      body.querySelectorAll('.shop-card button[data-item]').forEach((btn) => {
+        btn.addEventListener('click', () => onBuy('special_outfits', btn.dataset.item));
+      });
+      return;
+    }
 
     if (activeCategory === 'outfits') {
       // These items never got real matching artwork (they just fell back to
@@ -142,33 +199,10 @@ const UI = (() => {
       const PLACEHOLDER_OUTFITS = new Set(['red_flannel', 'blue_dungarees', 'straw_worker', 'harvest_gold', 'meadow_dress', 'sunflower_dress']);
       const items = (catalog.outfits || [])
         .filter((o) => o.gender === 'unisex' || o.gender === player.gender)
-        .filter((o) => !PLACEHOLDER_OUTFITS.has(o.id));
-      const cards = items.map((item) => {
-        const locked = player.level < item.required_level;
-        const owned = item.owned;
-        const equipped = item.equipped;
-        const affordable = (player.premiumCurrency || 0) >= item.cost;
-        const isRental = item.cost > 0; // the free classic_overalls never expires
-        let expiryLine = '';
-        if (isRental && item.expiresAt) {
-          const daysLeft = Math.max(0, Math.ceil((item.expiresAt * 1000 - Date.now()) / 86400000));
-          expiryLine = owned
-            ? `<div class="shop-level">Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}</div>`
-            : `<div class="shop-level" style="color:#c0392b">Rental expired</div>`;
-        }
-        return `
-          <div class="shop-card">
-            <canvas class="outfit-preview" width="70" height="90" data-preview-outfit="${item.id}"></canvas>
-            <div class="shop-name">${item.name}</div>
-            <div class="shop-price">${isRental ? `💎 ${item.cost} / 7 days` : 'Free'}</div>
-            ${expiryLine}
-            ${locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}
-            ${ITEM_DESCRIPTIONS[item.id] ? `<div class="shop-desc">${ITEM_DESCRIPTIONS[item.id]}</div>` : ''}
-            <button data-item="${item.id}" ${(locked || (!owned && !affordable) || (equipped && owned)) ? 'disabled' : ''}>
-              ${equipped && owned ? 'Equipped' : owned ? 'Wear' : locked ? 'Locked' : isRental ? 'Rent (7 days)' : 'Wear'}
-            </button>
-          </div>`;
-      }).join('') || `<div class="empty-state">Nothing here yet.</div>`;
+        .filter((o) => !PLACEHOLDER_OUTFITS.has(o.id))
+        .filter((o) => o.currency !== 'gm_points'); // those live on the Special tab instead
+      const cards = items.map((item) => renderOutfitCard(item, { icon: '💎', balance: player.premiumCurrency || 0 })).join('')
+        || `<div class="empty-state">Nothing here yet.</div>`;
 
       const changeNameSection = `
         <div class="panel-section-title">Change your profile name</div>
@@ -182,6 +216,7 @@ const UI = (() => {
       `;
 
       body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">Costumes are 7-day rentals paid in 💎 Premium Points — you can rent a new one once the current 7 days runs out.</p><div class="shop-grid">${cards}</div>${changeNameSection}`;
+
 
       body.querySelectorAll('canvas[data-preview-outfit]').forEach((canvas) => {
         const outfit = items.find((o) => o.id === canvas.dataset.previewOutfit);

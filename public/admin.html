@@ -102,10 +102,26 @@
   </div>
 
   <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">🎰 Casino Odds</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">Win chances for the 3 Casino machines. "Chance %" fields are plain win percentages (0.07 = 0.07%). Lucky 777's "Weight" fields aren't a standalone % — they're each prize's rarity relative to the OTHER prizes (bigger weight = more common among wins); its "win chance" fields are the % chance a spin at that bet amount wins ANYTHING at all. Edits apply live, no restart needed. A row with a ✳️ has been changed from default — use "Reset" to put it back.</p>
+    <select id="odds-category-filter">
+      <option value="">All Machines</option>
+      <option value="color_game">🎨 Color Game</option>
+      <option value="claw_machine">🕹️ Claw Machine</option>
+      <option value="slot_777">🎰 Lucky 777</option>
+    </select>
+    <button id="odds-reset-all-btn" style="margin-left:8px;background:#c0392b">Reset ALL to Default</button>
+    <table id="odds-table">
+      <thead><tr><th>Machine</th><th>Reward</th><th>Field</th><th>Current</th><th>New</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <input id="search-input" placeholder="Search username...">
     <button id="search-btn">Search</button>
     <table id="players-table">
-      <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Name in Game</th><th>Lvl</th><th>Energy</th><th>Coins</th><th>Prem. Points</th><th>Status</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Name in Game</th><th>Lvl</th><th>Energy</th><th>Coins</th><th>Prem. Points</th><th>GM Points</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -163,6 +179,7 @@ async function showApp() {
   await loadMailbox();
   await loadPrices();
   await loadTimers();
+  await loadCasinoOdds();
 }
 
 async function loadStats() {
@@ -308,6 +325,70 @@ function renderTimers() {
 
 document.getElementById('timer-category-filter').addEventListener('change', () => renderTimers());
 
+// ---- Casino Odds ----
+let allOdds = [];
+const MACHINE_LABELS = { color_game: '🎨 Color Game', claw_machine: '🕹️ Claw Machine', slot_777: '🎰 Lucky 777' };
+const FIELD_LABELS_ODDS = { chancePercent: 'Chance %', weight: 'Weight', winChanceByBet: 'Win chance %' };
+
+async function loadCasinoOdds() {
+  allOdds = await api('GET', '/api/admin/casino-odds');
+  renderOdds();
+}
+
+function renderOdds() {
+  const tbody = document.querySelector('#odds-table tbody');
+  const categoryFilter = document.getElementById('odds-category-filter').value;
+  const rows = allOdds.filter((r) => !categoryFilter || r.machine === categoryFilter);
+
+  tbody.innerHTML = rows.map((r) => `
+    <tr data-machine="${r.machine}" data-tier="${r.tierId}" data-field="${r.field}">
+      <td>${MACHINE_LABELS[r.machine] || r.machine}</td>
+      <td>${escapeHtml(r.label)}${r.isOverridden ? ' ✳️' : ''}</td>
+      <td>${FIELD_LABELS_ODDS[r.field] || r.field}</td>
+      <td>${r.value}${r.unit === 'percent' ? '%' : ''}</td>
+      <td><input type="number" class="odds-input" min="0" step="0.01" value="${r.value}" style="width:90px"></td>
+      <td>
+        <button class="odds-save-btn">Save</button>
+        ${r.isOverridden ? '<button class="odds-reset-btn" style="background:#8a5a34;margin-left:4px;">Reset</button>' : ''}
+      </td>
+    </tr>`).join('') || '<tr><td colspan="6">No odds match.</td></tr>';
+
+  tbody.querySelectorAll('tr[data-machine]').forEach((tr) => {
+    tr.querySelector('.odds-save-btn').addEventListener('click', async () => {
+      const value = parseFloat(tr.querySelector('.odds-input').value);
+      if (!Number.isFinite(value) || value < 0) return alert('Enter a valid number 0 or greater.');
+      try {
+        await api('POST', '/api/admin/set-casino-odds', { machine: tr.dataset.machine, tierId: tr.dataset.tier, field: tr.dataset.field, value });
+        await loadCasinoOdds();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+    const resetBtn = tr.querySelector('.odds-reset-btn');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', async () => {
+        try {
+          await api('POST', '/api/admin/reset-casino-odds', { machine: tr.dataset.machine, tierId: tr.dataset.tier, field: tr.dataset.field });
+          await loadCasinoOdds();
+        } catch (err) {
+          alert('Error: ' + err.message);
+        }
+      });
+    }
+  });
+}
+
+document.getElementById('odds-category-filter').addEventListener('change', () => renderOdds());
+document.getElementById('odds-reset-all-btn').addEventListener('click', async () => {
+  if (!confirm('Reset ALL casino odds to their default values? This clears every override across all 3 machines.')) return;
+  try {
+    await api('POST', '/api/admin/reset-casino-odds', {});
+    await loadCasinoOdds();
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+});
+
 async function loadMailbox() {
   const rows = await api('GET', '/api/admin/password-requests');
   const list = document.getElementById('mailbox-list');
@@ -391,6 +472,7 @@ async function loadPlayers(q) {
       'set-energy': `<input type="number" class="a-input" value="${u.energy ?? 0}" min="0" style="width:70px"><button class="a-go">Set</button>`,
       'set-coins': `<input type="number" class="a-input" value="${u.coins}" min="0" style="width:80px"><button class="a-go">Set</button>`,
       'give-pp': `<input type="number" class="a-input" value="100" style="width:70px"><button class="a-go">Give</button>`,
+      'give-gm': `<input type="number" class="a-input" value="1" min="1" style="width:60px"><button class="a-go">Give</button>`,
       'give-item': `<select class="a-input2">${MATERIAL_OPTIONS.map(m => `<option value="${m.id}">${m.label}</option>`).join('')}</select>
                     <input type="number" class="a-input" value="10" min="1" style="width:60px"><button class="a-go">Give</button>`,
       ban: `<button class="a-go" style="background:${u.is_banned ? 'var(--leaf)' : '#c0392b'}">${u.is_banned ? 'Unban' : 'Confirm Ban'}</button>`,
@@ -420,6 +502,10 @@ async function loadPlayers(q) {
           const amount = parseInt(val, 10) || 0;
           if (!amount) return;
           await api('POST', `/api/admin/players/${u.id}/give-premium`, { amount });
+        } else if (action === 'give-gm') {
+          const amount = parseInt(val, 10) || 0;
+          if (!amount) return;
+          await api('POST', `/api/admin/players/${u.id}/give-gm-points`, { amount });
         } else if (action === 'give-item') {
           const itemId = area.querySelector('.a-input2').value;
           const quantity = parseInt(val, 10) || 0;
@@ -456,6 +542,7 @@ async function loadPlayers(q) {
       <td>${u.energy ?? 0}</td>
       <td>${u.coins}</td>
       <td>${u.premium_currency ?? 0}</td>
+      <td>${u.gm_points ?? 0}</td>
       <td>${statusLabel(u)}</td>
       <td>
         <select class="action-select" data-user="${u.id}">
@@ -464,6 +551,7 @@ async function loadPlayers(q) {
           <option value="set-energy">Set Energy</option>
           <option value="set-coins">Set Coins</option>
           <option value="give-pp">Give Premium Points</option>
+          <option value="give-gm">Give GM Points</option>
           <option value="give-item">Give Material</option>
           <option value="ban">${u.is_banned ? 'Unban' : 'Ban'}</option>
           <option value="suspend">Suspend</option>

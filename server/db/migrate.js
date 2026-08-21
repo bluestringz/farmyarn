@@ -25,6 +25,7 @@ function migrate(db) {
     xp INTEGER NOT NULL DEFAULT 0,
     coins INTEGER NOT NULL DEFAULT 100,
     premium_currency INTEGER NOT NULL DEFAULT 0,
+    gm_points INTEGER NOT NULL DEFAULT 0, -- rare currency ONLY an admin can grant (see admin panel > give GM Points) — used exclusively for Special Outfits (see outfit_types.currency)
     energy INTEGER NOT NULL DEFAULT 1000,
     energy_updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     is_admin INTEGER NOT NULL DEFAULT 0,
@@ -114,7 +115,9 @@ function migrate(db) {
     pants_color TEXT NOT NULL,
     hat_color TEXT,
     style TEXT NOT NULL DEFAULT 'overalls', -- 'overalls' | 'dress' | 'shirt'
-    sprite_key TEXT NOT NULL DEFAULT 'classic' -- which character sprite set to use (see public/assets/characters/)
+    sprite_key TEXT NOT NULL DEFAULT 'classic', -- which character sprite set to use (see public/assets/characters/)
+    currency TEXT NOT NULL DEFAULT 'premium', -- 'premium' (Premium Points, anyone can earn/buy) | 'gm_points' (Special Outfits — an admin has to grant these first, see the admin panel)
+    rental_days INTEGER NOT NULL DEFAULT 7 -- how long one purchase/renewal lasts before it expires (Special Outfits use 14)
   );
 
   CREATE TABLE IF NOT EXISTS owned_outfits (
@@ -356,6 +359,16 @@ function addColumnsIfMissing(db) {
   if (!marketplaceListingCols.includes('expires_at')) {
     db.exec('ALTER TABLE marketplace_listings ADD COLUMN expires_at INTEGER');
   }
+  if (!existingCols.includes('gm_points')) {
+    db.exec('ALTER TABLE users ADD COLUMN gm_points INTEGER NOT NULL DEFAULT 0');
+  }
+  const outfitTypeCols = db.prepare("PRAGMA table_info(outfit_types)").all().map((c) => c.name);
+  if (!outfitTypeCols.includes('currency')) {
+    db.exec("ALTER TABLE outfit_types ADD COLUMN currency TEXT NOT NULL DEFAULT 'premium'");
+  }
+  if (!outfitTypeCols.includes('rental_days')) {
+    db.exec('ALTER TABLE outfit_types ADD COLUMN rental_days INTEGER NOT NULL DEFAULT 7');
+  }
   if (!existingCols.includes('equipped_outfit')) {
     db.exec('ALTER TABLE users ADD COLUMN equipped_outfit TEXT');
   }
@@ -595,28 +608,39 @@ function seedContent(db) {
   txItems(items);
 
   const upsertOutfit = db.prepare(`
-    INSERT INTO outfit_types (id, name, cost, required_level, gender, shirt_color, pants_color, hat_color, style, sprite_key)
-    VALUES (@id, @name, @cost, @required_level, @gender, @shirt_color, @pants_color, @hat_color, @style, @sprite_key)
+    INSERT INTO outfit_types (id, name, cost, required_level, gender, shirt_color, pants_color, hat_color, style, sprite_key, currency, rental_days)
+    VALUES (@id, @name, @cost, @required_level, @gender, @shirt_color, @pants_color, @hat_color, @style, @sprite_key, @currency, @rental_days)
     ON CONFLICT(id) DO UPDATE SET name=excluded.name, cost=excluded.cost, required_level=excluded.required_level,
       gender=excluded.gender, shirt_color=excluded.shirt_color, pants_color=excluded.pants_color,
-      hat_color=excluded.hat_color, style=excluded.style, sprite_key=excluded.sprite_key
+      hat_color=excluded.hat_color, style=excluded.style, sprite_key=excluded.sprite_key,
+      currency=excluded.currency, rental_days=excluded.rental_days
   `);
   // sprite_key selects which character sprite set to actually draw (see
   // public/assets/characters/) — only outfits with a real matching sprite
   // set look different in-game; others fall back to 'classic' (the default
   // look) since there's no artwork for them yet, rather than pretending.
+  // `currency`/`rental_days` default to the ordinary Premium-Points/7-day
+  // rental every other costume uses — only set explicitly below for the
+  // Special Outfits category (GM Points, 14-day rental, admin-granted only).
   const outfits = [
-    { id: 'classic_overalls', name: 'Classic Farmer', cost: 0,   required_level: 1, gender: 'unisex', shirt_color: '#4f8fd6', pants_color: '#3f5f8a', hat_color: '#e0b060', style: 'shirt', sprite_key: 'classic' },
-    { id: 'green_flannel',    name: 'Green Flannel',   cost: 25, required_level: 1, gender: 'unisex', shirt_color: '#4f7c3a', pants_color: '#3f5f8a', hat_color: '#e0b060', style: 'shirt', sprite_key: 'green' },
-    { id: 'red_flannel',      name: 'Red Flannel',      cost: 25, required_level: 2, gender: 'male',   shirt_color: '#c0392b', pants_color: '#4a3521', hat_color: '#e0b060', style: 'shirt', sprite_key: 'classic' },
-    { id: 'blue_dungarees',   name: 'Blue Dungarees',   cost: 25, required_level: 2, gender: 'male',   shirt_color: '#f4f4f4', pants_color: '#4066a8', hat_color: '#e0b060', style: 'overalls', sprite_key: 'classic' },
-    { id: 'meadow_dress',     name: 'Meadow Dress',     cost: 25, required_level: 2, gender: 'female', shirt_color: '#e05a7e', pants_color: '#e05a7e', hat_color: '#e0b060', style: 'dress', sprite_key: 'classic' },
-    { id: 'sunflower_dress',  name: 'Sunflower Dress',  cost: 180, required_level: 3, gender: 'female', shirt_color: '#f4c95d', pants_color: '#f4c95d', hat_color: '#e0b060', style: 'dress', sprite_key: 'classic' },
-    { id: 'straw_worker',     name: 'Straw Worker Set', cost: 220, required_level: 3, gender: 'unisex', shirt_color: '#7a9c5a', pants_color: '#5e5140', hat_color: '#c9a13c', style: 'overalls', sprite_key: 'classic' },
-    { id: 'harvest_gold',     name: 'Harvest Gold Vest', cost: 300, required_level: 5, gender: 'unisex', shirt_color: '#e8a527', pants_color: '#4a3521', hat_color: '#8a5a34', style: 'shirt', sprite_key: 'classic' },
-    { id: 'gentleman_suit',   name: 'Gentleman / Gentlewoman', cost: 25, required_level: 4, gender: 'unisex', shirt_color: '#fdf6e8', pants_color: '#4a3521', hat_color: '#6b4423', style: 'shirt', sprite_key: 'gentleman' },
-    { id: 'winter_coat',      name: 'Winter Coat',      cost: 25, required_level: 4, gender: 'unisex', shirt_color: '#2b4a7a', pants_color: '#2b4a7a', hat_color: '#2b4a7a', style: 'shirt', sprite_key: 'winter' },
-    { id: 'festival_yukata',  name: 'Festival Yukata',   cost: 25, required_level: 4, gender: 'unisex', shirt_color: '#1e2f5c', pants_color: '#1e2f5c', hat_color: '#c0392b', style: 'shirt', sprite_key: 'festival' },
+    { id: 'classic_overalls', name: 'Classic Farmer', cost: 0,   required_level: 1, gender: 'unisex', shirt_color: '#4f8fd6', pants_color: '#3f5f8a', hat_color: '#e0b060', style: 'shirt', sprite_key: 'classic', currency: 'premium', rental_days: 7 },
+    { id: 'green_flannel',    name: 'Green Flannel',   cost: 25, required_level: 1, gender: 'unisex', shirt_color: '#4f7c3a', pants_color: '#3f5f8a', hat_color: '#e0b060', style: 'shirt', sprite_key: 'green', currency: 'premium', rental_days: 7 },
+    { id: 'red_flannel',      name: 'Red Flannel',      cost: 25, required_level: 2, gender: 'male',   shirt_color: '#c0392b', pants_color: '#4a3521', hat_color: '#e0b060', style: 'shirt', sprite_key: 'classic', currency: 'premium', rental_days: 7 },
+    { id: 'blue_dungarees',   name: 'Blue Dungarees',   cost: 25, required_level: 2, gender: 'male',   shirt_color: '#f4f4f4', pants_color: '#4066a8', hat_color: '#e0b060', style: 'overalls', sprite_key: 'classic', currency: 'premium', rental_days: 7 },
+    { id: 'meadow_dress',     name: 'Meadow Dress',     cost: 25, required_level: 2, gender: 'female', shirt_color: '#e05a7e', pants_color: '#e05a7e', hat_color: '#e0b060', style: 'dress', sprite_key: 'classic', currency: 'premium', rental_days: 7 },
+    { id: 'sunflower_dress',  name: 'Sunflower Dress',  cost: 180, required_level: 3, gender: 'female', shirt_color: '#f4c95d', pants_color: '#f4c95d', hat_color: '#e0b060', style: 'dress', sprite_key: 'classic', currency: 'premium', rental_days: 7 },
+    { id: 'straw_worker',     name: 'Straw Worker Set', cost: 220, required_level: 3, gender: 'unisex', shirt_color: '#7a9c5a', pants_color: '#5e5140', hat_color: '#c9a13c', style: 'overalls', sprite_key: 'classic', currency: 'premium', rental_days: 7 },
+    { id: 'harvest_gold',     name: 'Harvest Gold Vest', cost: 300, required_level: 5, gender: 'unisex', shirt_color: '#e8a527', pants_color: '#4a3521', hat_color: '#8a5a34', style: 'shirt', sprite_key: 'classic', currency: 'premium', rental_days: 7 },
+    { id: 'gentleman_suit',   name: 'Gentleman / Gentlewoman', cost: 25, required_level: 4, gender: 'unisex', shirt_color: '#fdf6e8', pants_color: '#4a3521', hat_color: '#6b4423', style: 'shirt', sprite_key: 'gentleman', currency: 'premium', rental_days: 7 },
+    { id: 'winter_coat',      name: 'Winter Coat',      cost: 25, required_level: 4, gender: 'unisex', shirt_color: '#2b4a7a', pants_color: '#2b4a7a', hat_color: '#2b4a7a', style: 'shirt', sprite_key: 'winter', currency: 'premium', rental_days: 7 },
+    { id: 'festival_yukata',  name: 'Festival Yukata',   cost: 25, required_level: 4, gender: 'unisex', shirt_color: '#1e2f5c', pants_color: '#1e2f5c', hat_color: '#c0392b', style: 'shirt', sprite_key: 'festival', currency: 'premium', rental_days: 7 },
+    // ---- Special Outfits — GM Points only, 1 point, 2-week (14-day) rental.
+    // GM Points can ONLY be granted by an admin (Admin Panel > Give GM
+    // Points) — there's no way to earn or buy them through normal play,
+    // by design (see server/routes/admin.js's give-gm-points route).
+    { id: 'lancer_costume',    name: 'Lancer',    cost: 1, required_level: 1, gender: 'unisex', shirt_color: '#1a2540', pants_color: '#0d1830', hat_color: '#3d8fe0', style: 'shirt', sprite_key: 'lancer', currency: 'gm_points', rental_days: 14 },
+    { id: 'sorcerer_costume',  name: 'Sorcerer',  cost: 1, required_level: 1, gender: 'unisex', shirt_color: '#241332', pants_color: '#150a1f', hat_color: '#9b5fd9', style: 'shirt', sprite_key: 'sorcerer', currency: 'gm_points', rental_days: 14 },
+    { id: 'swordsman_costume', name: 'Swordsman', cost: 1, required_level: 1, gender: 'unisex', shirt_color: '#1a1a2e', pants_color: '#0d0d1a', hat_color: '#f4c95d', style: 'shirt', sprite_key: 'swordsman', currency: 'gm_points', rental_days: 14 },
   ];
   const txOutfits = db.transaction((rows) => rows.forEach((r) => upsertOutfit.run(r)));
   txOutfits(outfits);
