@@ -2342,6 +2342,15 @@ class FarmGame {
     ctx.stroke();
   }
 
+  // Which interior furniture is wall-mounted (see WALL_MOUNTED_ITEMS in
+  // server/routes/shop.js — kept in sync manually since one's JS running
+  // server-side and the other client-side). Only matters for items
+  // actually placed on the BACK wall (grid_y === 0) here — see
+  // _drawIndoorObjects, which shifts these up into the wall band itself
+  // (drawn in _drawIndoorRoom) instead of leaving them sitting on the
+  // floor tile like a normal piece of furniture.
+  static WALL_MOUNTED_FURNITURE = new Set(['painting', 'wall_light', 'aircon']);
+
   _drawIndoorObjects() {
     const t = this._estimatedServerTime();
     for (const obj of this.interior.objects) {
@@ -2357,6 +2366,13 @@ class FarmGame {
         const ready = t >= last + (this._animalProdSeconds(obj.item_id) || 600) && fed;
         this._drawAnimal(px, py, pw, ph, obj.item_id, ready, obj.rotation || 0);
         this._drawFeedIndicator(px, py, pw, fed, ready);
+      } else if (FarmGame.WALL_MOUNTED_FURNITURE.has(obj.item_id) && obj.grid_y === 0) {
+        // Mounted flush in the wall band itself (see _drawIndoorRoom's
+        // wallDepth) — shifted up and squashed to that band's actual
+        // height, instead of drawn at full tile height sitting on the
+        // floor below the wall like a normal piece of furniture.
+        const wallBandH = TILE * 0.6;
+        this._drawFurniture(px, py - wallBandH, pw, wallBandH, obj.item_id, obj.rotation || 0);
       } else {
         this._drawFurniture(px, py, pw, ph, obj.item_id, obj.rotation || 0);
       }
