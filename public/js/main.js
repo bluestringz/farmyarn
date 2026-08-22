@@ -187,6 +187,15 @@
     if (!game || !state.me) return;
     const outfitDef = (state.catalog.outfits || []).find((o) => o.id === state.me.equippedOutfit);
     game.setAppearance(state.me.gender, outfitDef || null, state.me.dyeColor);
+    // Tell anyone else already sharing this space (Market, Park, a
+    // friend's farm, ...) that the look actually changed — previously
+    // appearance was only ever sent once, at space:join time, so a
+    // costume equipped WHILE already standing in a shared space (without
+    // leaving and rejoining) never reached anyone already there; they'd
+    // keep seeing the old look until they left and came back.
+    if (state.socket && state.currentSpace) {
+      state.socket.emit('space:appearance', { space: state.currentSpace, appearance: game.getAppearanceSnapshot() });
+    }
   }
 
   function renderTopbar() {
@@ -1751,6 +1760,9 @@
     });
     socket.on('presence:rest', ({ userId, restPose, x, y }) => {
       game.setRemotePlayerRestPose(userId, restPose, x, y);
+    });
+    socket.on('presence:appearance', ({ userId, appearance }) => {
+      game.setRemotePlayerAppearance(userId, appearance);
     });
     socket.on('presence:left', ({ userId }) => {
       game.removeRemotePlayer(userId);

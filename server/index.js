@@ -221,6 +221,21 @@ io.on('connection', (socket) => {
     socket.to(space).emit('presence:rest', { userId: uid, restPose, x, y });
   });
 
+  // Broadcasts a live appearance change (new costume equipped, new dye)
+  // to anyone else already sharing this space — previously appearance was
+  // only ever sent once, at space:join time, so changing costume while
+  // already standing in a shared space never reached anyone already
+  // there. Also updates the stored occupant record so anyone who joins
+  // AFTER this point (a fresh space:join) still gets the current look,
+  // not the stale one from whenever this player first walked in.
+  socket.on('space:appearance', ({ space, appearance }) => {
+    if (!space || space !== socket.currentSpace || !appearance) return;
+    const map = spaceOccupants.get(space);
+    if (!map || !map.has(uid)) return;
+    map.get(uid).appearance = appearance;
+    socket.to(space).emit('presence:appearance', { userId: uid, appearance });
+  });
+
   socket.on('space:leave', ({ space }) => {
     leaveSpace(socket, space);
     socket.currentSpace = null;

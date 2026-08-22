@@ -384,6 +384,17 @@ class FarmGame {
     });
   }
 
+  // Applies a live appearance change (new costume, new dye) broadcast by
+  // someone else already sharing this space — see the 'presence:appearance'
+  // socket event in main.js. A dedicated method rather than reusing
+  // upsertRemotePlayer() for this: that function also expects `username`/
+  // position data and would stomp existing.username with undefined if
+  // called with only an appearance payload.
+  setRemotePlayerAppearance(userId, appearance) {
+    const existing = this.remotePlayers.get(userId);
+    if (existing && appearance) Object.assign(existing, appearance);
+  }
+
   // Applies another player's sit/lie state to their on-screen avatar —
   // called when the 'presence:rest' socket event arrives (see main.js),
   // so a visitor actually sees a friend resting on furniture instead of
