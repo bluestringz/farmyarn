@@ -14,8 +14,14 @@ const DYE_PALETTE = ['#c0392b', '#e8a527', '#4f8f2e', '#3d8fe0', '#8e44ad', '#e0
 // drawn "wall", see the back-wall strip in game.js's _drawIndoorRoom).
 // Checked in both /place-object (initial placement) and /move-object
 // (repositioning something already placed), so there's no way to end up
-// with, say, a TV floating in the middle of the floor either way.
-const WALL_MOUNTED_ITEMS = new Set(['painting', 'wall_light', 'tv', 'aircon']);
+// with, say, an aircon floating in the middle of the floor either way.
+const WALL_MOUNTED_ITEMS = new Set(['painting', 'wall_light', 'aircon']);
+
+// Tabletop décor — has to sit on the SAME tile as an actual table (a
+// Dining Table or Side Table), not just anywhere on open floor. Checked
+// against TABLE_ITEM_IDS below.
+const MUST_BE_ON_TABLE_ITEMS = new Set(['table_lamp', 'tv']);
+const TABLE_ITEM_IDS = new Set(['table', 'side_table']);
 
 // Preset wall-color choices for House and Mansion — offered as a picker in
 // the Shop before buying, so not every player's home is identically
@@ -263,19 +269,44 @@ module.exports = function shopRoutes(db) {
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + w > boundsW || y + h > boundsH) {
       return res.status(400).json({ error: 'Placement out of bounds' });
     }
-    // Wall-mounted décor (frames, lights, TV, aircon) only makes visual
-    // sense flush against the room's one drawn wall — the back wall strip
-    // along the top of the room, row y=0 (see _drawIndoorRoom in game.js).
-    // Everything else in the room is open floor, so this is the only row
-    // that actually reads as "the wall".
-    if (category === 'interior' && WALL_MOUNTED_ITEMS.has(itemId) && y !== 0) {
-      return res.status(400).json({ error: `${def.name} has to be mounted against the back wall (the top row of the room)` });
+    // Wall-mounted décor (frames, lights, aircon) only makes visual sense
+    // flush against one of the room's walls — the back wall (row y=0,
+    // with the actual drawn wallpaper strip) or either side wall (column
+    // x=0 or the rightmost column) — see _drawIndoorRoom in game.js,
+    // which draws a border on all four sides of the room. The one edge
+    // that's NOT a wall is the bottom row (y=height-1) — that's the open
+    // side facing the camera.
+    if (category === 'interior' && WALL_MOUNTED_ITEMS.has(itemId)) {
+      const againstWall = y === 0 || x === 0 || x + w === boundsW;
+      if (!againstWall) {
+        return res.status(400).json({ error: `${def.name} has to be mounted against a wall — the top row, or the leftmost/rightmost column of the room` });
+      }
     }
-    const blocking = findOverlap(db, farm.id, loc, x, y, w, h);
-    if (blocking) {
-      return res.status(400).json({
-        error: `That spot already has a ${blocking.def ? blocking.def.name : blocking.object.item_id} on it (at ${blocking.object.grid_x},${blocking.object.grid_y}) — remove it first or pick a different spot.`,
-      });
+
+    // Tabletop décor (table lamp, TV) has to actually sit ON a table —
+    // find everything already occupying this spot and, instead of the
+    // normal "anything here at all blocks the spot" rule below, only
+    // reject if something OTHER than a table/side table is there; a bare
+    // table with nothing on it is required, not just allowed.
+    if (category === 'interior' && MUST_BE_ON_TABLE_ITEMS.has(itemId)) {
+      const overlapping = findAllOverlapping(db, farm.id, loc, x, y, w, h);
+      const blocker = overlapping.find((o) => !(o.object.object_type === 'interior' && TABLE_ITEM_IDS.has(o.object.item_id)));
+      if (blocker) {
+        return res.status(400).json({
+          error: `That spot already has a ${blocker.def ? blocker.def.name : blocker.object.item_id} on it (at ${blocker.object.grid_x},${blocker.object.grid_y}) — remove it first or pick a different spot.`,
+        });
+      }
+      const hasTable = overlapping.some((o) => o.object.object_type === 'interior' && TABLE_ITEM_IDS.has(o.object.item_id));
+      if (!hasTable) {
+        return res.status(400).json({ error: `${def.name} has to be placed on top of a table or side table` });
+      }
+    } else {
+      const blocking = findOverlap(db, farm.id, loc, x, y, w, h);
+      if (blocking) {
+        return res.status(400).json({
+          error: `That spot already has a ${blocking.def ? blocking.def.name : blocking.object.item_id} on it (at ${blocking.object.grid_x},${blocking.object.grid_y}) — remove it first or pick a different spot.`,
+        });
+      }
     }
 
     db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(invRow.id);
@@ -353,14 +384,31 @@ module.exports = function shopRoutes(db) {
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + w > boundsW || y + h > boundsH) {
       return res.status(400).json({ error: 'Placement out of bounds' });
     }
-    if (obj.object_type === 'interior' && WALL_MOUNTED_ITEMS.has(obj.item_id) && y !== 0) {
-      return res.status(400).json({ error: `${def.name} has to be mounted against the back wall (the top row of the room)` });
+    if (obj.object_type === 'interior' && WALL_MOUNTED_ITEMS.has(obj.item_id)) {
+      const againstWall = y === 0 || x === 0 || x + w === boundsW;
+      if (!againstWall) {
+        return res.status(400).json({ error: `${def.name} has to be mounted against a wall — the top row, or the leftmost/rightmost column of the room` });
+      }
     }
-    const blocking = findOverlap(db, farm.id, obj.location, x, y, w, h, objectId);
-    if (blocking) {
-      return res.status(400).json({
-        error: `That spot already has a ${blocking.def ? blocking.def.name : blocking.object.item_id} on it (at ${blocking.object.grid_x},${blocking.object.grid_y}) — remove it first or pick a different spot.`,
-      });
+    if (obj.object_type === 'interior' && MUST_BE_ON_TABLE_ITEMS.has(obj.item_id)) {
+      const overlapping = findAllOverlapping(db, farm.id, obj.location, x, y, w, h, objectId);
+      const blocker = overlapping.find((o) => !(o.object.object_type === 'interior' && TABLE_ITEM_IDS.has(o.object.item_id)));
+      if (blocker) {
+        return res.status(400).json({
+          error: `That spot already has a ${blocker.def ? blocker.def.name : blocker.object.item_id} on it (at ${blocker.object.grid_x},${blocker.object.grid_y}) — remove it first or pick a different spot.`,
+        });
+      }
+      const hasTable = overlapping.some((o) => o.object.object_type === 'interior' && TABLE_ITEM_IDS.has(o.object.item_id));
+      if (!hasTable) {
+        return res.status(400).json({ error: `${def.name} has to be placed on top of a table or side table` });
+      }
+    } else {
+      const blocking = findOverlap(db, farm.id, obj.location, x, y, w, h, objectId);
+      if (blocking) {
+        return res.status(400).json({
+          error: `That spot already has a ${blocking.def ? blocking.def.name : blocking.object.item_id} on it (at ${blocking.object.grid_x},${blocking.object.grid_y}) — remove it first or pick a different spot.`,
+        });
+      }
     }
 
     db.prepare('UPDATE farm_objects SET grid_x = ?, grid_y = ?, rotation = ?, updated_at = ? WHERE id = ?')
@@ -582,6 +630,26 @@ function findOverlap(db, farmId, location, x, y, w, h, excludeId) {
     if (overlap) return { object: o, def };
   }
   return null;
+}
+
+// Same as findOverlap, but returns EVERY overlapping object instead of
+// just the first one — needed for tabletop décor (table lamp, TV), where
+// a table occupying that spot is expected/required rather than a
+// blocker, so the caller needs to see all of them to tell "just the
+// table" apart from "the table PLUS something else already there".
+function findAllOverlapping(db, farmId, location, x, y, w, h, excludeId) {
+  const objects = db.prepare(
+    'SELECT * FROM farm_objects WHERE farm_id = ? AND location = ?' + (excludeId ? ' AND id != ?' : '')
+  ).all(...(excludeId ? [farmId, location, excludeId] : [farmId, location]));
+  const overlapping = [];
+  for (const o of objects) {
+    const def = lookupDefSync(db, o.object_type, o.item_id);
+    const ow = def ? def.width || 1 : 1;
+    const oh = def ? def.height || 1 : 1;
+    const overlap = x < o.grid_x + ow && x + w > o.grid_x && y < o.grid_y + oh && y + h > o.grid_y;
+    if (overlap) overlapping.push({ object: o, def });
+  }
+  return overlapping;
 }
 
 function lookupDefSync(db, type, itemId) {

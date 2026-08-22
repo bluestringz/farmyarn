@@ -109,15 +109,20 @@ const UI = (() => {
     log: 'Chopped from a mature tree — sell it, or save it for a future firewood/cooking system.',
     // interiors (house furniture)
     rug: 'Floor decoration for your house interior.',
-    table: 'Dining table for your house interior.',
+    table: 'Dining table for your house interior — table lamps and TVs can be placed on top of it.',
     chair: 'Tap it while indoors to sit — regenerates Energy faster while seated.',
     cabinet: 'Storage furniture for your house interior.',
     bed: 'Tap it while indoors to lie down — regenerates Energy faster while resting.',
     potted_plant: 'Small decorative plant for your house interior.',
-    painting: 'Wall art for your house interior.',
+    painting: 'Wall art — must be placed against a wall (the top row, or the leftmost/rightmost column of the room).',
     fireplace: 'Cozy centerpiece for your house interior.',
     bookshelf: 'Bookshelf for your house interior.',
     stove: 'Tap it to cook harvested crops into food — eating food restores the Energy you need to plow/plant/water.',
+    table_lamp: 'A light source you can place indoors — must be placed on top of a table or side table. Helps push back the dark at night, just like an outdoor Lamp Post.',
+    wall_light: 'Wall-mounted light — must be placed against a wall (the top row, or the leftmost/rightmost column of the room). Also helps push back the dark at night.',
+    tv: 'Must be placed on top of a table or side table.',
+    aircon: 'Wall-mounted air conditioner — must be placed against a wall (the top row, or the leftmost/rightmost column of the room).',
+    side_table: 'Small side table for your house interior — table lamps and TVs can be placed on top of it.',
   };
 
   function renderShop(catalog, activeCategory, player, onBuy, onCategoryChange, onChangeName) {
