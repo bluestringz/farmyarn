@@ -1192,6 +1192,12 @@
           state.me.coins = res.coins;
           renderTopbar();
           UI.toast(`Bought ${quantity} ${itemId} seed${quantity > 1 ? 's' : ''}! Check your Bag, or pick "Plant" to use ${quantity > 1 ? 'them' : 'it'}.`);
+          // Re-fetch the catalog so any stock cap (see admin panel > 📦 Shop
+          // Stock) reflects what was just bought — state.catalog is only
+          // ever fetched once at boot otherwise, so the "X left in stock"
+          // shown here would stay frozen at its original value until a
+          // full page reload without this.
+          state.catalog = await Api.catalog();
           await renderShopPanel('crops');
           return;
         }
@@ -1229,6 +1235,10 @@
           }
           const toolHint = cat === 'interior' ? 'Decorate (inside your house)' : cat === 'animal' ? 'Animal' : 'Build';
           UI.toast(`Bought! Pick "${toolHint}" on the toolbar to place it.`);
+          // Same reason as the crops branch above — refresh so any stock
+          // cap reflects the purchase immediately instead of needing a
+          // page reload.
+          state.catalog = await Api.catalog();
           await renderShopPanel(cat === 'interior' ? 'interiors' : cat === 'building' ? 'buildings' : cat === 'animal' ? 'animals' : 'decorations');
           return;
         }
