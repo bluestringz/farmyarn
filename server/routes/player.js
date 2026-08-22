@@ -250,7 +250,15 @@ module.exports = function playerRoutes(db) {
 };
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD, server clock (UTC-based)
+  // Philippine Time (UTC+8) day boundary — this game's players are in the
+  // Philippines, so "the next day" (daily reward streaks, the leaderboard
+  // snapshot) should flip at Manila midnight, not UTC midnight (which is
+  // actually 8am in Manila — resetting things mid-morning instead of at
+  // actual midnight was confusing). Adding 8 hours to the current UTC
+  // instant, then reading the date back out via toISOString(), gives the
+  // correct Manila calendar date without needing a timezone library.
+  const phtMillis = Date.now() + 8 * 60 * 60 * 1000;
+  return new Date(phtMillis).toISOString().slice(0, 10);
 }
 
 function computeNextStreakDay(lastClaim, todayString) {

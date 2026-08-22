@@ -1720,10 +1720,24 @@ class FarmGame {
       if (isFullNight && lampSources) {
         for (const obj of lampSources) {
           const isOutdoorLamp = obj.object_type === 'decoration' && obj.item_id === 'lamp';
-          const isIndoorLamp = obj.object_type === 'interior' && (obj.item_id === 'table_lamp' || obj.item_id === 'crafted_table_lamp');
+          const isIndoorLamp = obj.object_type === 'interior' && (obj.item_id === 'table_lamp' || obj.item_id === 'wall_light');
           if (!isOutdoorLamp && !isIndoorLamp) continue;
-          const worldX = (obj.grid_x + 0.5) * TILE;
-          const worldY = (obj.grid_y + 0.55) * TILE; // roughly where the lamp's glass/bulb sits
+          let worldX = (obj.grid_x + 0.5) * TILE;
+          let worldY = (obj.grid_y + 0.55) * TILE; // roughly where the lamp's glass/bulb sits
+          // Wall Light's actual bulb isn't at that floor-level spot at
+          // all anymore — it's mounted up in whichever wall band
+          // _drawIndoorObjects placed it in, so the punch-through glow
+          // needs to follow it there instead of lighting up an empty
+          // patch of floor next to the fixture.
+          if (obj.item_id === 'wall_light' && this.interior) {
+            if (obj.grid_y === 0) {
+              worldY = obj.grid_y * TILE - TILE * 0.3; // up in the back wall band
+            } else if (obj.grid_x === 0) {
+              worldX = obj.grid_x * TILE - TILE * 0.3; // out in the left wall band
+            } else if (obj.grid_x === this.interior.width - 1) {
+              worldX = (obj.grid_x + 1) * TILE + TILE * 0.3; // out in the right wall band
+            }
+          }
           const sx = worldX * this.camera.scale + this.camera.x;
           const sy = worldY * this.camera.scale + this.camera.y;
           const radius = TILE * 1.1 * this.camera.scale;
@@ -2350,10 +2364,35 @@ class FarmGame {
   // (drawn in _drawIndoorRoom) instead of leaving them sitting on the
   // floor tile like a normal piece of furniture.
   static WALL_MOUNTED_FURNITURE = new Set(['painting', 'wall_light', 'aircon']);
+  // Which interior furniture provides a surface other décor can sit ON
+  // TOP of (see TABLE_ITEM_IDS in server/routes/shop.js), and which décor
+  // actually requires one (MUST_BE_ON_TABLE_ITEMS there) — both kept in
+  // sync manually for the same reason as above.
+  static TABLE_FURNITURE = new Set(['table', 'side_table']);
+  static MUST_SIT_ON_TABLE = new Set(['table_lamp', 'tv']);
 
   _drawIndoorObjects() {
     const t = this._estimatedServerTime();
-    for (const obj of this.interior.objects) {
+    const roomWidth = this.interior.width;
+    const ctx = this.ctx;
+    const objects = this.interior.objects;
+
+    // Which tiles have a table/side table on them — checked once up
+    // front so tabletop décor (table lamp, TV) can be (a) drawn AFTER
+    // every table, guaranteeing it visually layers on top regardless of
+    // whatever order the objects array happens to come back in, and (b)
+    // shifted up to sit at roughly tabletop height instead of floor
+    // height, which is where it'd otherwise render like every other
+    // piece of furniture.
+    const tableTiles = new Set();
+    for (const obj of objects) {
+      if (obj.object_type === 'interior' && FarmGame.TABLE_FURNITURE.has(obj.item_id)) {
+        tableTiles.add(`${obj.grid_x},${obj.grid_y}`);
+      }
+    }
+    const tabletopDecor = [];
+
+    for (const obj of objects) {
       const def = this._defFor(obj);
       const w = (def && def.width) || 1, h = (def && def.height) || 1;
       const px = obj.grid_x * TILE, py = obj.grid_y * TILE;
@@ -2366,16 +2405,44 @@ class FarmGame {
         const ready = t >= last + (this._animalProdSeconds(obj.item_id) || 600) && fed;
         this._drawAnimal(px, py, pw, ph, obj.item_id, ready, obj.rotation || 0);
         this._drawFeedIndicator(px, py, pw, fed, ready);
+      } else if (FarmGame.MUST_SIT_ON_TABLE.has(obj.item_id) && tableTiles.has(`${obj.grid_x},${obj.grid_y}`)) {
+        tabletopDecor.push({ obj, px, py, pw, ph });
       } else if (FarmGame.WALL_MOUNTED_FURNITURE.has(obj.item_id) && obj.grid_y === 0) {
-        // Mounted flush in the wall band itself (see _drawIndoorRoom's
-        // wallDepth) — shifted up and squashed to that band's actual
-        // height, instead of drawn at full tile height sitting on the
-        // floor below the wall like a normal piece of furniture.
+        // Mounted flush in the BACK wall band itself (see
+        // _drawIndoorRoom's wallDepth) — shifted up and squashed to that
+        // band's actual height, instead of drawn at full tile height
+        // sitting on the floor below the wall like normal furniture.
         const wallBandH = TILE * 0.6;
         this._drawFurniture(px, py - wallBandH, pw, wallBandH, obj.item_id, obj.rotation || 0);
+      } else if (FarmGame.WALL_MOUNTED_FURNITURE.has(obj.item_id) && (obj.grid_x === 0 || obj.grid_x === roomWidth - 1)) {
+        // Mounted on a SIDE wall (left or right column) — reuse the exact
+        // same "band drawn above the tile" shape as the back-wall case,
+        // then rotate the whole thing 90° around the tile's own center so
+        // that band ends up flush against the side wall band instead
+        // (rotating left for the left wall, right for the right wall) —
+        // rather than needing separate portrait-oriented art for every
+        // wall-mounted item.
+        const wallBandDepth = TILE * 0.6;
+        const isLeft = obj.grid_x === 0;
+        const cx = px + pw / 2, cy = py + ph / 2;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(isLeft ? -Math.PI / 2 : Math.PI / 2);
+        ctx.translate(-cx, -cy);
+        this._drawFurniture(px, py - wallBandDepth, pw, wallBandDepth, obj.item_id, 0);
+        ctx.restore();
       } else {
         this._drawFurniture(px, py, pw, ph, obj.item_id, obj.rotation || 0);
       }
+    }
+
+    // Second pass: tabletop décor drawn LAST (after every table is
+    // already down) so it always layers visually on top of whatever it's
+    // sitting on, shifted up to sit at roughly tabletop height instead of
+    // floor height.
+    const tabletopOffset = TILE * 0.35;
+    for (const { obj, px, py, pw, ph } of tabletopDecor) {
+      this._drawFurniture(px, py - tabletopOffset, pw, ph, obj.item_id, obj.rotation || 0);
     }
   }
 
