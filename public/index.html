@@ -96,6 +96,17 @@
     </div>
   </header>
 
+  <!-- LEADERBOARD (Most Rich) — persistent widget, top-left, over the
+       canvas. Collapsible since it's a HUD overlay that could otherwise
+       sit on top of gameplay the player wants to see. -->
+  <aside id="leaderboard-panel" class="leaderboard-panel">
+    <div class="leaderboard-header" id="leaderboard-toggle">
+      <span>🏆 Most Rich</span>
+      <span class="leaderboard-caret" id="leaderboard-caret">▾</span>
+    </div>
+    <ol class="leaderboard-list" id="leaderboard-list"></ol>
+  </aside>
+
   <!-- VISITING BANNER -->
   <div id="visiting-banner" class="visiting-banner hidden">
     <span id="visiting-text">Visiting someone's farm</span>

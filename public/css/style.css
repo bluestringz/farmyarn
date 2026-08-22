@@ -1106,3 +1106,103 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   background: #fff6e3;
   color: #5e3b1f;
 }
+
+/* ---- Leaderboard (Most Rich) ---- */
+.leaderboard-panel {
+  position: fixed;
+  top: 70px;
+  left: 10px;
+  width: 210px;
+  max-width: calc(100vw - 20px);
+  background: var(--cream);
+  border: 3px solid var(--wood);
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  z-index: 25;
+  overflow: hidden;
+}
+.leaderboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--wood);
+  color: var(--cream);
+  font-family: 'Baloo 2', cursive;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.leaderboard-caret { font-size: 11px; transition: transform 0.15s ease; }
+.leaderboard-panel.collapsed .leaderboard-caret { transform: rotate(-90deg); }
+.leaderboard-panel.collapsed .leaderboard-list { display: none; }
+.leaderboard-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.leaderboard-rank {
+  width: 20px;
+  flex-shrink: 0;
+  text-align: center;
+  font-weight: 700;
+}
+.leaderboard-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leaderboard-coins {
+  flex-shrink: 0;
+  font-weight: 700;
+}
+.leaderboard-empty { font-size: 12px; color: var(--ink-soft); padding: 6px 2px; }
+
+/* Top 3 get a fancier "medal" treatment — bigger emoji rank marker, bold
+   name, and a tinted row background matching gold/silver/bronze. Ranks 4+
+   stay a plain, same-weight list so the top 3 actually stand out instead
+   of everything looking equally important. */
+.leaderboard-row.rank-1, .leaderboard-row.rank-2, .leaderboard-row.rank-3 {
+  border-radius: 8px;
+  font-weight: 800;
+  font-family: 'Baloo 2', cursive;
+}
+.leaderboard-row.rank-1 {
+  background: linear-gradient(90deg, rgba(232,197,71,0.35), rgba(232,197,71,0.1));
+  font-size: 14px;
+  color: #8a6a12;
+}
+.leaderboard-row.rank-1 .leaderboard-rank { font-size: 18px; }
+.leaderboard-row.rank-2 {
+  background: linear-gradient(90deg, rgba(180,180,190,0.35), rgba(180,180,190,0.1));
+  font-size: 13px;
+  color: #6b6b76;
+}
+.leaderboard-row.rank-2 .leaderboard-rank { font-size: 16px; }
+.leaderboard-row.rank-3 {
+  background: linear-gradient(90deg, rgba(205,127,50,0.35), rgba(205,127,50,0.1));
+  font-size: 12.5px;
+  color: #8a5a24;
+}
+.leaderboard-row.rank-3 .leaderboard-rank { font-size: 15px; }
+
+@media (max-width: 640px) {
+  .leaderboard-panel { top: 96px; width: 170px; }
+  .leaderboard-row { font-size: 11px; }
+  .leaderboard-row.rank-1 { font-size: 12.5px; }
+  .leaderboard-row.rank-2 { font-size: 12px; }
+  .leaderboard-row.rank-3 { font-size: 11.5px; }
+}

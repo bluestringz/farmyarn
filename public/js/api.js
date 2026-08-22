@@ -93,6 +93,7 @@ const Api = (() => {
     notifications: () => request('GET', '/api/player/notifications'),
     markNotificationsRead: (notificationId) => request('POST', '/api/player/notifications/read', { notificationId }),
     dailyRewardStatus: () => request('GET', '/api/player/daily-reward/status'),
+    leaderboard: () => request('GET', '/api/player/leaderboard'),
     claimDailyReward: () => request('POST', '/api/player/daily-reward/claim'),
 
     // Farm

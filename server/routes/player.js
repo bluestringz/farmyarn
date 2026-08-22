@@ -129,6 +129,17 @@ module.exports = function playerRoutes(db) {
     res.json({ ...publicUser(fresh), xpProgress: xpProgress(fresh.xp) });
   });
 
+  // GET /api/player/leaderboard — top players by coins on hand, for the
+  // "Most Rich" ranking panel. Admin accounts are excluded — they aren't
+  // real players competing for the ranking, and often sit on artificially
+  // large balances from testing/granting rewards. Small, fixed-size
+  // result (top 10) refreshed periodically by the client — no pagination
+  // needed for a leaderboard this short.
+  router.get('/leaderboard', (req, res) => {
+    const rows = db.prepare('SELECT id, username, display_name, coins FROM users WHERE is_admin = 0 ORDER BY coins DESC LIMIT 10').all();
+    res.json(rows.map((r) => ({ id: r.id, name: r.display_name || r.username, coins: r.coins })));
+  });
+
   // GET /api/player/outfits - every outfit, flagged with whether this player owns it
   router.get('/outfits', (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);

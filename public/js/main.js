@@ -171,10 +171,46 @@
     initPlacementBar();
     initChat();
     checkDailyReward();
+    initLeaderboard();
 
     setInterval(refreshPlayer, 20000); // keep energy/coins reasonably fresh
     setInterval(refreshCurrentFarm, 45000); // catch server-side changes (friend watered a crop, etc.)
     setInterval(() => { if (state.inMarket) refreshMarketStalls(); }, 20000); // keep stall listings fresh
+    setInterval(loadLeaderboard, 30000); // coin rankings shift as people earn/spend
+  }
+
+  // ---- Leaderboard (Most Rich) ----
+  function initLeaderboard() {
+    const panel = document.getElementById('leaderboard-panel');
+    document.getElementById('leaderboard-toggle').addEventListener('click', () => {
+      panel.classList.toggle('collapsed');
+    });
+    loadLeaderboard();
+  }
+
+  async function loadLeaderboard() {
+    const list = document.getElementById('leaderboard-list');
+    try {
+      const rows = await Api.leaderboard();
+      if (!rows.length) {
+        list.innerHTML = '<li class="leaderboard-empty">No players yet.</li>';
+        return;
+      }
+      const medal = { 1: '🥇', 2: '🥈', 3: '🥉' };
+      list.innerHTML = rows.map((r, i) => {
+        const rank = i + 1;
+        const rankClass = rank <= 3 ? ` rank-${rank}` : '';
+        const rankMarker = medal[rank] || rank;
+        return `
+          <li class="leaderboard-row${rankClass}">
+            <span class="leaderboard-rank">${rankMarker}</span>
+            <span class="leaderboard-name">${escapeHtml(r.name)}</span>
+            <span class="leaderboard-coins">🪙${r.coins.toLocaleString('en-US')}</span>
+          </li>`;
+      }).join('');
+    } catch (err) {
+      // Non-critical HUD widget — fail quietly rather than interrupting play.
+    }
   }
 
   async function refreshPlayer() {
