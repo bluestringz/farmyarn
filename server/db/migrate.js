@@ -306,6 +306,22 @@ function migrate(db) {
     key TEXT PRIMARY KEY,
     value INTEGER NOT NULL
   );
+
+  -- One frozen "Most Rich" ranking per calendar day (server date, same
+  -- YYYY-MM-DD convention as daily_rewards_claimed above) — recomputed
+  -- lazily on the FIRST leaderboard request after midnight (see
+  -- getLeaderboard in server/routes/player.js), not on every request, so
+  -- the ranking only ever changes once a day instead of shifting live as
+  -- people earn/spend coins.
+  CREATE TABLE IF NOT EXISTS leaderboard_snapshot (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_date TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    coins INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_leaderboard_date ON leaderboard_snapshot(snapshot_date);
   `);
 
   addColumnsIfMissing(db);

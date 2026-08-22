@@ -176,7 +176,7 @@
     setInterval(refreshPlayer, 20000); // keep energy/coins reasonably fresh
     setInterval(refreshCurrentFarm, 45000); // catch server-side changes (friend watered a crop, etc.)
     setInterval(() => { if (state.inMarket) refreshMarketStalls(); }, 20000); // keep stall listings fresh
-    setInterval(loadLeaderboard, 30000); // coin rankings shift as people earn/spend
+    setInterval(loadLeaderboard, 5 * 60000); // the ranking itself only changes once a day (see server), this just catches the midnight rollover for anyone who stays online that long without reloading
   }
 
   // ---- Leaderboard (Most Rich) ----

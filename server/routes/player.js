@@ -129,15 +129,30 @@ module.exports = function playerRoutes(db) {
     res.json({ ...publicUser(fresh), xpProgress: xpProgress(fresh.xp) });
   });
 
-  // GET /api/player/leaderboard — top players by coins on hand, for the
-  // "Most Rich" ranking panel. Admin accounts are excluded — they aren't
-  // real players competing for the ranking, and often sit on artificially
-  // large balances from testing/granting rewards. Small, fixed-size
-  // result (top 10) refreshed periodically by the client — no pagination
-  // needed for a leaderboard this short.
+  // GET /api/player/leaderboard — the "Most Rich" ranking, frozen for the
+  // whole calendar day (server clock) instead of shifting live as people
+  // earn/spend coins. The FIRST request after midnight recomputes it from
+  // current balances and stores that as the day's snapshot; every request
+  // for the rest of the day just returns that same stored snapshot — same
+  // "lazily settle on read" pattern as the daily reward streak and crop/
+  // animal state elsewhere in this codebase, so no separate cron/scheduler
+  // process is needed. Admin accounts are excluded — they aren't real
+  // players competing for the ranking, and often sit on artificially large
+  // balances from testing/granting rewards.
   router.get('/leaderboard', (req, res) => {
-    const rows = db.prepare('SELECT id, username, display_name, coins FROM users WHERE is_admin = 0 ORDER BY coins DESC LIMIT 10').all();
-    res.json(rows.map((r) => ({ id: r.id, name: r.display_name || r.username, coins: r.coins })));
+    const today = todayStr();
+    let rows = db.prepare('SELECT rank, user_id AS id, name, coins FROM leaderboard_snapshot WHERE snapshot_date = ? ORDER BY rank ASC').all(today);
+    if (rows.length === 0) {
+      const fresh = db.prepare('SELECT id, username, display_name, coins FROM users WHERE is_admin = 0 ORDER BY coins DESC LIMIT 10').all();
+      const insert = db.prepare('INSERT INTO leaderboard_snapshot (snapshot_date, rank, user_id, name, coins) VALUES (?, ?, ?, ?, ?)');
+      const txn = db.transaction((players) => {
+        db.prepare('DELETE FROM leaderboard_snapshot WHERE snapshot_date != ?').run(today); // keep only today's rows around
+        players.forEach((p, i) => insert.run(today, i + 1, p.id, p.display_name || p.username, p.coins));
+      });
+      txn(fresh);
+      rows = db.prepare('SELECT rank, user_id AS id, name, coins FROM leaderboard_snapshot WHERE snapshot_date = ? ORDER BY rank ASC').all(today);
+    }
+    res.json(rows.map((r) => ({ id: r.id, name: r.name, coins: r.coins })));
   });
 
   // GET /api/player/outfits - every outfit, flagged with whether this player owns it
