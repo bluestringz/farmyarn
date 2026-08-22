@@ -4142,18 +4142,54 @@ class FarmGame {
       ctx.fillRect(x + w * 0.62, by + h * 0.34, w * 0.06, h * 0.24);
     } else if (style.shape === 'lamp') {
       const cx = x + w / 2;
+      const t = performance.now() / 1000;
+      // Deterministic per-lamp phase offset from its own screen position —
+      // so multiple lamp posts breathe/flicker out of sync with each
+      // other instead of all pulsing in perfect unison.
+      const phase = (x + y) * 0.013;
       ctx.fillStyle = style.post;
       ctx.fillRect(cx - w * 0.03, y + h * 0.28, w * 0.06, h * 0.55);
       ctx.fillStyle = style.post;
       ctx.beginPath(); ctx.ellipse(cx, y + h * 0.83, w * 0.12, h * 0.03, 0, 0, Math.PI * 2); ctx.fill();
+
+      // "Breathing" glow — the bulb slowly brightens and dims instead of
+      // sitting at one fixed brightness, same pulsing idea as the Special
+      // Outfit aura's glow puddle.
+      const pulse = 0.6 + 0.4 * Math.sin(t * 1.6 + phase);
       ctx.save();
       ctx.shadowColor = style.glow;
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 6 + pulse * 10;
+      ctx.globalAlpha = 0.75 + pulse * 0.25;
       ctx.fillStyle = style.glass;
       ctx.beginPath();
       ctx.ellipse(cx, y + h * 0.2, w * 0.14, h * 0.16, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
+
+      // Firefly-like glowing particles drifting around the lamp head —
+      // same "glowing orbit" idea as the Special Outfit aura's floating
+      // orbs, just smaller and scoped to right around the lamp instead of
+      // a whole character. Gradient-based halos (not shadowBlur) to keep
+      // this cheap even with several lamp posts on one farm.
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const fireflyCount = 3;
+      for (let i = 0; i < fireflyCount; i++) {
+        const angle = t * (0.7 + i * 0.15) + phase + (i / fireflyCount) * Math.PI * 2;
+        const orbitR = w * (0.32 + 0.15 * Math.sin(t * 0.9 + i * 2));
+        const fx = cx + Math.cos(angle) * orbitR;
+        const fy = y + h * 0.16 + Math.sin(angle * 1.3) * h * 0.14 - i * 2;
+        const flicker = 0.35 + 0.65 * Math.sin(t * 4 + i * 3.1 + phase);
+        const haloGrad = ctx.createRadialGradient(fx, fy, 0, fx, fy, 5);
+        haloGrad.addColorStop(0, `rgba(255,240,150,${Math.max(0, flicker)})`);
+        haloGrad.addColorStop(1, 'rgba(255,240,150,0)');
+        ctx.fillStyle = haloGrad;
+        ctx.beginPath(); ctx.arc(fx, fy, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(255,255,230,${Math.max(0, flicker)})`;
+        ctx.beginPath(); ctx.arc(fx, fy, 1.2, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+
       ctx.strokeStyle = style.post;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
