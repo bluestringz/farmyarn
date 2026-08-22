@@ -551,6 +551,22 @@ class FarmGame {
     if (this.onSelfMove) this.onSelfMove(next.x, next.y);
   }
 
+  // Walks to a tile and resolves once the character actually finishes
+  // moving there (or resolves immediately if already there / the tile is
+  // unreachable) — used for the "walk to the door, THEN fade/transition"
+  // entry flow (see main.js's enterInterior/enterCasino), so entering a
+  // building reads as actually walking up to it instead of teleporting.
+  walkToAndWait(tileX, tileY) {
+    this.walkTo(tileX, tileY, null);
+    return new Promise((resolve) => {
+      const check = () => {
+        if (!this._character.moving) resolve();
+        else requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    });
+  }
+
   walkTo(tileX, tileY, actionGlyph) {
     const c = this._character;
     // Moving inherently means getting up off whatever furniture — clear
@@ -780,10 +796,21 @@ class FarmGame {
     this._character.moving = false;
   }
 
-  exitInteriorMode() {
+  exitInteriorMode(doorTile) {
     this.mode = 'outdoor';
     this.interior = null;
-    this._repositionOnReturnToFarm();
+    // A specific door tile (see main.js's enterInterior, which records
+    // exactly where the player walked in) puts them back RIGHT OUTSIDE
+    // that same building instead of always snapping back near the
+    // farmhouse regardless of which building was actually entered.
+    if (doorTile && this.farm) {
+      const wx = doorTile.x * TILE + TILE / 2, wy = doorTile.y * TILE + TILE / 2;
+      const c = this._character;
+      c.x = wx; c.y = wy; c.targetX = wx; c.targetY = wy;
+      c.moving = false; c.path = [];
+    } else {
+      this._repositionOnReturnToFarm();
+    }
     if (this.farm) this._centerCamera();
   }
 
@@ -817,6 +844,16 @@ class FarmGame {
     this._character.x = wx; this._character.y = wy;
     this._character.targetX = wx; this._character.targetY = wy;
     this._character.moving = false;
+  }
+
+  // The tile just outside the Casino's door — the only walkable tile
+  // right below its footprint (see CASINO_BUILDING) — used by main.js to
+  // walk the player there before fading into the Casino's interior.
+  getCasinoDoorTile() {
+    return {
+      x: CASINO_BUILDING.x + Math.floor(CASINO_BUILDING.width / 2),
+      y: CASINO_BUILDING.y + CASINO_BUILDING.height,
+    };
   }
 
   exitParkMode() {
@@ -1393,6 +1430,7 @@ class FarmGame {
     ctx.scale(this.camera.scale, this.camera.scale);
 
     this._drawFarmShadowBase();
+    this._visibleBounds = this._getVisibleTileBounds();
     this._drawTiles();
     this._drawFlatDecorations();
     this._drawSceneSorted();
@@ -1524,12 +1562,23 @@ class FarmGame {
   _drawSceneSorted() {
     const t = this._estimatedServerTime();
     const items = [];
+    const b = this._visibleBounds;
+    // Same viewport-culling reasoning as _drawTiles/_drawFlatDecorations —
+    // a crop/object outside the visible area doesn't need to be drawn OR
+    // even added to the depth-sort list, so this scales with what's
+    // actually on screen instead of the whole farm's total crop/object
+    // count. Remote players and the local character are never culled —
+    // there are only ever a handful of those at once regardless of farm
+    // size, so it's not worth the complexity.
+    const inView = (gx, gy) => !b || (gx >= b.minX && gx <= b.maxX && gy >= b.minY && gy <= b.maxY);
 
     for (const crop of this.farm.crops) {
+      if (!inView(crop.tile_x, crop.tile_y)) continue;
       items.push({ sortY: (crop.tile_y + 1) * TILE, draw: () => this._drawCropItem(crop, t) });
     }
     for (const obj of this.farm.objects) {
       if (obj.object_type === 'decoration' && FarmGame.FLAT_DECORATIONS.has(obj.item_id)) continue;
+      if (!inView(obj.grid_x, obj.grid_y)) continue;
       const def = this._defFor(obj);
       const h = (def && def.height) || 1;
       items.push({ sortY: (obj.grid_y + h) * TILE, draw: () => this._drawObjectItem(obj, t) });
@@ -1561,8 +1610,13 @@ class FarmGame {
   // the base ground layer, before anything gets depth-sorted on top of it.
   _drawFlatDecorations() {
     const t = this._estimatedServerTime();
+    const b = this._visibleBounds;
     for (const obj of this.farm.objects) {
       if (obj.object_type === 'decoration' && FarmGame.FLAT_DECORATIONS.has(obj.item_id)) {
+        // Same viewport-culling reasoning as _drawTiles above — skip
+        // anything outside the visible area instead of drawing every
+        // decoration on the whole farm every frame.
+        if (b && (obj.grid_x < b.minX || obj.grid_x > b.maxX || obj.grid_y < b.minY || obj.grid_y > b.maxY)) continue;
         this._drawObjectItem(obj, t);
       }
     }
@@ -2948,22 +3002,59 @@ class FarmGame {
   }
 
 
+  // Computes which farm tiles actually fall within the visible canvas
+  // right now, given the current camera pan/zoom — computed ONCE per
+  // frame in _draw() and shared by _drawTiles/_drawFlatDecorations/
+  // _drawSceneSorted (all farm-wide loops whose cost used to scale with
+  // total farm size instead of how much of it is actually on screen).
+  // A small tile margin (pad) keeps anything tall (a tree, a building)
+  // from visibly popping in/out right at the edge of the screen.
+  _getVisibleTileBounds() {
+    const rect = this.canvas.getBoundingClientRect();
+    const pad = 2;
+    return {
+      minX: Math.max(0, Math.floor((-this.camera.x / this.camera.scale) / TILE) - pad),
+      minY: Math.max(0, Math.floor((-this.camera.y / this.camera.scale) / TILE) - pad),
+      maxX: Math.min(this.farm.width - 1, Math.ceil(((rect.width - this.camera.x) / this.camera.scale) / TILE) + pad),
+      maxY: Math.min(this.farm.height - 1, Math.ceil(((rect.height - this.camera.y) / this.camera.scale) / TILE) + pad),
+    };
+  }
+
   _drawTiles() {
     const ctx = this.ctx;
-    const tilesByPos = {};
-    for (const t of this.farm.tiles) tilesByPos[`${t.x},${t.y}`] = t;
-    const wateredByPos = {};
-    for (const crop of this.farm.crops) {
-      if (crop.watered) wateredByPos[`${crop.tile_x},${crop.tile_y}`] = true;
+    // Rebuilding these lookup maps from farm.tiles/farm.crops used to
+    // happen EVERY FRAME (60fps) regardless of whether the farm's data had
+    // actually changed since the last one — cheap on a small farm, but the
+    // cost scales with total tile/crop count. farm.tiles/farm.crops are
+    // only ever REPLACED wholesale (a fresh array from setFarm() after an
+    // API refetch), never mutated element-by-element, so a plain
+    // reference check safely tells us when a rebuild is actually needed
+    // instead of redoing it unconditionally on every single frame.
+    if (this._tileCacheSource !== this.farm.tiles) {
+      this._tilesByPosCache = {};
+      for (const t of this.farm.tiles) this._tilesByPosCache[`${t.x},${t.y}`] = t;
+      this._tileCacheSource = this.farm.tiles;
     }
+    if (this._wateredCacheSource !== this.farm.crops) {
+      this._wateredByPosCache = {};
+      for (const crop of this.farm.crops) {
+        if (crop.watered) this._wateredByPosCache[`${crop.tile_x},${crop.tile_y}`] = true;
+      }
+      this._wateredCacheSource = this.farm.crops;
+    }
+    const tilesByPos = this._tilesByPosCache;
+    const wateredByPos = this._wateredByPosCache;
 
     const grassShades = ['#8fc93a', '#96cf42', '#83c02f', '#9dd44f'];
     const soilShades = ['#8b5e34', '#96693c', '#7f552f', '#8f6438'];
     // darker, cooler tones for freshly-watered soil so it visibly reads as damp
     const wetSoilShades = ['#5c3d20', '#66432a', '#523419', '#5e3f22'];
 
-    for (let y = 0; y < this.farm.height; y++) {
-      for (let x = 0; x < this.farm.width; x++) {
+    const b = this._visibleBounds;
+    const minX = b.minX, minY = b.minY, maxX = b.maxX, maxY = b.maxY;
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
         const t = tilesByPos[`${x},${y}`] || { state: 'grass' };
         const px = x * TILE, py = y * TILE;
         const rnd = this._hash(x, y, 1);

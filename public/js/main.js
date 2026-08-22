@@ -293,6 +293,26 @@
   // owner's id so the owner always sees visitors) or `market`. Interior
   // (house) has no shared presence.
 
+  // ---------------- Scene fade transition ----------------
+  // Used for the "walk to the door, fade to black, appear inside/outside"
+  // effect on entering/exiting a house/coop/barn/mansion/casino — see
+  // enterInterior/exitHouse/enterCasino/exitCasino. Duration must match
+  // #scene-fade's CSS transition (0.32s) since there's no transitionend
+  // wiring here, just a matching timeout.
+  const FADE_MS = 320;
+  function fadeOut() {
+    return new Promise((resolve) => {
+      document.getElementById('scene-fade').classList.add('active');
+      setTimeout(resolve, FADE_MS);
+    });
+  }
+  function fadeIn() {
+    return new Promise((resolve) => {
+      document.getElementById('scene-fade').classList.remove('active');
+      setTimeout(resolve, FADE_MS);
+    });
+  }
+
   function joinSpace(spaceId) {
     if (state.currentSpace === spaceId) return;
     if (state.currentSpace && state.socket) state.socket.emit('space:leave', { space: state.currentSpace });
@@ -366,6 +386,29 @@
   // (buildingId is null for the house, since it's a singleton). state.inHouse
   // stays true for ALL of these (a lot of existing "restrict farm tools
   // while inside" checks already key off it) — this tracks the specifics.
+  // Walks the player to a building's doorstep (the walkable tile just
+  // below its footprint), fades to black, THEN runs the actual enter
+  // logic (which fetches/renders the interior) and fades back in — so
+  // walking up to a house/coop/barn/mansion reads as actually entering
+  // it instead of teleporting the instant it's tapped. `obj` is the
+  // farm_objects row for the building (has grid_x/grid_y); its
+  // width/height come from the catalog via findDef. Records the doorstep
+  // tile in state.lastDoorTile so exitHouse() can send the player back
+  // out to that exact spot.
+  async function walkToDoorAndEnter(obj, enterFn) {
+    const def = findDef('building', obj.item_id);
+    const width = (def && def.width) || 2, height = (def && def.height) || 2;
+    const doorTile = { x: obj.grid_x + Math.floor(width / 2), y: obj.grid_y + height };
+    await game.walkToAndWait(doorTile.x, doorTile.y);
+    state.lastDoorTile = doorTile;
+    await fadeOut();
+    try {
+      await enterFn();
+    } finally {
+      await fadeIn();
+    }
+  }
+
   async function enterInterior(opts, bannerId) {
     // Anyone can walk into a house/coop/barn/cow_barn now, owner or
     // visitor alike — same as being able to see the outdoor farm already.
@@ -497,7 +540,10 @@
       } catch (err) { /* non-critical — don't block leaving over this */ }
     }
     setLocalRestPose(null);
-    game.exitInteriorMode();
+    await fadeOut();
+    // Puts the player back RIGHT OUTSIDE the specific building they were
+    // just in (see walkToDoorAndEnter above), not a generic default spot.
+    game.exitInteriorMode(state.lastDoorTile);
     state.inHouse = false;
     state.interiorSpace = null;
     clearPendingPlacement();
@@ -510,6 +556,7 @@
     // they're inside for exactly this reason).
     if (state.viewingUserId) await loadFarm(state.viewingUserId);
     else await loadOwnFarm();
+    await fadeIn();
   }
 
   async function refreshInterior() {
@@ -980,7 +1027,7 @@
     if (!state.inHouse && obj.item_id === 'farmhouse' && obj.object_type === 'building'
         && state.tool !== 'build' && state.tool !== 'plow' && state.tool !== 'plant' && state.tool !== 'harvest'
         && state.tool !== 'move' && state.tool !== 'remove') {
-      await enterHouse();
+      await walkToDoorAndEnter(obj, enterHouse);
       return;
     }
 
@@ -988,7 +1035,7 @@
     if (!state.inHouse && ENTERABLE_PEN_BUILDINGS.has(obj.item_id) && obj.object_type === 'building'
         && state.tool !== 'build' && state.tool !== 'plow' && state.tool !== 'plant' && state.tool !== 'harvest'
         && state.tool !== 'move' && state.tool !== 'remove') {
-      await enterBuilding(obj);
+      await walkToDoorAndEnter(obj, () => enterBuilding(obj));
       return;
     }
 
@@ -1400,6 +1447,11 @@
   // server data to fetch on entry, same as the Park itself. Only the bet
   // config (odds/costs) and the actual bet result come from the server.
   async function enterCasino() {
+    // Walk up to the Casino's door first, then fade — same "actually walk
+    // there instead of teleporting" treatment as houses/coops/barns.
+    const doorTile = game.getCasinoDoorTile();
+    await game.walkToAndWait(doorTile.x, doorTile.y);
+    await fadeOut();
     state.inCasino = true;
     state.casinoFloor = 1;
     game.setCasinoMode(1);
@@ -1408,16 +1460,21 @@
     joinSpace('casino:1');
     document.getElementById('park-banner').classList.add('hidden');
     document.getElementById('casino-banner').classList.remove('hidden');
+    await fadeIn();
   }
 
   async function exitCasino() {
     releaseCasinoLock();
+    await fadeOut();
     state.inCasino = false;
     state.casinoFloor = null;
+    // exitCasinoMode() already places the player right outside the
+    // Casino's own door (see game.js) — no doorTile argument needed here.
     game.exitCasinoMode();
     document.getElementById('casino-banner').classList.add('hidden');
     document.getElementById('park-banner').classList.remove('hidden');
     joinSpace('park');
+    await fadeIn();
   }
 
   function handleCasinoStairsClick(toFloor) {
