@@ -57,8 +57,12 @@ module.exports = function casinoRoutes(db) {
     const tier = config.winChanceByBet ? rollSlotResult(config, betAmount) : rollTier(config.tiers);
     let energyReward = 0;
     let ppReward = 0;
+    let gmReward = 0;
     if (tier) {
-      if (tier.ppFlat != null) {
+      if (tier.gmFlat != null) {
+        gmReward = tier.gmFlat;
+        db.prepare('UPDATE users SET gm_points = gm_points + ? WHERE id = ?').run(gmReward, req.userId);
+      } else if (tier.ppFlat != null) {
         ppReward = tier.ppFlat;
         db.prepare('UPDATE users SET premium_currency = premium_currency + ? WHERE id = ?').run(ppReward, req.userId);
       } else {
@@ -69,7 +73,7 @@ module.exports = function casinoRoutes(db) {
       }
     }
 
-    const updated = db.prepare('SELECT coins, energy, premium_currency FROM users WHERE id = ?').get(req.userId);
+    const updated = db.prepare('SELECT coins, energy, premium_currency, gm_points FROM users WHERE id = ?').get(req.userId);
     const response = {
       ok: true,
       machine,
@@ -79,9 +83,11 @@ module.exports = function casinoRoutes(db) {
       tier: tier ? { id: tier.id, label: tier.label } : null,
       energyReward,
       ppReward,
+      gmReward,
       coins: updated.coins,
       energy: updated.energy,
       premiumCurrency: updated.premium_currency,
+      gmPoints: updated.gm_points,
     };
     if (config.colorPalette) {
       response.color = color;

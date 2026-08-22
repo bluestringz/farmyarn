@@ -1069,7 +1069,7 @@ const UI = (() => {
   // Energy — see machine.energyCostByBet), hit START, watch the 3 reels
   // spin and land. Same pick -> play -> animate -> show-result loop shape
   // as renderColorGamePanel above.
-  const SYMBOL_DISPLAY = { seven: '7', bar: 'BAR', bell: '🔔', cherry: '🍒', pp_logo: '💎' };
+  const SYMBOL_DISPLAY = { seven: '7', bar: 'BAR', bell: '🔔', cherry: '🍒', pp_logo: '💎', gm: '🎖️' };
   function renderSlotPanel(machine, me, onPlay) {
     const body = panelBody();
     let selectedBet = machine.betOptions[0];
@@ -1093,7 +1093,7 @@ const UI = (() => {
         <p class="panel-hint" style="margin-top:12px;font-weight:700;">Possible rewards:</p>
         <div>
           ${machine.tiers.map((t) => {
-            const reward = t.ppFlat != null ? `${t.ppFlat} PP 💎` : `${Math.round(t.betMultiplier * 100)}% of bet in ⚡ energy`;
+            const reward = t.gmFlat != null ? `${t.gmFlat} GM Point${t.gmFlat === 1 ? '' : 's'} 🎖️` : t.ppFlat != null ? `${t.ppFlat} PP 💎` : `${Math.round(t.betMultiplier * 100)}% of bet in ⚡ energy`;
             const symbols = Array(t.matchCount).fill(SYMBOL_DISPLAY[t.symbol] || t.symbol)
               .map((s) => `<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:#fff6e3;border:2px solid #5e3b1f;border-radius:4px;font-weight:800;font-size:13px;${t.symbol === 'seven' ? 'color:#c0392b;' : 'color:#2a1a10;'}">${s}</span>`)
               .join('');
@@ -1144,7 +1144,7 @@ const UI = (() => {
           setTimeout(() => {
             playing = false;
             const resultText = res.win
-              ? `🎉 ${res.tier.label}! ${res.ppReward > 0 ? `+${res.ppReward} PP 💎` : `+${res.energyReward} ⚡ Energy`}`
+              ? `🎉 ${res.tier.label}! ${res.gmReward > 0 ? `+${res.gmReward} GM Point${res.gmReward === 1 ? '' : 's'} 🎖️` : res.ppReward > 0 ? `+${res.ppReward} PP 💎` : `+${res.energyReward} ⚡ Energy`}`
               : 'No match this time — try again!';
             const resultColor = res.win ? '#4f8f2e' : '#c0392b';
             render();

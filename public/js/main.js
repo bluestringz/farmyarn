@@ -1423,6 +1423,7 @@
           state.me.coins = res.coins;
           state.me.energy = res.energy;
           state.me.premiumCurrency = res.premiumCurrency;
+          state.me.gmPoints = res.gmPoints;
           renderTopbar();
           if (res.win) game.playAction('🎉');
           return res;
@@ -1435,6 +1436,7 @@
           state.me.coins = res.coins;
           state.me.energy = res.energy;
           state.me.premiumCurrency = res.premiumCurrency;
+          state.me.gmPoints = res.gmPoints;
           renderTopbar();
           if (res.win) game.playAction('🎉');
           return res;
@@ -1447,6 +1449,7 @@
           state.me.coins = res.coins;
           state.me.energy = res.energy;
           state.me.premiumCurrency = res.premiumCurrency;
+          state.me.gmPoints = res.gmPoints;
           renderTopbar();
           if (res.win) game.playAction('🎉');
           return res;
@@ -1460,9 +1463,10 @@
           state.me.coins = res.coins;
           state.me.energy = res.energy;
           state.me.premiumCurrency = res.premiumCurrency;
+          state.me.gmPoints = res.gmPoints;
           renderTopbar();
           if (res.win) {
-            const rewardText = res.ppReward > 0 ? `+${res.ppReward} PP 💎` : `+${res.energyReward} ⚡ Energy`;
+            const rewardText = res.gmReward > 0 ? `+${res.gmReward} GM Point${res.gmReward === 1 ? '' : 's'} 🎖️` : res.ppReward > 0 ? `+${res.ppReward} PP 💎` : `+${res.energyReward} ⚡ Energy`;
             UI.toast(`🎉 ${res.tier.label}! ${rewardText}`);
             game.playAction('🎉');
           } else {

@@ -9,10 +9,11 @@
 // only matters for the swatch UI, not the odds below.
 const COLOR_PALETTE = ['red', 'yellow', 'white', 'pink', 'blue', 'green'];
 
-// The 5 symbols on Lucky 777's reels. 'pp_logo' is the special symbol
-// behind the two PP (premium currency) tiers — everything else pays in
-// Energy. Order only matters for the reel UI, not the odds below.
-const REEL_SYMBOLS = ['seven', 'bar', 'bell', 'cherry', 'pp_logo'];
+// The 6 symbols on Lucky 777's reels. 'pp_logo' is the special symbol
+// behind the two PP (premium currency) tiers, 'gm' is the even-rarer
+// symbol behind the GM Points tier (see gmFlat below) — everything else
+// pays in Energy. Order only matters for the reel UI, not the odds below.
+const REEL_SYMBOLS = ['seven', 'bar', 'bell', 'cherry', 'pp_logo', 'gm'];
 
 // ---- Machine configs (DEFAULTS — see getLiveMachines() for the actual
 // live numbers, which apply any admin overrides on top of these) ----
@@ -71,7 +72,11 @@ const DEFAULT_MACHINES = {
   // other, not a standalone %) to decide WHICH prize. Energy cost per
   // spin also scales with the bet (energyCostByBet). `symbol`/`matchCount`
   // drive the 3-reel `reveal` built in /bet below, so the reel animation
-  // always visually matches whichever tier was actually rolled.
+  // always visually matches whichever tier was actually rolled. `gmFlat`
+  // (the "GM GM GM" tier) pays in GM Points — the same admin-only-granted
+  // currency Special Outfits use — rather than Energy or PP, and is kept
+  // the single rarest tier on the machine since GM Points can't be earned
+  // any other way.
   slot_777: {
     label: 'Lucky 777',
     betOptions: [1000, 2000, 3000, 5000],
@@ -85,6 +90,7 @@ const DEFAULT_MACHINES = {
       { id: 'single',     label: 'Single Cherry',   weight: 1.2,  betMultiplier: 0.05, symbol: 'cherry', matchCount: 1 },
       { id: 'pp_logo_3',  label: '💎 3 PP Logo',     weight: 0.01, ppFlat: 10, symbol: 'pp_logo', matchCount: 3 },
       { id: 'pp_logo_2',  label: '💎 2 PP Logo',     weight: 0.08, ppFlat: 1,  symbol: 'pp_logo', matchCount: 2 },
+      { id: 'gm_777',     label: '🎖️ GM GM GM',      weight: 0.005, gmFlat: 1, symbol: 'gm', matchCount: 3 },
     ],
   },
 };
