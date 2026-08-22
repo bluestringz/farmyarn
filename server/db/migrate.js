@@ -322,6 +322,22 @@ function migrate(db) {
     coins INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_leaderboard_date ON leaderboard_snapshot(snapshot_date);
+
+  -- Optional per-item purchase cap for the Shop (seeds, buildings,
+  -- decorations, animals, interiors) — a GLOBAL count shared by every
+  -- player, not a per-player limit. Absence of a row for a given
+  -- (category, item_id) means "unlimited", same as before this feature
+  -- existed — an admin only needs to add a row for the specific items
+  -- they actually want to cap. max_stock is the cap "Renew" resets back
+  -- to; current_stock is what's actually left to buy right now.
+  CREATE TABLE IF NOT EXISTS shop_stock (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL, -- 'crop' | 'building' | 'decoration' | 'animal' | 'interior'
+    item_id TEXT NOT NULL,
+    max_stock INTEGER NOT NULL,
+    current_stock INTEGER NOT NULL,
+    UNIQUE(category, item_id)
+  );
   `);
 
   addColumnsIfMissing(db);

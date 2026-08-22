@@ -258,15 +258,24 @@ const UI = (() => {
       const cost = item.seed_cost ?? item.cost;
       const locked = player.level < item.required_level;
       const affordable = player.coins >= cost;
+      // A capped item (see admin panel > 📦 Shop Stock) carries
+      // currentStock/maxStock from the catalog response — absent entirely
+      // means unlimited, same as every item behaved before this existed.
+      const hasStockCap = item.currentStock !== undefined && item.currentStock !== null;
+      const outOfStock = hasStockCap && item.currentStock <= 0;
+      const stockLine = hasStockCap
+        ? `<div class="shop-level" style="${outOfStock ? 'color:#c0392b;font-weight:700;' : ''}">${outOfStock ? 'Out of stock' : `${item.currentStock} left in stock`}</div>`
+        : '';
       const glyphMap = { crops: '🌱', buildings: '🏗️', animals: '🐾', decorations: '🌷', interiors: '🛋️' };
       const durationLine = isCrops ? `<div class="shop-level">⏱ ${formatDuration(item.growth_seconds)} to harvest</div>` : '';
       // Seeds are the one thing people buy in bulk (to plant a whole field
       // at once) — give them a quantity field instead of one-click-at-a-time,
       // plus a MAX button that fills in exactly as many as their coins can
-      // cover so they're not stuck guessing/doing the division themselves.
-      const maxAffordable = Math.max(1, Math.min(99, Math.floor(player.coins / cost)));
-      const qtyRow = isCrops && !locked
-        ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
+      // cover (or as many as are left in stock, if capped) so they're not
+      // stuck guessing/doing the math themselves.
+      const maxAffordable = Math.max(1, Math.min(99, Math.floor(player.coins / cost), hasStockCap ? Math.max(1, item.currentStock) : 99));
+      const qtyRow = isCrops && !locked && !outOfStock
+        ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="${hasStockCap ? Math.max(1, item.currentStock) : 99}" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
         : '';
       const colorOptions = BUILDING_COLOR_OPTIONS[item.id];
       const isMansion = item.id === 'mansion';
@@ -284,12 +293,13 @@ const UI = (() => {
           <div class="shop-name">${item.name}</div>
           <div class="shop-price">🪙 ${cost}${isCrops ? ' each' : ''}</div>
           ${durationLine}
+          ${stockLine}
           ${locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}
           ${ITEM_DESCRIPTIONS[item.id] ? `<div class="shop-desc">${ITEM_DESCRIPTIONS[item.id]}</div>` : ''}
           ${colorSwatches}
           ${qtyRow}
-          <button data-item="${item.id}" ${(locked || !affordable) ? 'disabled' : ''}>
-            ${locked ? 'Locked' : isCrops ? 'Buy Seeds' : 'Buy'}
+          <button data-item="${item.id}" ${(locked || !affordable || outOfStock) ? 'disabled' : ''}>
+            ${locked ? 'Locked' : outOfStock ? 'Out of Stock' : isCrops ? 'Buy Seeds' : 'Buy'}
           </button>
         </div>`;
     }).join('') || `<div class="empty-state">Nothing here yet.</div>`;

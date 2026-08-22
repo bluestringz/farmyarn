@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY, getTimerSetting, DEFAULT_TIMERS } = require('../lib/gameLogic');
 const { DB_PATH } = require('../db/migrate');
 const { listOddsFields, oddsKey, getOverrideBp, setOverrideBp, clearOverride } = require('../lib/casinoConfig');
+const { getAllStock, setStock, renewStock, removeStock } = require('../lib/shopStock');
 
 module.exports = function adminRoutes(db, onlineUsers, io) {
   const router = express.Router();
@@ -232,6 +233,68 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     } else {
       db.prepare("DELETE FROM game_settings WHERE key LIKE 'casino:%'").run();
     }
+    res.json({ ok: true });
+  });
+
+  // ---- Shop Stock (Admin Panel > 📦 Shop Stock) ----
+  // GET /api/admin/shop-stock — every seed/building/decoration/animal/
+  // interior in the game, each flagged with its current cap if an admin
+  // has set one — items with no cap show as unlimited, exactly like they
+  // behave in the actual shop right now.
+  router.get('/shop-stock', (req, res) => {
+    const stock = getAllStock(db);
+    const categoryTables = [
+      { category: 'crop', table: 'crop_types' },
+      { category: 'building', table: 'building_types' },
+      { category: 'decoration', table: 'decoration_types' },
+      { category: 'animal', table: 'animal_types' },
+      { category: 'interior', table: 'interior_types' },
+    ];
+    const rows = [];
+    for (const { category, table } of categoryTables) {
+      const items = db.prepare(`SELECT id, name FROM ${table}`).all();
+      for (const item of items) {
+        const s = stock.get(`${category}:${item.id}`);
+        rows.push({
+          category, itemId: item.id, name: item.name,
+          maxStock: s ? s.maxStock : null,
+          currentStock: s ? s.currentStock : null,
+          unlimited: !s,
+        });
+      }
+    }
+    res.json(rows);
+  });
+
+  // POST /api/admin/set-shop-stock { category, itemId, amount } — defines
+  // (or redefines) an item's cap AND tops it up to that same number right
+  // now, e.g. "set stock to 50" means 50 are available starting now.
+  router.post('/set-shop-stock', (req, res) => {
+    const { category, itemId, amount } = req.body || {};
+    if (!['crop', 'building', 'decoration', 'animal', 'interior'].includes(category)) {
+      return res.status(400).json({ error: 'Invalid category' });
+    }
+    const qty = parseInt(amount, 10);
+    if (!Number.isFinite(qty) || qty < 0) return res.status(400).json({ error: 'Enter a stock amount of 0 or more' });
+    setStock(db, category, itemId, qty);
+    res.json({ ok: true });
+  });
+
+  // POST /api/admin/renew-shop-stock { category, itemId } — tops the item
+  // back up to its existing cap (e.g. it sold out) without needing to
+  // remember or retype the cap number.
+  router.post('/renew-shop-stock', (req, res) => {
+    const { category, itemId } = req.body || {};
+    const ok = renewStock(db, category, itemId);
+    if (!ok) return res.status(400).json({ error: 'That item has no stock cap set yet' });
+    res.json({ ok: true });
+  });
+
+  // POST /api/admin/remove-shop-stock { category, itemId } — lifts the
+  // cap entirely; the item goes back to being unlimited.
+  router.post('/remove-shop-stock', (req, res) => {
+    const { category, itemId } = req.body || {};
+    removeStock(db, category, itemId);
     res.json({ ok: true });
   });
 

@@ -1,5 +1,6 @@
 const express = require('express');
 const { grantRewards, addInventory, nowSec, rollAnimalQuantity } = require('../lib/gameLogic');
+const { getAllStock, consumeStock } = require('../lib/shopStock');
 const {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
   ENTERABLE_BUILDING_DIMENSIONS, BUILDING_ALLOWED_ANIMALS,
@@ -47,6 +48,19 @@ module.exports = function shopRoutes(db) {
     const items = db.prepare('SELECT * FROM item_types ORDER BY sell_price').all();
     const outfits = db.prepare('SELECT * FROM outfit_types ORDER BY required_level, cost').all();
     const interiors = db.prepare('SELECT * FROM interior_types ORDER BY required_level, cost').all();
+    // Attach { maxStock, currentStock } to any item an admin has capped
+    // (see server/lib/shopStock.js) — absent entirely for everything else,
+    // which the client reads as "unlimited", same as before this existed.
+    const stock = getAllStock(db);
+    const annotate = (rows, category) => rows.forEach((r) => {
+      const s = stock.get(`${category}:${r.id}`);
+      if (s) { r.maxStock = s.maxStock; r.currentStock = s.currentStock; }
+    });
+    annotate(crops, 'crop');
+    annotate(buildings, 'building');
+    annotate(decorations, 'decoration');
+    annotate(animals, 'animal');
+    annotate(interiors, 'interior');
     res.json({ crops, buildings, decorations, animals, items, outfits, interiors, dyePalette: DYE_PALETTE, dyeCost: DYE_COST });
   });
 
@@ -66,11 +80,16 @@ module.exports = function shopRoutes(db) {
     const totalCost = crop.seed_cost * qty;
     if (user.coins < totalCost) return res.status(400).json({ error: 'Not enough coins' });
 
+    const stockCheck = consumeStock(db, 'crop', cropType, qty);
+    if (!stockCheck.ok) {
+      return res.status(400).json({ error: stockCheck.remaining > 0 ? `Only ${stockCheck.remaining} left in stock` : 'Out of stock' });
+    }
+
     db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(totalCost, req.userId);
     addInventory(db, req.userId, `seed_${cropType}`, qty);
 
     const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
-    res.json({ ok: true, cropType, quantity: qty, coinsSpent: totalCost, coins: updated.coins });
+    res.json({ ok: true, cropType, quantity: qty, coinsSpent: totalCost, coins: updated.coins, stockRemaining: stockCheck.remaining });
   });
 
   // POST /api/shop/buy-outfit  { outfitId } — buys (if not already owned) and equips immediately
@@ -165,11 +184,16 @@ module.exports = function shopRoutes(db) {
     const totalCost = def.cost * qty;
     if (user.coins < totalCost) return res.status(400).json({ error: 'Not enough coins' });
 
+    const stockCheck = consumeStock(db, category, itemId, qty);
+    if (!stockCheck.ok) {
+      return res.status(400).json({ error: stockCheck.remaining > 0 ? `Only ${stockCheck.remaining} left in stock` : 'Out of stock' });
+    }
+
     db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(totalCost, req.userId);
     addInventory(db, req.userId, `${category}_${itemId}`, qty);
 
     const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
-    res.json({ ok: true, category, itemId, quantity: qty, coinsSpent: totalCost, coins: updated.coins });
+    res.json({ ok: true, category, itemId, quantity: qty, coinsSpent: totalCost, coins: updated.coins, stockRemaining: stockCheck.remaining });
   });
 
   // POST /api/shop/place-object  { category, itemId, x, y, rotation, location }

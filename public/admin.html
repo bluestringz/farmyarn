@@ -102,6 +102,24 @@
   </div>
 
   <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">📦 Shop Stock</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">Cap how many of an item are available to buy — a GLOBAL count shared by every player, not per-player. Leave an item unlimited (the default) unless you specifically want to ration it. "Set" defines the cap and tops it up to that number right now; "Renew" just restocks back up to the existing cap.</p>
+    <select id="stock-category-filter">
+      <option value="">All Categories</option>
+      <option value="crop">🌾 Seeds</option>
+      <option value="building">🏠 Buildings</option>
+      <option value="decoration">🌳 Decorations</option>
+      <option value="animal">🐄 Animals</option>
+      <option value="interior">🛋️ Interior</option>
+    </select>
+    <input id="stock-search-input" placeholder="Search item name...">
+    <table id="stock-table">
+      <thead><tr><th>Category</th><th>Name</th><th>Cap</th><th>In Stock</th><th>New Cap</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <p style="font-weight:700;margin-bottom:4px;">🎰 Casino Odds</p>
     <p style="font-size:12px;color:#8a5a34;margin-top:0;">Win chances for the 3 Casino machines. "Chance %" fields are plain win percentages (0.07 = 0.07%). Lucky 777's "Weight" fields aren't a standalone % — they're each prize's rarity relative to the OTHER prizes (bigger weight = more common among wins); its "win chance" fields are the % chance a spin at that bet amount wins ANYTHING at all. Edits apply live, no restart needed. A row with a ✳️ has been changed from default — use "Reset" to put it back.</p>
     <select id="odds-category-filter">
@@ -181,6 +199,7 @@ async function showApp() {
   await loadPrices();
   await loadTimers();
   await loadCasinoOdds();
+  await loadShopStock();
 }
 
 async function loadStats() {
@@ -325,6 +344,79 @@ function renderTimers() {
 }
 
 document.getElementById('timer-category-filter').addEventListener('change', () => renderTimers());
+
+// ---- Shop Stock ----
+let allStock = [];
+const STOCK_CATEGORY_LABELS = { crop: '🌾 Seeds', building: '🏠 Buildings', decoration: '🌳 Decorations', animal: '🐄 Animals', interior: '🛋️ Interior' };
+
+async function loadShopStock() {
+  allStock = await api('GET', '/api/admin/shop-stock');
+  renderShopStock();
+}
+
+function renderShopStock() {
+  const tbody = document.querySelector('#stock-table tbody');
+  const categoryFilter = document.getElementById('stock-category-filter').value;
+  const q = document.getElementById('stock-search-input').value.trim().toLowerCase();
+  const rows = allStock.filter((r) =>
+    (!categoryFilter || r.category === categoryFilter) &&
+    (!q || r.name.toLowerCase().includes(q)));
+
+  tbody.innerHTML = rows.map((r) => {
+    const rowKey = `${r.category}:${r.itemId}`;
+    const capLabel = r.unlimited ? 'Unlimited' : r.maxStock;
+    const currentLabel = r.unlimited ? '—' : r.currentStock;
+    return `
+    <tr data-category="${r.category}" data-item-id="${r.itemId}">
+      <td>${STOCK_CATEGORY_LABELS[r.category] || r.category}</td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${capLabel}</td>
+      <td>${currentLabel}</td>
+      <td><input type="number" class="stock-input" min="0" step="1" placeholder="e.g. 50" style="width:90px"></td>
+      <td>
+        <button class="stock-save-btn">Set</button>
+        ${r.unlimited ? '' : '<button class="stock-renew-btn">Renew</button><button class="stock-remove-btn">Unlimit</button>'}
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6">No items match.</td></tr>';
+
+  tbody.querySelectorAll('tr[data-item-id]').forEach((tr) => {
+    const category = tr.dataset.category, itemId = tr.dataset.itemId;
+    const saveBtn = tr.querySelector('.stock-save-btn');
+    if (saveBtn) saveBtn.addEventListener('click', async () => {
+      const amount = parseInt(tr.querySelector('.stock-input').value, 10);
+      if (!Number.isFinite(amount) || amount < 0) return alert('Enter a stock amount of 0 or more.');
+      try {
+        await api('POST', '/api/admin/set-shop-stock', { category, itemId, amount });
+        await loadShopStock();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+    const renewBtn = tr.querySelector('.stock-renew-btn');
+    if (renewBtn) renewBtn.addEventListener('click', async () => {
+      try {
+        await api('POST', '/api/admin/renew-shop-stock', { category, itemId });
+        await loadShopStock();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+    const removeBtn = tr.querySelector('.stock-remove-btn');
+    if (removeBtn) removeBtn.addEventListener('click', async () => {
+      if (!confirm('Remove the cap and make this item unlimited again?')) return;
+      try {
+        await api('POST', '/api/admin/remove-shop-stock', { category, itemId });
+        await loadShopStock();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('stock-category-filter').addEventListener('change', () => renderShopStock());
+document.getElementById('stock-search-input').addEventListener('input', () => renderShopStock());
 
 // ---- Casino Odds ----
 let allOdds = [];
