@@ -267,7 +267,7 @@ module.exports = function shopRoutes(db) {
     const bounds = isIndoor ? interiorBoundsFor(db, farm.id, loc) : { width: farm.width, height: farm.height };
     const boundsW = bounds.width, boundsH = bounds.height;
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + w > boundsW || y + h > boundsH) {
-      return res.status(400).json({ error: 'Placement out of bounds' });
+      return res.status(400).json({ error: `Placement out of bounds (tried x=${x}, y=${y}, item is ${w}x${h}, room is ${boundsW}x${boundsH})` });
     }
     // Wall-mounted décor (frames, lights, aircon) only makes visual sense
     // flush against one of the room's walls — the back wall (row y=0,
@@ -279,7 +279,7 @@ module.exports = function shopRoutes(db) {
     if (category === 'interior' && WALL_MOUNTED_ITEMS.has(itemId)) {
       const againstWall = y === 0 || x === 0 || x + w === boundsW;
       if (!againstWall) {
-        return res.status(400).json({ error: `${def.name} has to be mounted against a wall — the top row, or the leftmost/rightmost column of the room` });
+        return res.status(400).json({ error: `${def.name} has to be mounted against a wall — the top row, or the leftmost/rightmost column of the room (tried x=${x}, y=${y}, room is ${boundsW} wide)` });
       }
     }
 
