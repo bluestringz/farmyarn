@@ -822,7 +822,11 @@ class FarmGame {
     this.mode = 'indoor';
     this.interior = interiorData;
     this._serverTimeOffset = interiorData.serverTime - Date.now() / 1000;
-    this._centerCameraFor(interiorData.width, interiorData.height);
+    // 0.6 tiles of margin on left/right/top matches wallDepth in
+    // _drawIndoorRoom — without this, the camera fit only accounted for
+    // the bare floor and could clip the wall strips right at the edge of
+    // the screen.
+    this._centerCameraFor(interiorData.width, interiorData.height, 0.6, 0.6, 0.6, 0);
     const wx = (interiorData.width / 2) * TILE, wy = (interiorData.height * 0.7) * TILE;
     this._character.x = wx; this._character.y = wy;
     this._character.targetX = wx; this._character.targetY = wy;
@@ -953,8 +957,15 @@ class FarmGame {
     this._ghost.rotation = ((this._ghost.rotation || 0) + 90) % 360;
   }
 
-  _centerCameraFor(gridW, gridH) {
-    const worldW = gridW * TILE, worldH = gridH * TILE;
+  // marginLeft/Right/Top/Bottom (in TILE units) let the fit account for
+  // decoration that extends past the room's own (0,0)-(gridW,gridH) floor
+  // bounds — the interior room's wallpapered wall strips, specifically
+  // (see _drawIndoorRoom), which used to get centered as if they didn't
+  // exist and could end up clipped/invisible right at the edge of the
+  // screen depending on viewport size.
+  _centerCameraFor(gridW, gridH, marginLeft = 0, marginRight = 0, marginTop = 0, marginBottom = 0) {
+    const worldW = (gridW + marginLeft + marginRight) * TILE;
+    const worldH = (gridH + marginTop + marginBottom) * TILE;
     const rect = this.canvas.getBoundingClientRect();
     // Only auto-fit the zoom if the player hasn't manually zoomed yet —
     // once they have, keep their chosen scale and just re-center the
@@ -962,8 +973,9 @@ class FarmGame {
     if (!this._userZoomed) {
       this.camera.scale = Math.min(2, Math.min(rect.width / worldW, rect.height / worldH) * 0.9) || 1;
     }
-    this.camera.x = (rect.width - worldW * this.camera.scale) / 2;
-    this.camera.y = (rect.height - worldH * this.camera.scale) / 2;
+    const contentLeft = -marginLeft * TILE, contentTop = -marginTop * TILE;
+    this.camera.x = (rect.width - worldW * this.camera.scale) / 2 - contentLeft * this.camera.scale;
+    this.camera.y = (rect.height - worldH * this.camera.scale) / 2 - contentTop * this.camera.scale;
   }
 
   // Manual "fix my view" button — recenters and re-fits the zoom for
@@ -974,7 +986,7 @@ class FarmGame {
     // navigation now preserves whatever zoom the player last set.
     this._userZoomed = false;
     if (this.mode === 'indoor' && this.interior) {
-      this._centerCameraFor(this.interior.width, this.interior.height);
+      this._centerCameraFor(this.interior.width, this.interior.height, 0.6, 0.6, 0.6, 0);
     } else if (this.mode === 'market') {
       this._centerCameraFor(MARKET_WIDTH, MARKET_HEIGHT);
     } else if (this.mode === 'casino') {
