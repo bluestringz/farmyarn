@@ -10,6 +10,13 @@ const {
 const DYE_COST = 25;
 const DYE_PALETTE = ['#c0392b', '#e8a527', '#4f8f2e', '#3d8fe0', '#8e44ad', '#e05a7e', '#4a3521', '#f4f4f4'];
 
+// Wall-mounted interior décor — only allowed on row y=0 (the room's one
+// drawn "wall", see the back-wall strip in game.js's _drawIndoorRoom).
+// Checked in both /place-object (initial placement) and /move-object
+// (repositioning something already placed), so there's no way to end up
+// with, say, a TV floating in the middle of the floor either way.
+const WALL_MOUNTED_ITEMS = new Set(['painting', 'wall_light', 'tv', 'aircon']);
+
 // Preset wall-color choices for House and Mansion — offered as a picker in
 // the Shop before buying, so not every player's home is identically
 // colored. Whitelisted (validated in /place-object) so an arbitrary color
@@ -256,6 +263,14 @@ module.exports = function shopRoutes(db) {
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + w > boundsW || y + h > boundsH) {
       return res.status(400).json({ error: 'Placement out of bounds' });
     }
+    // Wall-mounted décor (frames, lights, TV, aircon) only makes visual
+    // sense flush against the room's one drawn wall — the back wall strip
+    // along the top of the room, row y=0 (see _drawIndoorRoom in game.js).
+    // Everything else in the room is open floor, so this is the only row
+    // that actually reads as "the wall".
+    if (category === 'interior' && WALL_MOUNTED_ITEMS.has(itemId) && y !== 0) {
+      return res.status(400).json({ error: `${def.name} has to be mounted against the back wall (the top row of the room)` });
+    }
     const blocking = findOverlap(db, farm.id, loc, x, y, w, h);
     if (blocking) {
       return res.status(400).json({
@@ -338,6 +353,9 @@ module.exports = function shopRoutes(db) {
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + w > boundsW || y + h > boundsH) {
       return res.status(400).json({ error: 'Placement out of bounds' });
     }
+    if (obj.object_type === 'interior' && WALL_MOUNTED_ITEMS.has(obj.item_id) && y !== 0) {
+      return res.status(400).json({ error: `${def.name} has to be mounted against the back wall (the top row of the room)` });
+    }
     const blocking = findOverlap(db, farm.id, obj.location, x, y, w, h, objectId);
     if (blocking) {
       return res.status(400).json({
@@ -348,6 +366,30 @@ module.exports = function shopRoutes(db) {
     db.prepare('UPDATE farm_objects SET grid_x = ?, grid_y = ?, rotation = ?, updated_at = ? WHERE id = ?')
       .run(x, y, rotation ?? obj.rotation, nowSec(), objectId);
     res.json({ ok: true });
+  });
+
+  // POST /api/shop/rotate-object { objectId } — turns a placed object 90°
+  // further (wrapping 0→90→180→270→0), WITHOUT touching its position.
+  // Buildings specifically can't be repositioned at all (see /move-object
+  // above), but spinning one in place to face a different direction is a
+  // separate thing from moving it, so this is allowed even for those.
+  router.post('/rotate-object', (req, res) => {
+    const { objectId } = req.body || {};
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    const obj = db.prepare('SELECT * FROM farm_objects WHERE id = ? AND farm_id = ?').get(objectId, farm.id);
+    if (!obj) return res.status(404).json({ error: 'Object not found on your farm' });
+    // Buildings can't be touched at all once placed — no repositioning
+    // (see /move-object) and, per the same rule, no rotating in place
+    // either. Facing a building the other way means choosing that
+    // rotation fresh at PLACEMENT time (remove the old one, buy/place a
+    // new one) — never as an edit to something already standing.
+    if (obj.object_type === 'building') {
+      return res.status(400).json({ error: "Buildings can't be rotated — remove and re-place them instead." });
+    }
+    const newRotation = ((obj.rotation || 0) + 90) % 360;
+    db.prepare('UPDATE farm_objects SET rotation = ?, updated_at = ? WHERE id = ?').run(newRotation, nowSec(), obj.id);
+    res.json({ ok: true, rotation: newRotation });
   });
 
   // DELETE /api/shop/object/:id - remove any object the OWNER placed (fixes mistaken placements;

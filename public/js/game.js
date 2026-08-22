@@ -1446,6 +1446,10 @@ class FarmGame {
       this._drawPeopleSorted();
       this._drawCharacterOverlay();
       ctx.restore();
+      // Houses/coops/barns/mansions get dark at night same as outdoors —
+      // without a placed table lamp to punch through it, a house at 2am
+      // is just as dark inside as the farm is outside.
+      this._drawWeatherOverlay(rect);
       return;
     }
 
@@ -1691,9 +1695,16 @@ class FarmGame {
       // a single pass, smaller, and capped low enough that even several
       // overlapping lamps can't blow out past a gentle warm dimming.
       const isFullNight = hour >= 19 || hour < 5;
-      if (isFullNight && this.farm && this.farm.objects) {
-        for (const obj of this.farm.objects) {
-          if (obj.object_type !== 'decoration' || obj.item_id !== 'lamp') continue;
+      // Houses/coops/barns/mansions get dark at night too now — same tint,
+      // just sourced from interior.objects instead of farm.objects when
+      // indoors, so a placed table lamp punches through the dark exactly
+      // like an outdoor Lamp Post does.
+      const lampSources = this.mode === 'indoor' ? (this.interior && this.interior.objects) : (this.farm && this.farm.objects);
+      if (isFullNight && lampSources) {
+        for (const obj of lampSources) {
+          const isOutdoorLamp = obj.object_type === 'decoration' && obj.item_id === 'lamp';
+          const isIndoorLamp = obj.object_type === 'interior' && (obj.item_id === 'table_lamp' || obj.item_id === 'crafted_table_lamp');
+          if (!isOutdoorLamp && !isIndoorLamp) continue;
           const worldX = (obj.grid_x + 0.5) * TILE;
           const worldY = (obj.grid_y + 0.55) * TILE; // roughly where the lamp's glass/bulb sits
           const sx = worldX * this.camera.scale + this.camera.x;
@@ -2561,6 +2572,83 @@ class FarmGame {
           bx += bw + 1;
         }
       }
+    } else if (itemId === 'table_lamp') {
+      // Small lamp on its own stand — the same "breathing" glow as the
+      // outdoor Lamp Post (see DECORATION_STYLE's 'lamp' shape), so a
+      // house/coop/barn actually has a light source to place at night —
+      // see _drawWeatherOverlay's night punch-through check.
+      const cx = x + w / 2;
+      const t = performance.now() / 1000;
+      const phase = (x + y) * 0.013;
+      ctx.fillStyle = '#8b5e34';
+      ctx.beginPath(); this._roundRect(x + w * 0.28, y + h * 0.62, w * 0.44, h * 0.14, 3); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#5e3b1f'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx, y + h * 0.62); ctx.lineTo(cx, y + h * 0.32); ctx.stroke();
+      const pulse = 0.6 + 0.4 * Math.sin(t * 1.6 + phase);
+      ctx.save();
+      ctx.shadowColor = '#ffdd88';
+      ctx.shadowBlur = 5 + pulse * 8;
+      ctx.globalAlpha = 0.8 + pulse * 0.2;
+      ctx.fillStyle = '#fff3b0';
+      ctx.beginPath();
+      ctx.moveTo(cx - w * 0.18, y + h * 0.32);
+      ctx.lineTo(cx + w * 0.18, y + h * 0.32);
+      ctx.lineTo(cx + w * 0.11, y + h * 0.14);
+      ctx.lineTo(cx - w * 0.11, y + h * 0.14);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.2;
+      ctx.stroke();
+    } else if (itemId === 'wall_light') {
+      // Mounted high on the tile (wall-sconce read) — same breathing glow
+      // treatment, and also counts as a light source at night.
+      const cx = x + w / 2;
+      const t = performance.now() / 1000;
+      const phase = (x + y) * 0.017;
+      ctx.fillStyle = '#5e3b1f';
+      ctx.fillRect(cx - w * 0.02, y + h * 0.1, w * 0.04, h * 0.12);
+      const pulse = 0.6 + 0.4 * Math.sin(t * 1.5 + phase);
+      ctx.save();
+      ctx.shadowColor = '#ffe9a8';
+      ctx.shadowBlur = 5 + pulse * 7;
+      ctx.globalAlpha = 0.8 + pulse * 0.2;
+      ctx.fillStyle = '#fff7d6';
+      ctx.beginPath(); ctx.ellipse(cx, y + h * 0.16, w * 0.11, h * 0.08, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.ellipse(cx, y + h * 0.16, w * 0.11, h * 0.08, 0, 0, Math.PI * 2); ctx.stroke();
+    } else if (itemId === 'tv') {
+      // Sits high on the tile (wall-mounted read) with a small stand below.
+      ctx.fillStyle = '#2a2a2a';
+      ctx.beginPath(); this._roundRect(x + w * 0.12, y + h * 0.14, w * 0.76, h * 0.42, 4); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#3d8fe0';
+      ctx.fillRect(x + w * 0.16, y + h * 0.18, w * 0.68, h * 0.32);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(x + w * 0.46, y + h * 0.56, w * 0.08, h * 0.1);
+      ctx.fillRect(x + w * 0.32, y + h * 0.65, w * 0.36, h * 0.04);
+    } else if (itemId === 'aircon') {
+      // A wall-unit box mounted high, with vent slats and a little
+      // power-on indicator light.
+      ctx.fillStyle = '#f4f4f4';
+      ctx.beginPath(); this._roundRect(x + w * 0.1, y + h * 0.12, w * 0.8, h * 0.28, 5); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#c9c9c9'; ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const lx = x + w * (0.18 + i * 0.16);
+        ctx.beginPath(); ctx.moveTo(lx, y + h * 0.16); ctx.lineTo(lx, y + h * 0.36); ctx.stroke();
+      }
+      ctx.fillStyle = '#4f8f2e';
+      ctx.beginPath(); ctx.arc(x + w * 0.82, y + h * 0.16, 2, 0, Math.PI * 2); ctx.fill();
+    } else if (itemId === 'side_table') {
+      ctx.fillStyle = '#a3743f';
+      ctx.beginPath(); this._roundRect(x + w * 0.2, y + h * 0.5, w * 0.6, h * 0.12, 3); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#8b5e34';
+      ctx.fillRect(x + w * 0.24, y + h * 0.62, w * 0.06, h * 0.26);
+      ctx.fillRect(x + w * 0.7, y + h * 0.62, w * 0.06, h * 0.26);
+      ctx.fillStyle = '#c9a876';
+      ctx.fillRect(x + w * 0.3, y + h * 0.52, w * 0.4, h * 0.08);
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1;
+      ctx.strokeRect(x + w * 0.3, y + h * 0.52, w * 0.4, h * 0.08);
     } else {
       // fallback generic card for any unrecognized item
       ctx.fillStyle = '#fffaf0';

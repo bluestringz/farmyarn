@@ -128,6 +128,7 @@ const Api = (() => {
     placeObject: (category, itemId, x, y, rotation, location, color) =>
       request('POST', '/api/shop/place-object', { category, itemId, x, y, rotation, location, color }),
     moveObject: (objectId, x, y, rotation) => request('POST', '/api/shop/move-object', { objectId, x, y, rotation }),
+    rotateObject: (objectId) => request('POST', '/api/shop/rotate-object', { objectId }),
     deleteObject: (objectId) => request('DELETE', `/api/shop/object/${objectId}`),
     collectAnimal: (objectId) => request('POST', '/api/shop/collect-animal', { objectId }),
     craftFeed: (animalType, quantity) => request('POST', '/api/shop/craft-feed', { animalType, quantity }),

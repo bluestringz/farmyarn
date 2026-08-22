@@ -696,6 +696,14 @@ function seedContent(db) {
     { id: 'bookshelf', name: 'Bookshelf',     cost: 130, required_level: 2, width: 1, height: 1, sprite: 'bookshelf' },
     { id: 'wall',       name: 'Wall',          cost: 20,  required_level: 1, width: 1, height: 1, sprite: 'wall' },
     { id: 'staircase',  name: 'Staircase',     cost: 500, required_level: 1, width: 1, height: 1, sprite: 'staircase' },
+    // Wall/light decor — frame(s), a light source you can actually place
+    // indoors (see the night-darkness punch-through logic in game.js's
+    // _drawWeatherOverlay), a TV, an aircon unit, and a side table.
+    { id: 'table_lamp', name: 'Table Lamp',    cost: 55,  required_level: 1, width: 1, height: 1, sprite: 'table_lamp' },
+    { id: 'wall_light',  name: 'Wall Light',    cost: 65,  required_level: 2, width: 1, height: 1, sprite: 'wall_light' },
+    { id: 'tv',          name: 'TV',            cost: 140, required_level: 2, width: 1, height: 1, sprite: 'tv' },
+    { id: 'aircon',       name: 'Air Conditioner', cost: 160, required_level: 3, width: 1, height: 1, sprite: 'aircon' },
+    { id: 'side_table',   name: 'Side Table',    cost: 45,  required_level: 1, width: 1, height: 1, sprite: 'side_table' },
     // Workshop-crafted furniture — never bought with coins in the Shop
     // (cost: 0, and hidden from the Shop's Interior tab in ui.js), made
     // instead from Wood at the Workshop building. Same look as their

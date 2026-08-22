@@ -1010,6 +1010,9 @@
           const def = findDef(obj.object_type, obj.item_id);
           const centerX = obj.grid_x + ((def && def.width) || 1) / 2;
           const centerY = obj.grid_y + ((def && def.height) || 1) / 2;
+          // Walk onto the furniture first — same "actually get there
+          // instead of teleporting" treatment as entering a building.
+          await game.walkToAndWait(obj.grid_x, obj.grid_y);
           setLocalRestPose(pose, centerX, centerY);
           const res = await Api.startResting();
           state.me.isResting = res.resting;
@@ -1595,15 +1598,16 @@
   }
 
   async function handleParkBenchClick(bench) {
-    game.walkTo(bench.x, bench.y, null);
     try {
       if (state.me.isResting) {
+        game.walkTo(bench.x, bench.y, null);
         const res = await Api.stopResting();
         state.me.isResting = res.resting;
         state.me.energy = res.energy;
         setLocalRestPose(null);
         UI.toast('You got up.');
       } else {
+        await game.walkToAndWait(bench.x, bench.y);
         setLocalRestPose('sit', bench.x + 0.5, bench.y + 0.5);
         const res = await Api.startResting();
         state.me.isResting = res.resting;
