@@ -1159,13 +1159,36 @@ class FarmGame {
     if (this.mode === 'casino') {
       if (tile.x < 0 || tile.y < 0 || tile.x >= CASINO_INTERIOR_WIDTH || tile.y >= CASINO_INTERIOR_HEIGHT) return;
       const layout = CASINO_FLOOR_LAYOUT[this.casinoFloor] || CASINO_FLOOR_LAYOUT[1];
-      const machine = layout.machines.find((m) => m.x === tile.x && m.y === tile.y);
+      // Machines are drawn much taller than the single tile they're
+      // registered at (the cabinet + its floating name label extend
+      // upward — see _drawCasinoMachine's cabH), so a tap on the exact
+      // tile the player is actually LOOKING at (the visible cabinet,
+      // mostly above the base tile) used to miss entirely on mobile,
+      // where each tile can render at well under a comfortable touch-
+      // target size. Hit-test against the machine's real drawn footprint
+      // (with a little extra padding on top of that for finger slop)
+      // instead of requiring the exact base tile.
+      const machine = layout.machines.find((m) => {
+        const left = m.x * TILE - TILE * 0.2;
+        const right = (m.x + 1) * TILE + TILE * 0.2;
+        const top = m.y * TILE - TILE * 1.0; // covers the cabinet (1.7x tile tall) + label above it
+        const bottom = (m.y + 1) * TILE + TILE * 0.2;
+        return world.x >= left && world.x < right && world.y >= top && world.y < bottom;
+      });
       if (machine) {
         this.walkTo(machine.x, machine.y, null);
         if (this.onCasinoMachineClick) this.onCasinoMachineClick(machine.id, machine.type);
         return;
       }
-      const stairs = (layout.stairs || []).find((s) => s.x === tile.x && s.y === tile.y);
+      // Same forgiving-hitbox treatment for the staircase (its up/down
+      // arrow is drawn above the tile too).
+      const stairs = (layout.stairs || []).find((s) => {
+        const left = s.x * TILE - TILE * 0.2;
+        const right = (s.x + 1) * TILE + TILE * 0.2;
+        const top = s.y * TILE - TILE * 0.6;
+        const bottom = (s.y + 1) * TILE + TILE * 0.2;
+        return world.x >= left && world.x < right && world.y >= top && world.y < bottom;
+      });
       if (stairs) {
         this.walkTo(stairs.x, stairs.y, null);
         if (this.onCasinoStairsClick) this.onCasinoStairsClick(stairs.toFloor);

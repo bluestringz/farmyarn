@@ -120,6 +120,7 @@
   <div class="card">
     <input id="search-input" placeholder="Search username...">
     <button id="search-btn">Search</button>
+    <button id="export-players-btn" style="background:var(--wood-dark, #5e3b1f); color:#fff;">⬇️ Export CSV</button>
     <table id="players-table">
       <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Name in Game</th><th>Lvl</th><th>Energy</th><th>Coins</th><th>Prem. Points</th><th>GM Points</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody></tbody>
@@ -671,6 +672,35 @@ document.getElementById('own-password-btn').addEventListener('click', async () =
 });
 
 document.getElementById('search-btn').addEventListener('click', () => loadPlayers(document.getElementById('search-input').value));
+
+// Exporting needs a raw fetch (not the api() helper, which always parses
+// JSON) since the server sends back CSV text — and a plain <a href> link
+// wouldn't carry the Authorization header the way api()'s fetch calls do,
+// so this builds a temporary Blob URL to trigger the download instead.
+document.getElementById('export-players-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('export-players-btn');
+  const original = btn.textContent;
+  btn.textContent = 'Exporting...';
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/admin/players/export', { headers: { Authorization: 'Bearer ' + TOKEN } });
+    if (!res.ok) throw new Error('Export failed');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'farmyarn-players.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('Export failed: ' + err.message);
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+});
 
 // Refresh online status + stats + mailbox periodically without needing a
 // manual search — online/offline and new requests change live.

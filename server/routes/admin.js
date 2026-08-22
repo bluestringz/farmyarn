@@ -300,6 +300,32 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     res.json(rows);
   });
 
+  // GET /api/admin/players/export — every player, no 100-row cap (unlike
+  // the paginated table above), as a downloadable CSV — so pulling the
+  // full username list (or anything else here) into a spreadsheet doesn't
+  // require scrolling/searching the in-app table page by page.
+  router.get('/players/export', (req, res) => {
+    const cols = 'id, username, display_name, level, coins, premium_currency, gm_points, is_admin, is_banned, created_at, last_login';
+    const rows = db.prepare(`SELECT ${cols} FROM users ORDER BY id ASC`).all();
+    const header = ['id', 'username', 'display_name', 'level', 'coins', 'premium_points', 'gm_points', 'is_admin', 'is_banned', 'created_at', 'last_login'];
+    const csvEscape = (v) => {
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const isoOrBlank = (unixSeconds) => (unixSeconds ? new Date(unixSeconds * 1000).toISOString() : '');
+    const lines = [header.join(',')];
+    for (const r of rows) {
+      lines.push([
+        r.id, r.username, r.display_name || '', r.level, r.coins, r.premium_currency, r.gm_points,
+        r.is_admin ? 1 : 0, r.is_banned ? 1 : 0, isoOrBlank(r.created_at), isoOrBlank(r.last_login),
+      ].map(csvEscape).join(','));
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="farmyarn-players.csv"');
+    res.send(lines.join('\n'));
+  });
+
   router.get('/players/:id/farm', (req, res) => {
     const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.params.id);
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
