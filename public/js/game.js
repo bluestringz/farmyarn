@@ -474,17 +474,40 @@ class FarmGame {
   // Fences (and buildings) block the tile they sit on; walkTo now routes
   // around them with a simple BFS instead of cutting straight through.
   _isTileBlocked(tileX, tileY) {
-    if (!this.farm) return false;
-    for (const obj of this.farm.objects) {
-      if (obj.object_type === 'decoration' && obj.item_id === 'fence') {
-        if (obj.grid_x === tileX && obj.grid_y === tileY) return true;
-      } else if (obj.object_type === 'building') {
-        const def = this._defFor(obj);
-        const w = (def && def.width) || 1, h = (def && def.height) || 1;
-        if (tileX >= obj.grid_x && tileX < obj.grid_x + w && tileY >= obj.grid_y && tileY < obj.grid_y + h) return true;
+    return this._getBlockedTileSet().has(`${tileX},${tileY}`);
+  }
+
+  // A Set of every blocked tile ("x,y" strings) — buildings' full
+  // footprint plus fence tiles — built ONCE from farm.objects and reused
+  // until that array is actually replaced (see the farm.tiles/farm.crops
+  // caching in _drawTiles for the same reasoning: these are only ever
+  // REPLACED wholesale after a refetch, never mutated in place, so a
+  // reference check safely detects when a rebuild is actually needed).
+  // _isTileBlocked used to re-scan EVERY object on the farm on every
+  // single call — and pathfinding below calls it for every neighbor of
+  // every node it visits, so on a big, heavily-built farm that was
+  // effectively O(pathNodes × 4 × totalObjects) for ONE walk command. A
+  // Set lookup here is O(1) regardless of farm size.
+  _getBlockedTileSet() {
+    if (this._blockedSetSource !== (this.farm && this.farm.objects)) {
+      const blocked = new Set();
+      if (this.farm) {
+        for (const obj of this.farm.objects) {
+          if (obj.object_type === 'decoration' && obj.item_id === 'fence') {
+            blocked.add(`${obj.grid_x},${obj.grid_y}`);
+          } else if (obj.object_type === 'building') {
+            const def = this._defFor(obj);
+            const w = (def && def.width) || 1, h = (def && def.height) || 1;
+            for (let dx = 0; dx < w; dx++) {
+              for (let dy = 0; dy < h; dy++) blocked.add(`${obj.grid_x + dx},${obj.grid_y + dy}`);
+            }
+          }
+        }
       }
+      this._blockedSetCache = blocked;
+      this._blockedSetSource = this.farm && this.farm.objects;
     }
-    return false;
+    return this._blockedSetCache;
   }
 
   // Plain BFS over the tile grid — farms are small (tens of tiles per side)
@@ -496,29 +519,34 @@ class FarmGame {
     const w = this.farm.width, h = this.farm.height;
     if (endX < 0 || endY < 0 || endX >= w || endY >= h) return null;
     if (startX === endX && startY === endY) return [];
-    if (this._isTileBlocked(endX, endY)) return null;
+    const blocked = this._getBlockedTileSet();
+    if (blocked.has(`${endX},${endY}`)) return null;
 
     const key = (x, y) => `${x},${y}`;
     const startKey = key(startX, startY);
     const queue = [[startX, startY]];
+    let qHead = 0; // index-based dequeue instead of Array.shift(), which is
+                    // O(n) per call and turns this whole BFS into O(n²) at
+                    // the node counts a wide-open big farm can reach —
+                    // qHead++ is O(1) regardless of how many nodes are queued.
     const visited = new Set([startKey]);
     const cameFrom = new Map();
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     let found = false;
 
-    while (queue.length) {
-      const [cx, cy] = queue.shift();
+    while (qHead < queue.length) {
+      const [cx, cy] = queue[qHead++];
       if (cx === endX && cy === endY) { found = true; break; }
       for (const [dx, dy] of dirs) {
         const nx = cx + dx, ny = cy + dy;
         if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
         const nk = key(nx, ny);
-        if (visited.has(nk) || this._isTileBlocked(nx, ny)) continue;
+        if (visited.has(nk) || blocked.has(nk)) continue;
         visited.add(nk);
         cameFrom.set(nk, key(cx, cy));
         queue.push([nx, ny]);
       }
-      if (visited.size > 4000) break; // safety cap, shouldn't matter at farm scale
+      if (visited.size > 30000) break; // safety cap against a pathological runaway search — land expansion is uncapped, and the old 4000 limit could actually fail to find a path across a big, wide-open farm (not just slow it down), so this needs real headroom, not just a small guard
     }
     if (!found) return null;
 
@@ -2622,10 +2650,17 @@ class FarmGame {
     ctx.strokeStyle = '#8a5a34';
     ctx.lineWidth = 4;
     ctx.strokeRect(-2, -2, w + 4, h + 4);
-    // Plank seams along the top edge for a hand-built-fence feel
+    // Plank seams along the top edge for a hand-built-fence feel — only
+    // the ones actually within the visible width, since this loop's cost
+    // otherwise scales with total farm WIDTH regardless of zoom (a very
+    // wide farm was drawing seam ticks stretching far off both sides of
+    // the screen every frame, for no visible benefit).
+    const b = this._visibleBounds;
+    const startX = b ? Math.max(0, b.minX) * TILE : 0;
+    const endX = b ? Math.min(this.farm.width, b.maxX + 1) * TILE : w;
     ctx.strokeStyle = 'rgba(94,59,31,0.5)';
     ctx.lineWidth = 2;
-    for (let x = 0; x < w; x += TILE) {
+    for (let x = startX; x < endX; x += TILE) {
       ctx.beginPath();
       ctx.moveTo(x, -6);
       ctx.lineTo(x, -2);
