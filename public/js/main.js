@@ -334,10 +334,16 @@
   // in game.js and the 'presence:rest' socket handler above. Every caller
   // that used to call game.setRestPose(...) directly should call this
   // instead so the broadcast never gets missed.
-  function setLocalRestPose(pose, tileX, tileY) {
-    game.setRestPose(pose, tileX, tileY);
+  // Canvas rotation is a clockwise turn in screen space (Y grows
+  // downward), so a chair/bench drawn facing "down" at rotation 0° ends
+  // up facing "left" at 90°, "up" at 180°, and "right" at 270° once the
+  // whole shape is spun — see _drawFurniture's rotation handling.
+  const ROTATION_TO_FACING = { 0: 'down', 90: 'left', 180: 'up', 270: 'right' };
+
+  function setLocalRestPose(pose, tileX, tileY, facingDir) {
+    game.setRestPose(pose, tileX, tileY, facingDir);
     if (state.socket && state.currentSpace) {
-      state.socket.emit('space:rest', { space: state.currentSpace, restPose: pose, x: tileX, y: tileY });
+      state.socket.emit('space:rest', { space: state.currentSpace, restPose: pose, x: tileX, y: tileY, facingDir });
     }
   }
 
@@ -1001,7 +1007,7 @@
           setLocalRestPose(null);
           UI.toast('You got up.');
         } else {
-          const pose = obj.item_id === 'bed' ? 'lie' : 'sit';
+          const pose = (obj.item_id === 'bed' || obj.item_id === 'crafted_bed') ? 'lie' : 'sit';
           // Snap to the CENTER of the furniture's footprint, not its
           // top-left corner — a bed is 2 tiles wide, so anchoring at
           // grid_x directly put the character's rotated body hanging half
@@ -1013,11 +1019,12 @@
           // Walk onto the furniture first — same "actually get there
           // instead of teleporting" treatment as entering a building.
           await game.walkToAndWait(obj.grid_x, obj.grid_y);
-          setLocalRestPose(pose, centerX, centerY);
+          const facingDir = ROTATION_TO_FACING[obj.rotation || 0] || 'down';
+          setLocalRestPose(pose, centerX, centerY, facingDir);
           const res = await Api.startResting();
           state.me.isResting = res.resting;
           state.me.energy = res.energy;
-          UI.toast(obj.item_id === 'bed' ? 'Lying down — energy regenerates faster. Tap again to get up.' : 'Sitting down — energy regenerates faster. Tap again to get up.');
+          UI.toast((obj.item_id === 'bed' || obj.item_id === 'crafted_bed') ? 'Lying down — energy regenerates faster. Tap again to get up.' : 'Sitting down — energy regenerates faster. Tap again to get up.');
         }
         renderTopbar();
       } catch (err) {
@@ -1856,7 +1863,7 @@
         // Whoever was already in this room (sitting/lying) before we
         // walked in should look that way from the very first frame, not
         // pop into a resting pose only once they happen to move next.
-        if (o.restPose) game.setRemotePlayerRestPose(o.userId, o.restPose, o.x, o.y);
+        if (o.restPose) game.setRemotePlayerRestPose(o.userId, o.restPose, o.x, o.y, o.facingDir);
       });
     });
     socket.on('presence:joined', (info) => {
@@ -1865,8 +1872,8 @@
     socket.on('presence:move', ({ userId, x, y }) => {
       game.moveRemotePlayer(userId, x, y);
     });
-    socket.on('presence:rest', ({ userId, restPose, x, y }) => {
-      game.setRemotePlayerRestPose(userId, restPose, x, y);
+    socket.on('presence:rest', ({ userId, restPose, x, y, facingDir }) => {
+      game.setRemotePlayerRestPose(userId, restPose, x, y, facingDir);
     });
     socket.on('presence:appearance', ({ userId, appearance }) => {
       game.setRemotePlayerAppearance(userId, appearance);

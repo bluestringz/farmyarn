@@ -210,7 +210,7 @@ io.on('connection', (socket) => {
   // visitor in the same house, or someone else in the Park) actually sees
   // it happen instead of just seeing the player standing still — restPose
   // is null when getting up.
-  socket.on('space:rest', ({ space, restPose, x, y }) => {
+  socket.on('space:rest', ({ space, restPose, x, y, facingDir }) => {
     if (!space || space !== socket.currentSpace) return;
     const map = spaceOccupants.get(space);
     if (!map || !map.has(uid)) return;
@@ -218,7 +218,8 @@ io.on('connection', (socket) => {
     info.restPose = restPose || null;
     if (x !== undefined) info.x = x;
     if (y !== undefined) info.y = y;
-    socket.to(space).emit('presence:rest', { userId: uid, restPose, x, y });
+    if (facingDir !== undefined) info.facingDir = facingDir;
+    socket.to(space).emit('presence:rest', { userId: uid, restPose, x, y, facingDir });
   });
 
   // Broadcasts a live appearance change (new costume equipped, new dye)

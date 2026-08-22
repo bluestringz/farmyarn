@@ -401,7 +401,7 @@ class FarmGame {
   // just standing there. tileX/tileY (already the furniture's center, in
   // tile units) snap the avatar onto it the same way setRestPose does for
   // the local character.
-  setRemotePlayerRestPose(userId, restPose, tileX, tileY) {
+  setRemotePlayerRestPose(userId, restPose, tileX, tileY, facingDir) {
     const actor = this.remotePlayers.get(userId);
     if (!actor) return;
     actor.restPose = restPose;
@@ -409,7 +409,7 @@ class FarmGame {
       const wx = tileX * TILE, wy = tileY * TILE;
       actor.x = wx; actor.y = wy; actor.targetX = wx; actor.targetY = wy;
       actor.moving = false;
-      actor.facingDir = 'down';
+      actor.facingDir = facingDir || 'down';
     }
   }
 
@@ -648,14 +648,19 @@ class FarmGame {
   // coordinate, and double-applying it here is what pushed the anchor
   // (and so the whole faked lying pose) off to one side of multi-tile
   // furniture like the 2-wide bed.
-  setRestPose(pose, tileX, tileY) {
+  setRestPose(pose, tileX, tileY, facingDir) {
     const c = this._character;
     c.restPose = pose;
     if (pose && tileX !== undefined && tileY !== undefined) {
       const wx = tileX * TILE, wy = tileY * TILE;
       c.x = wx; c.y = wy; c.targetX = wx; c.targetY = wy;
       c.path = []; c.moving = false;
-      c.facingDir = 'down';
+      // Face whichever way the chair/bench itself is facing (see
+      // ROTATION_TO_FACING in main.js) — previously always snapped to
+      // facing straight down regardless of the seat's own rotation, so a
+      // chair rotated to face left/right/up still sat the character
+      // facing the camera.
+      c.facingDir = facingDir || 'down';
     }
   }
 
@@ -2293,17 +2298,36 @@ class FarmGame {
       ctx.beginPath(); ctx.moveTo(x * TILE, 0); ctx.lineTo(x * TILE, h); ctx.stroke();
     }
 
-    // wallpapered back wall strip along the top
+    // Wallpapered walls — top (the room's "back"), plus left and right
+    // side walls, all matching the same band so the room actually reads
+    // as walled-in on three sides, with only the bottom (facing the
+    // camera) left open. This is also exactly where wall-mounted décor
+    // (TV, aircon, wall light, paintings) is required to go — see
+    // WALL_MOUNTED_ITEMS's placement check in server/routes/shop.js.
+    const wallDepth = TILE * 0.6;
     ctx.fillStyle = '#e8d4b0';
-    ctx.fillRect(0, -TILE * 0.6, w, TILE * 0.6);
+    ctx.fillRect(0, -wallDepth, w, wallDepth); // top
+    ctx.fillRect(-wallDepth, 0, wallDepth, h); // left
+    ctx.fillRect(w, 0, wallDepth, h); // right
     ctx.strokeStyle = '#c9a26a';
     ctx.lineWidth = 3;
-    ctx.strokeRect(0, -TILE * 0.6, w, TILE * 0.6);
+    ctx.strokeRect(0, -wallDepth, w, wallDepth);
+    ctx.strokeRect(-wallDepth, 0, wallDepth, h);
+    ctx.strokeRect(w, 0, wallDepth, h);
 
     // room border
     ctx.strokeStyle = '#5e3b1f';
     ctx.lineWidth = 6;
     ctx.strokeRect(-1, -1, w + 2, h + 2);
+    // Outer edge of the three wall strips (top, left, right only — NOT
+    // the bottom, which stays open/unwalled facing the camera) so they
+    // read as a continuous solid wall rather than a filled rectangle
+    // floating past the room border.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#c9a26a';
+    ctx.beginPath();
+    ctx.moveTo(-wallDepth, h); ctx.lineTo(-wallDepth, -wallDepth); ctx.lineTo(w + wallDepth, -wallDepth); ctx.lineTo(w + wallDepth, h);
+    ctx.stroke();
   }
 
   _drawIndoorObjects() {
