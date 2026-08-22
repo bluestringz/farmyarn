@@ -908,10 +908,14 @@ class FarmGame {
     const worldW = this.farm.width * TILE;
     const worldH = this.farm.height * TILE;
     const rect = this.canvas.getBoundingClientRect();
-    // Same "keep the player's manual zoom" treatment as _centerCameraFor.
-    if (!this._userZoomed) {
-      this.camera.scale = Math.min(1, Math.min(rect.width / worldW, rect.height / worldH) * 0.95) || 1;
-    }
+    // Once the player has manually zoomed, leave the camera position
+    // ALONE too, not just the zoom level — this used to still snap
+    // camera.x/y back to dead-center every time a building was exited
+    // (mansion, coop, barn, any of them) even though the zoom level
+    // itself was correctly preserved, which is exactly what read as a
+    // jarring "auto zoom + recenter" on every exit.
+    if (this._userZoomed) return;
+    this.camera.scale = Math.min(1, Math.min(rect.width / worldW, rect.height / worldH) * 0.95) || 1;
     this.camera.x = (rect.width - worldW * this.camera.scale) / 2;
     this.camera.y = (rect.height - worldH * this.camera.scale) / 2;
   }
