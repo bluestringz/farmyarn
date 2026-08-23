@@ -672,6 +672,7 @@
     }
     UI.renderPicker(picker, seedsOwned, 'crops', state.me, (id) => {
       state.buildSelection = { category: 'crop', itemId: id };
+      game.setPlacementSelectionActive(true);
       UI.toast(`Selected ${id}. Tap a plowed tile to plant.`);
     });
   }
@@ -697,6 +698,7 @@
     UI.renderPicker(picker, owned, 'buildings', state.me, (id) => {
       const found = owned.find((x) => x.id === id);
       state.buildSelection = { category: found._cat, itemId: id, def: found };
+      game.setPlacementSelectionActive(true);
       UI.toast(`Selected ${found.name}. Tap a spot on your farm to preview it.`);
     });
   }
@@ -736,6 +738,7 @@
     UI.renderPicker(picker, owned, 'animals', state.me, (id) => {
       const found = owned.find((x) => x.id === id);
       state.buildSelection = { category: found._cat, itemId: id, def: found };
+      game.setPlacementSelectionActive(true);
       UI.toast(`Selected ${found.name}. Tap a spot to place it.`);
     });
   }
@@ -759,6 +762,7 @@
     UI.renderPicker(picker, owned, 'buildings', state.me, (id) => {
       const found = owned.find((x) => x.id === id);
       state.buildSelection = { category: found._cat, itemId: id, def: found };
+      game.setPlacementSelectionActive(true);
       UI.toast(`Selected ${found.name}. Tap a spot to preview it.`);
     });
   }
@@ -810,6 +814,14 @@
   function clearPendingPlacement() {
     state.pendingPlacement = null;
     if (game) game.clearGhost();
+    // Re-derive from buildSelection rather than always turning this off —
+    // Build/Decorate/Plant/Place-Animal keep their selection active after
+    // a placement confirms (so the next tap can place ANOTHER of the same
+    // item without re-opening the picker), so the flag needs to stay on
+    // in that case; Move's pendingPlacement has no buildSelection backing
+    // it, so this correctly turns the flag back off once a move finishes
+    // or is cancelled.
+    if (game) game.setPlacementSelectionActive(!!state.buildSelection);
     document.getElementById('placement-bar').classList.add('hidden');
   }
 
@@ -979,6 +991,7 @@
         x: obj.grid_x, y: obj.grid_y, rotation: obj.rotation || 0,
         movingObjectId: obj.id,
       };
+      game.setPlacementSelectionActive(true);
       game.setGhost({ ...state.pendingPlacement });
       document.getElementById('placement-bar').classList.remove('hidden');
       UI.toast('Tap where you want to move it, then Confirm.');

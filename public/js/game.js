@@ -281,6 +281,15 @@ class FarmGame {
     // and dragging across tiles calls onTileClick for each NEW tile the
     // pointer passes over, instead of the drag panning the map.
     this.onObjectClick = null; // callback(object)
+    // True while the player has an item picked from Build/Decorate/Plant/
+    // Place-Animal and is choosing WHERE to put it (see main.js's
+    // setPlacementSelectionActive) — while true, a tap on a tile that
+    // already has something on it (e.g. tapping a Table to place a Table
+    // Lamp on top of it) goes to onTileClick same as any empty tile,
+    // instead of being swallowed by onObjectClick's "interact with this
+    // existing thing" handling, which had no placement behavior of its
+    // own and silently did nothing.
+    this.placementSelectionActive = false;
     this.onMarketStallClick = null; // callback(stall)
     this.onParkBenchClick = null; // callback(benchPosition)
     this.onParkCartClick = null; // callback(cartPosition)
@@ -584,6 +593,11 @@ class FarmGame {
   // unreachable) — used for the "walk to the door, THEN fade/transition"
   // entry flow (see main.js's enterInterior/enterCasino), so entering a
   // building reads as actually walking up to it instead of teleporting.
+  // See placementSelectionActive's comment in the constructor.
+  setPlacementSelectionActive(active) {
+    this.placementSelectionActive = !!active;
+  }
+
   walkToAndWait(tileX, tileY) {
     this.walkTo(tileX, tileY, null);
     return new Promise((resolve) => {
@@ -1283,8 +1297,14 @@ class FarmGame {
     if (this.mode === 'indoor') {
       if (!this.interior) return;
       if (tile.x < 0 || tile.y < 0 || tile.x >= this.interior.width || tile.y >= this.interior.height) return;
-      const obj = this._objectAt(tile.x, tile.y);
-      if (obj && this.onObjectClick) { this.onObjectClick(obj); return; }
+      // See placementSelectionActive's comment in the constructor — while
+      // the player is choosing where to put something, ANY tile (even one
+      // already occupied, like a Table Lamp going on top of a Table)
+      // routes to onTileClick, not onObjectClick.
+      if (!this.placementSelectionActive) {
+        const obj = this._objectAt(tile.x, tile.y);
+        if (obj && this.onObjectClick) { this.onObjectClick(obj); return; }
+      }
       if (this.onTileClick) this.onTileClick(tile.x, tile.y);
       return;
     }
@@ -1292,11 +1312,18 @@ class FarmGame {
     if (!this.farm) return;
     if (tile.x < 0 || tile.y < 0 || tile.x >= this.farm.width || tile.y >= this.farm.height) return;
 
-    // Check if an object occupies this tile first (objects are clicked as a whole).
-    const obj = this._objectAt(tile.x, tile.y);
-    if (obj && this.onObjectClick) {
-      this.onObjectClick(obj);
-      return;
+    // Same reasoning as the indoor branch above — while actively choosing
+    // where to place something, let the tap through to onTileClick even
+    // over an already-occupied tile, so the server gets a chance to
+    // validate/reject it (or accept it, for anything that's meant to
+    // stack) instead of the tap being swallowed by object-interaction
+    // logic that has no placement behavior of its own.
+    if (!this.placementSelectionActive) {
+      const obj = this._objectAt(tile.x, tile.y);
+      if (obj && this.onObjectClick) {
+        this.onObjectClick(obj);
+        return;
+      }
     }
     if (this.onTileClick) this.onTileClick(tile.x, tile.y);
   }
@@ -2759,15 +2786,25 @@ class FarmGame {
       ctx.fillStyle = '#4f8f2e';
       ctx.beginPath(); ctx.arc(x + w * 0.82, y + h * 0.16, 2, 0, Math.PI * 2); ctx.fill();
     } else if (itemId === 'side_table') {
-      ctx.fillStyle = '#a3743f';
-      ctx.beginPath(); this._roundRect(x + w * 0.2, y + h * 0.5, w * 0.6, h * 0.12, 3); ctx.fill(); ctx.stroke();
+      // Redesigned to clearly read as a TABLE (matches the Dining Table's
+      // family look — rounded tabletop slab with a visible wood-grain
+      // line, sitting higher up) instead of looking almost identical to
+      // the Bench (a thin plank seat on 2 end legs) — the near-identical
+      // silhouette was why placing a Table Lamp "on the table" kept
+      // failing: players were tapping an actual Bench, thinking it was
+      // this.
       ctx.fillStyle = '#8b5e34';
-      ctx.fillRect(x + w * 0.24, y + h * 0.62, w * 0.06, h * 0.26);
-      ctx.fillRect(x + w * 0.7, y + h * 0.62, w * 0.06, h * 0.26);
-      ctx.fillStyle = '#c9a876';
-      ctx.fillRect(x + w * 0.3, y + h * 0.52, w * 0.4, h * 0.08);
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1;
-      ctx.strokeRect(x + w * 0.3, y + h * 0.52, w * 0.4, h * 0.08);
+      ctx.fillRect(x + w * 0.22, y + h * 0.56, w * 0.08, h * 0.3);
+      ctx.fillRect(x + w * 0.7, y + h * 0.56, w * 0.08, h * 0.3);
+      ctx.strokeRect(x + w * 0.22, y + h * 0.56, w * 0.08, h * 0.3);
+      ctx.strokeRect(x + w * 0.7, y + h * 0.56, w * 0.08, h * 0.3);
+      ctx.fillStyle = '#c68b52';
+      ctx.beginPath();
+      this._roundRect(x + w * 0.14, y + h * 0.42, w * 0.72, h * 0.18, 4);
+      ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(94,59,31,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x + w * 0.2, y + h * 0.51); ctx.lineTo(x + w * 0.8, y + h * 0.51); ctx.stroke();
     } else {
       // fallback generic card for any unrecognized item
       ctx.fillStyle = '#fffaf0';
