@@ -1015,16 +1015,24 @@ class FarmGame {
     const worldW = this.farm.width * TILE;
     const worldH = this.farm.height * TILE;
     const rect = this.canvas.getBoundingClientRect();
-    // Once the player has manually zoomed, leave the camera position
-    // ALONE too, not just the zoom level — this used to still snap
-    // camera.x/y back to dead-center every time a building was exited
-    // (mansion, coop, barn, any of them) even though the zoom level
-    // itself was correctly preserved, which is exactly what read as a
-    // jarring "auto zoom + recenter" on every exit.
-    if (this._userZoomed) return;
-    this.camera.scale = Math.min(1, Math.min(rect.width / worldW, rect.height / worldH) * 0.95) || 1;
-    this.camera.x = (rect.width - worldW * this.camera.scale) / 2;
-    this.camera.y = (rect.height - worldH * this.camera.scale) / 2;
+    if (!this._userZoomed) {
+      this.camera.scale = Math.min(1, Math.min(rect.width / worldW, rect.height / worldH) * 0.95) || 1;
+      this.camera.x = (rect.width - worldW * this.camera.scale) / 2;
+      this.camera.y = (rect.height - worldH * this.camera.scale) / 2;
+      return;
+    }
+    // Once the player has manually zoomed, keep THAT zoom level instead of
+    // snapping back to the auto-fit scale — but still PAN the camera to
+    // center on wherever the character actually is now. Previously this
+    // just returned here doing nothing at all once zoomed, which correctly
+    // stopped the zoom level from resetting but also meant the camera
+    // never followed the character back into view after exiting a
+    // building — leaving it stuck wherever it happened to be pointed
+    // before entering, potentially nowhere near the door the character
+    // just walked out of on a large farm.
+    const cx = this._character.x, cy = this._character.y;
+    this.camera.x = rect.width / 2 - cx * this.camera.scale;
+    this.camera.y = rect.height / 2 - cy * this.camera.scale;
   }
 
   _resize() {
@@ -1747,7 +1755,7 @@ class FarmGame {
       if (isFullNight && lampSources) {
         for (const obj of lampSources) {
           const isOutdoorLamp = obj.object_type === 'decoration' && obj.item_id === 'lamp';
-          const isIndoorLamp = obj.object_type === 'interior' && (obj.item_id === 'table_lamp' || obj.item_id === 'wall_light');
+          const isIndoorLamp = obj.object_type === 'interior' && (obj.item_id === 'table_lamp' || obj.item_id === 'wall_light' || obj.item_id === 'fireplace');
           if (!isOutdoorLamp && !isIndoorLamp) continue;
           let worldX = (obj.grid_x + 0.5) * TILE;
           let worldY = (obj.grid_y + 0.55) * TILE; // roughly where the lamp's glass/bulb sits
@@ -2726,6 +2734,18 @@ class FarmGame {
       ctx.beginPath(); this._roundRect(x + w * 0.1, y + h * 0.15, w * 0.8, h * 0.72, 4); ctx.fill(); ctx.stroke();
       ctx.fillStyle = '#3a2a18';
       ctx.beginPath(); this._roundRect(x + w * 0.26, y + h * 0.42, w * 0.48, h * 0.42, 6); ctx.fill(); ctx.stroke();
+
+      // "Breathing" flame glow — same pulsing idea as the Lamp Post's
+      // bulb, just a faster flicker rate since fire is livelier than a
+      // steady electric bulb. Per-fireplace phase offset (from its own
+      // position) so multiple fireplaces don't flicker in perfect unison.
+      const t = performance.now() / 1000;
+      const phase = (x + y) * 0.013;
+      const pulse = 0.6 + 0.4 * Math.sin(t * 2.2 + phase);
+      ctx.save();
+      ctx.shadowColor = '#ff7a1a';
+      ctx.shadowBlur = 5 + pulse * 8;
+      ctx.globalAlpha = 0.8 + pulse * 0.2;
       ctx.fillStyle = '#ff9d3c';
       ctx.beginPath();
       ctx.moveTo(x + w * 0.42, y + h * 0.84);
@@ -2733,8 +2753,32 @@ class FarmGame {
       ctx.quadraticCurveTo(x + w * 0.5, y + h * 0.7, x + w * 0.58, y + h * 0.6);
       ctx.quadraticCurveTo(x + w * 0.64, y + h * 0.72, x + w * 0.58, y + h * 0.84);
       ctx.closePath(); ctx.fill();
+      ctx.restore();
       ctx.fillStyle = '#ffe08a';
       ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + h * 0.76, w * 0.06, h * 0.08, 0, 0, Math.PI * 2); ctx.fill();
+
+      // Floating fire embers drifting up out of the flame — same
+      // "glowing particle" idea as the Lamp Post's fireflies, but warm
+      // orange/red and rising-then-fading like sparks instead of orbiting,
+      // and just a couple of them since a fireplace is smaller and more
+      // contained than a lamp post.
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const emberCount = 3;
+      for (let i = 0; i < emberCount; i++) {
+        const cycle = (t * 0.55 + i / emberCount + phase * 0.1) % 1; // 0..1 rise-and-fade loop
+        const ex = x + w * (0.42 + 0.16 * i / (emberCount - 1)) + Math.sin(t * 3 + i * 2) * w * 0.03;
+        const ey = y + h * 0.6 - cycle * h * 0.5;
+        const flicker = (1 - cycle) * (0.5 + 0.5 * Math.sin(t * 6 + i * 3));
+        const haloGrad = ctx.createRadialGradient(ex, ey, 0, ex, ey, 4);
+        haloGrad.addColorStop(0, `rgba(255,140,40,${Math.max(0, flicker)})`);
+        haloGrad.addColorStop(1, 'rgba(255,140,40,0)');
+        ctx.fillStyle = haloGrad;
+        ctx.beginPath(); ctx.arc(ex, ey, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(255,220,150,${Math.max(0, flicker)})`;
+        ctx.beginPath(); ctx.arc(ex, ey, 1, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
     } else if (itemId === 'bookshelf') {
       ctx.fillStyle = '#8b5e34';
       ctx.beginPath(); this._roundRect(x + w * 0.12, y + h * 0.08, w * 0.76, h * 0.76, 4); ctx.fill(); ctx.stroke();

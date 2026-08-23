@@ -675,6 +675,7 @@
   function setTool(tool) {
     state.tool = tool;
     state.buildSelection = null;
+    state.selectedFeedId = null;
     clearPendingPlacement();
     document.querySelectorAll('.tool-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.tool === tool);
@@ -724,6 +725,11 @@
   // nothing to "pick" the way a seed type is picked), but leaving this
   // panel open while going around feeding a whole pen lets the numbers
   // tick down live so it's obvious if the Bag is about to run short.
+  // Which Bag item feeds which animal — mirrors FEED_RECIPES server-side
+  // (server/routes/shop.js). Used here both for display labels AND to
+  // require picking the correct one before an animal will actually eat.
+  const FEED_TYPE_BY_ANIMAL = { chicken: 'chicken_feed', sheep: 'sheep_feed', pig: 'pig_feed', cow: 'cow_feed' };
+
   async function openFeedPicker() {
     const picker = document.getElementById('seed-picker');
     const inv = await Api.inventory();
@@ -732,9 +738,9 @@
     const feedsOwned = FEED_TYPES.map((f) => ({
       id: f.id, name: `${f.name} (${f.animal})`, _cat: 'animal', _owned: owned[f.id] || 0, required_level: 0,
     }));
-    UI.renderPicker(picker, feedsOwned, 'animal', state.me, () => {
-      UI.toast('Tap the matching animal to feed it — this just shows how much you have.');
-    });
+    UI.renderPicker(picker, feedsOwned, 'animal', state.me, (id) => {
+      state.selectedFeedId = id;
+    }, state.selectedFeedId);
   }
 
   async function openSeedPicker() {
@@ -1239,6 +1245,17 @@
     }
 
     if (state.tool === 'feed' && obj.object_type === 'animal' && !state.viewingUserId) {
+      const requiredFeed = FEED_TYPE_BY_ANIMAL[obj.item_id];
+      if (!state.selectedFeedId) {
+        UI.toast('Pick a feed type below first, then tap the animal.');
+        return;
+      }
+      if (requiredFeed && state.selectedFeedId !== requiredFeed) {
+        const animalLabel = obj.item_id.replace(/_/g, ' ');
+        const feedLabel = requiredFeed.replace(/_/g, ' ');
+        UI.toast(`Wrong feed selected — a ${animalLabel} needs ${feedLabel}.`);
+        return;
+      }
       try {
         game.walkTo(obj.grid_x, obj.grid_y, null);
         await Api.feedAnimal(obj.id);
@@ -1259,31 +1276,17 @@
     if (obj.object_type === 'animal' && !state.viewingUserId) {
       try {
         game.walkTo(obj.grid_x, obj.grid_y, null);
-        let res;
-        try {
-          res = await Api.collectAnimal(obj.id);
-        } catch (err) {
-          // "Feed this animal first" — try auto-feeding from the Bag (if
-          // there's matching feed) and retry once, so the common case of
-          // "I already made feed" doesn't need a separate tap-through step.
-          if (err.message.includes('Feed this animal')) {
-            await Api.feedAnimal(obj.id);
-            UI.toast('Fed the animal — collecting...');
-            res = await Api.collectAnimal(obj.id);
-          } else {
-            throw err;
-          }
-        }
+        const res = await Api.collectAnimal(obj.id);
         await refreshPlayer();
         UI.toast(`Collected ${res.productQuantity > 1 ? `${res.productQuantity}x ${res.product}` : res.product}!`);
         game.playAction(ACTION_ICON.collect);
-        // Same interior-refresh fix as feeding above — animal pens are
-        // interior spaces, so this makes the badge flip to "needs feeding"
-        // right after collecting instead of waiting for a re-entry.
         if (state.inHouse) await refreshInterior();
         await refreshCurrentFarm();
       } catch (err) {
-        UI.toast(err.message);
+        // "Feed this animal first" no longer auto-feeds from here — the
+        // player has to actually pick a feed type first (see the 'feed'
+        // tool branch above), same as planting requires picking a seed.
+        UI.toast(err.message.includes('Feed this animal') ? "This animal hasn't been fed — pick a feed type and use the Feed tool first." : err.message);
       }
       return;
     }
