@@ -112,6 +112,8 @@ const UI = (() => {
     table: 'Dining table for your house interior — table lamps and TVs can be placed on top of it.',
     chair: 'Tap it while indoors to sit — regenerates Energy faster while seated.',
     cabinet: 'Storage furniture for your house interior.',
+    closet: 'The only place to actually change what you\'re wearing — buying a costume in the Shop just adds it to what you own.',
+    refrigerator: 'Cold storage for cooking ingredients, separate from your Bag — the Stove pulls from here first when cooking.',
     bed: 'Tap it while indoors to lie down — regenerates Energy faster while resting.',
     potted_plant: 'Small decorative plant for your house interior.',
     painting: 'Wall art — must be placed against a wall (the top row, or the leftmost/rightmost column of the room).',
@@ -148,7 +150,6 @@ const UI = (() => {
     function renderOutfitCard(item, opts) {
       const locked = player.level < item.required_level;
       const owned = item.owned;
-      const equipped = item.equipped;
       const balance = opts.balance;
       const affordable = balance >= item.cost;
       const isRental = item.cost > 0;
@@ -167,8 +168,8 @@ const UI = (() => {
           ${expiryLine}
           ${locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}
           ${ITEM_DESCRIPTIONS[item.id] ? `<div class="shop-desc">${ITEM_DESCRIPTIONS[item.id]}</div>` : ''}
-          <button data-item="${item.id}" ${(locked || (!owned && !affordable) || (equipped && owned)) ? 'disabled' : ''}>
-            ${equipped && owned ? 'Equipped' : owned ? 'Wear' : locked ? 'Locked' : isRental ? `Rent (${item.rental_days} days)` : 'Wear'}
+          <button data-item="${item.id}" ${(locked || (!owned && !affordable) || owned) ? 'disabled' : ''}>
+            ${owned ? 'Owned' : locked ? 'Locked' : isRental ? `Rent (${item.rental_days} days)` : 'Buy'}
           </button>
         </div>`;
     }
@@ -180,7 +181,7 @@ const UI = (() => {
       const cards = items.map((item) => renderOutfitCard(item, { icon: '🎖️', balance: player.gmPoints || 0 })).join('')
         || `<div class="empty-state">Nothing here yet.</div>`;
       body.innerHTML = `<div class="shop-tabs">${tabs}</div>
-        <p class="panel-hint">🎖️ ${player.gmPoints || 0} GM Points — a rare currency only an admin can grant you. Special Outfits are 14-day rentals costing GM Points, never Premium Points.</p>
+        <p class="panel-hint">🎖️ ${player.gmPoints || 0} GM Points — a rare currency only an admin can grant you. Special Outfits are 14-day rentals costing GM Points, never Premium Points. Buying doesn't wear it — head to your Closet to actually change what you're wearing.</p>
         <div class="shop-grid">${cards}</div>`;
 
       body.querySelectorAll('canvas[data-preview-outfit]').forEach((canvas) => {
@@ -220,7 +221,7 @@ const UI = (() => {
         </div>
       `;
 
-      body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">Costumes are 7-day rentals paid in 💎 Premium Points — you can rent a new one once the current 7 days runs out.</p><div class="shop-grid">${cards}</div>${changeNameSection}`;
+      body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">Costumes are 7-day rentals paid in 💎 Premium Points — you can rent a new one once the current 7 days runs out. Buying doesn't wear it — head to your Closet to actually change what you're wearing.</p><div class="shop-grid">${cards}</div>${changeNameSection}`;
 
 
       body.querySelectorAll('canvas[data-preview-outfit]').forEach((canvas) => {
@@ -744,6 +745,38 @@ const UI = (() => {
     });
   }
 
+  // Closet — the only place that actually changes what's worn. Buying in
+  // the Shop just adds ownership; this panel lists everything currently
+  // OWNED (already filtered by the caller) and lets the player pick one.
+  function renderClosetPanel(ownedOutfits, player, onWear) {
+    const body = panelBody();
+    const cards = ownedOutfits.map((item) => {
+      const equipped = item.equipped;
+      let expiryLine = '';
+      if (item.expiresAt) {
+        const daysLeft = Math.max(0, Math.ceil((item.expiresAt * 1000 - Date.now()) / 86400000));
+        expiryLine = `<div class="shop-level">Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}</div>`;
+      }
+      return `
+        <div class="shop-card">
+          <canvas class="outfit-preview" width="70" height="90" data-preview-outfit="${item.id}"></canvas>
+          <div class="shop-name">${item.name}</div>
+          ${expiryLine}
+          <button data-item="${item.id}" ${equipped ? 'disabled' : ''}>${equipped ? 'Equipped' : 'Wear'}</button>
+        </div>`;
+    }).join('') || `<div class="empty-state">You don't own any costumes yet — buy one from the Shop first!</div>`;
+
+    body.innerHTML = `<p class="panel-hint">Pick what to wear — this is the only place that actually changes your look.</p><div class="shop-grid">${cards}</div>`;
+
+    body.querySelectorAll('canvas[data-preview-outfit]').forEach((canvas) => {
+      const outfit = ownedOutfits.find((o) => o.id === canvas.dataset.previewOutfit);
+      if (window.drawMiniCharacter) window.drawMiniCharacter(canvas, player.gender, outfit, outfit.equipped ? player.dyeColor : null);
+    });
+    body.querySelectorAll('.shop-card button[data-item]').forEach((btn) => {
+      btn.addEventListener('click', () => onWear(btn.dataset.item));
+    });
+  }
+
   function renderSiloPanel(wheatOwned, onCraft) {
     const body = panelBody();
     const recipes = [
@@ -1252,7 +1285,7 @@ const UI = (() => {
     render();
   }
 
-  return { toast, openPanel, closePanel, panelBody, renderShop, renderInventory, renderFriends, renderNotifications, renderPicker, renderStallDetail, renderSiloPanel, renderStovePanel, renderStoragePanel, renderWorkshopPanel, renderCasinoPanel, renderColorGamePanel, renderSlotPanel, renderClawPanel, formatDuration, timeAgo };
+  return { toast, openPanel, closePanel, panelBody, renderShop, renderInventory, renderFriends, renderNotifications, renderPicker, renderStallDetail, renderSiloPanel, renderClosetPanel, renderStovePanel, renderStoragePanel, renderWorkshopPanel, renderCasinoPanel, renderColorGamePanel, renderSlotPanel, renderClawPanel, formatDuration, timeAgo };
 })();
 
 window.UI = UI;

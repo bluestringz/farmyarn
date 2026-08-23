@@ -182,12 +182,21 @@ module.exports = function playerRoutes(db) {
     if (owned.expires_at !== null && owned.expires_at <= t) {
       return res.status(400).json({ error: 'That costume rental expired — renew it in the Shop to wear it again' });
     }
-    db.prepare('UPDATE users SET equipped_outfit = ? WHERE id = ?').run(outfitId, req.userId);
+    db.prepare('UPDATE users SET equipped_outfit = ?, dye_color = NULL WHERE id = ?').run(outfitId, req.userId);
     res.json({ ok: true, outfitId });
   });
 
   router.get('/inventory', (req, res) => {
     const rows = db.prepare('SELECT item_id, quantity FROM inventory WHERE user_id = ? AND quantity > 0').all(req.userId);
+    res.json(rows);
+  });
+
+  // GET /api/player/fridge — cold storage for cooking ingredients, kept
+  // separate from the Bag (see fridge_storage table). Requires an actual
+  // Refrigerator placed somewhere indoors — same "you need the furniture
+  // for this" pattern as the Silo gating feed-crafting.
+  router.get('/fridge', (req, res) => {
+    const rows = db.prepare('SELECT item_id, quantity FROM fridge_storage WHERE user_id = ? AND quantity > 0').all(req.userId);
     res.json(rows);
   });
 

@@ -466,6 +466,22 @@
     await enterInterior({ buildingId: obj.id, floor }, 'coop-banner');
   }
 
+  async function openClosetPanel() {
+    const outfits = await Api.outfits();
+    const owned = outfits.filter((o) => o.owned);
+    UI.openPanel('Closet');
+    UI.renderClosetPanel(owned, state.me, async (outfitId) => {
+      try {
+        await Api.equipOutfit(outfitId);
+        UI.toast('Outfit changed!');
+        await refreshPlayer();
+        await openClosetPanel(); // refresh so the newly-worn item shows "Equipped"
+      } catch (err) {
+        UI.toast(err.message);
+      }
+    });
+  }
+
   async function openSiloPanel() {
     const inv = await Api.inventory();
     const wheatRow = inv.find((row) => row.item_id === 'wheat');
@@ -530,6 +546,31 @@
           await Api.storageWithdraw(itemId, qty);
           UI.toast(`Took out ${qty}x — check your Bag`);
           await openStoragePanel();
+        } catch (err) { UI.toast(err.message); }
+      });
+  }
+
+  // Refrigerator — cold storage specifically for cooking ingredients,
+  // separate from the general-purpose Storage Shed above. The Stove's
+  // /api/farm/cook pulls from here first (see server/routes/farm.js), so
+  // parking crops/animal products here instead of the Bag still leaves
+  // them usable for cooking.
+  async function openFridgePanel() {
+    const [bagItems, fridgeItems] = await Promise.all([Api.inventory(), Api.fridge()]);
+    UI.openPanel('Refrigerator');
+    UI.renderStoragePanel(bagItems, fridgeItems,
+      async (itemId, qty) => {
+        try {
+          await Api.fridgeDeposit(itemId, qty);
+          UI.toast(`Stored ${qty}x in the fridge`);
+          await openFridgePanel();
+        } catch (err) { UI.toast(err.message); }
+      },
+      async (itemId, qty) => {
+        try {
+          await Api.fridgeWithdraw(itemId, qty);
+          UI.toast(`Took out ${qty}x — check your Bag`);
+          await openFridgePanel();
         } catch (err) { UI.toast(err.message); }
       });
   }
@@ -645,6 +686,8 @@
 
     if (tool === 'plant') {
       openSeedPicker();
+    } else if (tool === 'feed') {
+      openFeedPicker();
     } else if (tool === 'build') {
       openBuildPicker();
     } else if (tool === 'place-animal') {
@@ -652,6 +695,35 @@
     } else if (tool === 'decorate') {
       openDecoratePicker();
     }
+  }
+
+  // Which Bag item feeds which animal — mirrors FEED_RECIPES server-side
+  // (server/routes/shop.js), kept here just for display labels since the
+  // server is what actually enforces the recipe.
+  const FEED_TYPES = [
+    { id: 'chicken_feed', name: 'Chicken Feed', animal: 'Chicken' },
+    { id: 'sheep_feed', name: 'Sheep Feed', animal: 'Sheep' },
+    { id: 'pig_feed', name: 'Pig Feed', animal: 'Pig' },
+    { id: 'cow_feed', name: 'Cow Feed', animal: 'Cow' },
+  ];
+
+  // Shows how much of each feed type is in the Bag, same "see your stock
+  // before you commit" idea as the Seed Picker — tapping an actual animal
+  // still does the feeding (feed recipes are fixed per animal, there's
+  // nothing to "pick" the way a seed type is picked), but leaving this
+  // panel open while going around feeding a whole pen lets the numbers
+  // tick down live so it's obvious if the Bag is about to run short.
+  async function openFeedPicker() {
+    const picker = document.getElementById('seed-picker');
+    const inv = await Api.inventory();
+    const owned = {};
+    inv.forEach((row) => { owned[row.item_id] = row.quantity; });
+    const feedsOwned = FEED_TYPES.map((f) => ({
+      id: f.id, name: `${f.name} (${f.animal})`, _cat: 'animal', _owned: owned[f.id] || 0, required_level: 0,
+    }));
+    UI.renderPicker(picker, feedsOwned, 'animal', state.me, () => {
+      UI.toast('Tap the matching animal to feed it — this just shows how much you have.');
+    });
   }
 
   async function openSeedPicker() {
@@ -1090,6 +1162,23 @@
       return;
     }
 
+    if (obj.item_id === 'refrigerator' && obj.object_type === 'interior'
+        && state.tool !== 'decorate' && state.tool !== 'move' && state.tool !== 'remove') {
+      game.walkTo(obj.grid_x, obj.grid_y, null);
+      await openFridgePanel();
+      return;
+    }
+
+    // Closet — the only place that actually changes what you're wearing.
+    // Buying a costume in the Shop just adds it to what you own; you have
+    // to come here to put it on.
+    if (obj.item_id === 'closet' && obj.object_type === 'interior'
+        && state.tool !== 'decorate' && state.tool !== 'move' && state.tool !== 'remove') {
+      game.walkTo(obj.grid_x, obj.grid_y, null);
+      await openClosetPanel();
+      return;
+    }
+
     // Staircase — tap it (with no tool active) to go up/down a floor in a
     // multi-floor building (currently just the mansion). Available to
     // owner and visitor alike, same as walking around the room already is.
@@ -1149,6 +1238,7 @@
         // indicator updates immediately instead of only on re-entry.
         if (state.inHouse) await refreshInterior();
         await refreshCurrentFarm();
+        await openFeedPicker(); // refresh the shown feed counts, same as the Seed Picker after planting
       } catch (err) {
         UI.toast(err.message);
       }
@@ -1275,6 +1365,10 @@
           const outfits = await Api.outfits();
           const target = outfits.find((o) => o.id === itemId);
           if (target && target.owned) {
+            // Defensive fallback only — the Shop's button is disabled
+            // once an outfit is owned, so this shouldn't normally be
+            // reachable; equipping now only happens at the Closet (see
+            // openClosetPanel), not from the Shop.
             await Api.equipOutfit(itemId);
             UI.toast('Outfit changed!');
           } else {
@@ -1283,7 +1377,7 @@
             state.me.premiumCurrency = res.premiumCurrency;
             state.me.gmPoints = res.gmPoints;
             renderTopbar();
-            UI.toast('New outfit bought and worn!');
+            UI.toast('Bought! Head to your Closet to actually wear it.');
           }
           await refreshPlayer();
           await renderShopPanel(cat);

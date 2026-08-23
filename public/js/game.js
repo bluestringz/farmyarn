@@ -2639,6 +2639,39 @@ class FarmGame {
       ctx.beginPath(); ctx.arc(x + w * 0.58, y + h * 0.45, 1.6, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#8b5e34';
       ctx.fillRect(x + w * 0.14, y + h * 0.78, w * 0.72, h * 0.06);
+    } else if (itemId === 'closet') {
+      // Taller wardrobe silhouette (vs Cabinet's squarer proportions),
+      // with a mirror strip on one door, so it visually reads as
+      // "where your clothes are" — see openClosetPanel in main.js, the
+      // only place that actually changes what's worn.
+      ctx.fillStyle = '#6b4423';
+      ctx.beginPath(); this._roundRect(x + w * 0.12, y + h * 0.04, w * 0.76, h * 0.88, 5); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(x + w / 2, y + h * 0.04); ctx.lineTo(x + w / 2, y + h * 0.86); ctx.stroke();
+      ctx.fillStyle = 'rgba(200,220,235,0.55)';
+      ctx.beginPath(); this._roundRect(x + w * 0.2, y + h * 0.14, w * 0.2, h * 0.5, 3); ctx.fill();
+      ctx.strokeStyle = 'rgba(150,170,185,0.7)'; ctx.lineWidth = 1;
+      ctx.beginPath(); this._roundRect(x + w * 0.2, y + h * 0.14, w * 0.2, h * 0.5, 3); ctx.stroke();
+      ctx.fillStyle = '#d9b25c';
+      ctx.beginPath(); ctx.arc(x + w * 0.44, y + h * 0.5, 1.8, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + w * 0.6, y + h * 0.5, 1.8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#5e3b1f';
+      ctx.fillRect(x + w * 0.12, y + h * 0.9, w * 0.76, h * 0.06);
+    } else if (itemId === 'refrigerator') {
+      // A clearly 2-DOOR fridge — vertical split down the middle (like
+      // Cabinet) but taller/boxier proportions and a cool white/steel
+      // color so it doesn't read as just another wooden cabinet.
+      ctx.fillStyle = '#e8edf0';
+      ctx.beginPath(); this._roundRect(x + w * 0.14, y + h * 0.04, w * 0.72, h * 0.9, 5); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(x + w / 2, y + h * 0.04); ctx.lineTo(x + w / 2, y + h * 0.94); ctx.stroke();
+      // horizontal seam separating the freezer compartment from the fridge below
+      ctx.beginPath(); ctx.moveTo(x + w * 0.14, y + h * 0.32); ctx.lineTo(x + w * 0.86, y + h * 0.32); ctx.stroke();
+      ctx.strokeStyle = '#9db3bd'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x + w * 0.42, y + h * 0.5); ctx.lineTo(x + w * 0.42, y + h * 0.86); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + w * 0.58, y + h * 0.5); ctx.lineTo(x + w * 0.58, y + h * 0.86); ctx.stroke();
+      ctx.fillStyle = '#5e3b1f';
+      ctx.fillRect(x + w * 0.14, y + h * 0.94, w * 0.72, h * 0.05);
     } else if (itemId === 'bed') {
       ctx.fillStyle = '#8b5e34';
       ctx.beginPath(); this._roundRect(x + w * 0.06, y + h * 0.2, w * 0.1, h * 0.62, 3); ctx.fill(); ctx.stroke(); // headboard

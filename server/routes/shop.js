@@ -150,8 +150,6 @@ module.exports = function shopRoutes(db) {
       }
       purchased = true;
     }
-    // Switching outfits clears any custom dye — dye is a per-shirt tint, not a permanent trait.
-    db.prepare('UPDATE users SET equipped_outfit = ?, dye_color = NULL WHERE id = ?').run(outfitId, req.userId);
 
     const updated = db.prepare('SELECT coins, premium_currency, gm_points FROM users WHERE id = ?').get(req.userId);
     const finalOwned = db.prepare('SELECT expires_at FROM owned_outfits WHERE user_id = ? AND outfit_id = ?').get(req.userId, outfitId);
@@ -611,6 +609,58 @@ module.exports = function shopRoutes(db) {
     const reward = grantRewards(db, req.userId, { coins: 0, xp: 1 });
 
     res.json({ ok: true, product: animalType.product_item_id, productQuantity: productQty, reward });
+  });
+
+  // POST /api/shop/fridge-deposit { itemId, quantity } — moves items from
+  // the Bag into the Refrigerator's cold storage (see fridge_storage
+  // table) — requires an actual Refrigerator placed somewhere indoors,
+  // same "need the furniture for this" pattern as the Silo gating feed
+  // crafting.
+  router.post('/fridge-deposit', (req, res) => {
+    const { itemId, quantity } = req.body || {};
+    const qty = parseInt(quantity, 10);
+    if (!itemId || !Number.isFinite(qty) || qty < 1) return res.status(400).json({ error: 'Invalid deposit' });
+
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    const fridge = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND item_id = 'refrigerator' AND location = 'indoor'").get(farm.id);
+    if (!fridge) return res.status(400).json({ error: 'You need a Refrigerator placed indoors first' });
+
+    const bagRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, itemId);
+    if (!bagRow || bagRow.quantity < qty) {
+      return res.status(400).json({ error: `Not enough ${itemId.replace(/_/g, ' ')} in your Bag — have ${bagRow ? bagRow.quantity : 0}` });
+    }
+
+    db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(qty, bagRow.id);
+    db.prepare(`
+      INSERT INTO fridge_storage (user_id, item_id, quantity) VALUES (?, ?, ?)
+      ON CONFLICT(user_id, item_id) DO UPDATE SET quantity = quantity + excluded.quantity
+    `).run(req.userId, itemId, qty);
+
+    res.json({ ok: true, itemId, quantity: qty });
+  });
+
+  // POST /api/shop/fridge-withdraw { itemId, quantity } — moves items back
+  // from the Refrigerator into the Bag.
+  router.post('/fridge-withdraw', (req, res) => {
+    const { itemId, quantity } = req.body || {};
+    const qty = parseInt(quantity, 10);
+    if (!itemId || !Number.isFinite(qty) || qty < 1) return res.status(400).json({ error: 'Invalid withdrawal' });
+
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    const fridge = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND item_id = 'refrigerator' AND location = 'indoor'").get(farm.id);
+    if (!fridge) return res.status(400).json({ error: 'You need a Refrigerator placed indoors first' });
+
+    const fridgeRow = db.prepare('SELECT * FROM fridge_storage WHERE user_id = ? AND item_id = ?').get(req.userId, itemId);
+    if (!fridgeRow || fridgeRow.quantity < qty) {
+      return res.status(400).json({ error: `Not enough ${itemId.replace(/_/g, ' ')} in the Refrigerator — have ${fridgeRow ? fridgeRow.quantity : 0}` });
+    }
+
+    db.prepare('UPDATE fridge_storage SET quantity = quantity - ? WHERE id = ?').run(qty, fridgeRow.id);
+    addInventory(db, req.userId, itemId, qty);
+
+    res.json({ ok: true, itemId, quantity: qty });
   });
 
   return router;

@@ -88,6 +88,9 @@ const Api = (() => {
     // Player
     me: () => request('GET', '/api/player/me'),
     inventory: () => request('GET', '/api/player/inventory'),
+    fridge: () => request('GET', '/api/player/fridge'),
+    fridgeDeposit: (itemId, quantity) => request('POST', '/api/shop/fridge-deposit', { itemId, quantity }),
+    fridgeWithdraw: (itemId, quantity) => request('POST', '/api/shop/fridge-withdraw', { itemId, quantity }),
     outfits: () => request('GET', '/api/player/outfits'),
     equipOutfit: (outfitId) => request('POST', '/api/player/equip-outfit', { outfitId }),
     notifications: () => request('GET', '/api/player/notifications'),

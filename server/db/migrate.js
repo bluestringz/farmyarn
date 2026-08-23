@@ -338,6 +338,19 @@ function migrate(db) {
     current_stock INTEGER NOT NULL,
     UNIQUE(category, item_id)
   );
+
+  -- Separate cold storage for cooking ingredients, distinct from the Bag
+  -- (the 'inventory' table) — lets crops/animal products used for cooking
+  -- live in the Refrigerator instead of cluttering the Bag. The Stove's
+  -- /api/farm/cook route draws from here FIRST, then the Bag, for
+  -- whichever ingredient a recipe calls for.
+  CREATE TABLE IF NOT EXISTS fridge_storage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    item_id TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(user_id, item_id)
+  );
   `);
 
   addColumnsIfMissing(db);
@@ -688,6 +701,16 @@ function seedContent(db) {
     { id: 'table',     name: 'Dining Table',  cost: 90,  required_level: 1, width: 2, height: 1, sprite: 'table' },
     { id: 'chair',     name: 'Chair',         cost: 30,  required_level: 1, width: 1, height: 1, sprite: 'chair' },
     { id: 'cabinet',   name: 'Cabinet',       cost: 110, required_level: 2, width: 1, height: 1, sprite: 'cabinet' },
+    // Tap it to see every costume you actually own and switch between
+    // them — buying a costume in the Shop no longer wears it right away,
+    // this is now the only place that does (see /api/shop/buy-outfit and
+    // openClosetPanel in main.js).
+    { id: 'closet',    name: 'Closet',        cost: 150, required_level: 1, width: 1, height: 1, sprite: 'closet' },
+    // Cold storage for cooking ingredients, separate from the Bag — see
+    // fridge_storage table + /api/player/fridge, /api/shop/fridge-deposit,
+    // /api/shop/fridge-withdraw. The Stove pulls from here first when
+    // cooking.
+    { id: 'refrigerator', name: '2-Door Refrigerator', cost: 200, required_level: 1, width: 1, height: 1, sprite: 'refrigerator' },
     { id: 'bed',       name: 'Bed',           cost: 150, required_level: 1, width: 2, height: 1, sprite: 'bed' },
     { id: 'potted_plant', name: 'Potted Plant', cost: 35, required_level: 1, width: 1, height: 1, sprite: 'potted_plant' },
     { id: 'painting',  name: 'Painting',      cost: 60,  required_level: 2, width: 1, height: 1, sprite: 'painting' },

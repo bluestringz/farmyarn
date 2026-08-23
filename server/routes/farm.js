@@ -556,12 +556,22 @@ module.exports = function farmRoutes(db, io) {
     if (!stove) return res.status(400).json({ error: 'No Stove there to cook with' });
 
     const cropNeeded = recipe.cropCost * qty;
+    // Ingredients can live in the Fridge, the Bag, or split across both —
+    // draw from the Fridge FIRST (that's the whole point of having one:
+    // ingredients parked there instead of cluttering the Bag get used
+    // same as anything else), then top up from the Bag for the rest.
+    const fridgeRow = db.prepare('SELECT * FROM fridge_storage WHERE user_id = ? AND item_id = ?').get(req.userId, cropType);
+    const fridgeQty = fridgeRow ? fridgeRow.quantity : 0;
     const cropRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, cropType);
-    if (!cropRow || cropRow.quantity < cropNeeded) {
-      return res.status(400).json({ error: `Not enough ${cropType} — need ${cropNeeded}, have ${cropRow ? cropRow.quantity : 0}` });
+    const bagQty = cropRow ? cropRow.quantity : 0;
+    if (fridgeQty + bagQty < cropNeeded) {
+      return res.status(400).json({ error: `Not enough ${cropType} — need ${cropNeeded}, have ${fridgeQty + bagQty} (Fridge + Bag)` });
     }
 
-    db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(cropNeeded, cropRow.id);
+    const fromFridge = Math.min(fridgeQty, cropNeeded);
+    const fromBag = cropNeeded - fromFridge;
+    if (fromFridge > 0) db.prepare('UPDATE fridge_storage SET quantity = quantity - ? WHERE id = ?').run(fromFridge, fridgeRow.id);
+    if (fromBag > 0) db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(fromBag, cropRow.id);
     // Ingredients are spent either way (that's the risk of cooking) — but
     // each individual attempt within the batch has an independent 5%
     // chance to come out ruined, yielding one fewer food item than qty
