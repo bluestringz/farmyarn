@@ -556,22 +556,12 @@ module.exports = function farmRoutes(db, io) {
     if (!stove) return res.status(400).json({ error: 'No Stove there to cook with' });
 
     const cropNeeded = recipe.cropCost * qty;
-    // Ingredients can live in the Fridge, the Bag, or split across both —
-    // draw from the Fridge FIRST (that's the whole point of having one:
-    // ingredients parked there instead of cluttering the Bag get used
-    // same as anything else), then top up from the Bag for the rest.
-    const fridgeRow = db.prepare('SELECT * FROM fridge_storage WHERE user_id = ? AND item_id = ?').get(req.userId, cropType);
-    const fridgeQty = fridgeRow ? fridgeRow.quantity : 0;
     const cropRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, cropType);
-    const bagQty = cropRow ? cropRow.quantity : 0;
-    if (fridgeQty + bagQty < cropNeeded) {
-      return res.status(400).json({ error: `Not enough ${cropType} — need ${cropNeeded}, have ${fridgeQty + bagQty} (Fridge + Bag)` });
+    if (!cropRow || cropRow.quantity < cropNeeded) {
+      return res.status(400).json({ error: `Not enough ${cropType} — need ${cropNeeded}, have ${cropRow ? cropRow.quantity : 0}` });
     }
 
-    const fromFridge = Math.min(fridgeQty, cropNeeded);
-    const fromBag = cropNeeded - fromFridge;
-    if (fromFridge > 0) db.prepare('UPDATE fridge_storage SET quantity = quantity - ? WHERE id = ?').run(fromFridge, fridgeRow.id);
-    if (fromBag > 0) db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(fromBag, cropRow.id);
+    db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(cropNeeded, cropRow.id);
     // Ingredients are spent either way (that's the risk of cooking) — but
     // each individual attempt within the batch has an independent 5%
     // chance to come out ruined, yielding one fewer food item than qty
@@ -596,10 +586,17 @@ module.exports = function farmRoutes(db, io) {
     const energyRestore = cooked ? cooked.energyRestore : snack ? snack.energyRestore : null;
     if (energyRestore === null) return res.status(400).json({ error: 'Unknown food item' });
 
-    const foodRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, foodItemId);
-    if (!foodRow || foodRow.quantity < 1) return res.status(400).json({ error: "You don't have any of that to eat" });
-
-    db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(foodRow.id);
+    // Food kept in the Refrigerator gets eaten FIRST, then the Bag — same
+    // "the fridge is just where this food lives, not a separate pool"
+    // idea as everywhere else this pattern shows up.
+    const fridgeRow = db.prepare('SELECT * FROM fridge_storage WHERE user_id = ? AND item_id = ?').get(req.userId, foodItemId);
+    if (fridgeRow && fridgeRow.quantity >= 1) {
+      db.prepare('UPDATE fridge_storage SET quantity = quantity - 1 WHERE id = ?').run(fridgeRow.id);
+    } else {
+      const foodRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, foodItemId);
+      if (!foodRow || foodRow.quantity < 1) return res.status(400).json({ error: "You don't have any of that to eat" });
+      db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(foodRow.id);
+    }
     const energy = addEnergy(db, req.userId, energyRestore);
     res.json({ ok: true, energy, energyRestored: energyRestore });
   });

@@ -23,6 +23,17 @@ const WALL_MOUNTED_ITEMS = new Set(['painting', 'wall_light', 'aircon']);
 const MUST_BE_ON_TABLE_ITEMS = new Set(['table_lamp', 'tv']);
 const TABLE_ITEM_IDS = new Set(['table', 'side_table']);
 
+// What's actually allowed in the Refrigerator — READY-TO-EAT food only
+// (cooked dishes + Park snacks), never raw ingredients/crops. This is
+// NOT a general-purpose stash like the Storage Shed; it's specifically
+// "where your food lives instead of cluttering the Bag" — see
+// /api/farm/eat, which checks here first.
+const FOOD_ITEM_IDS = new Set([
+  'bread', 'rice_bowl', 'corn_soup', 'carrot_stew', 'mashed_potato', 'tomato_soup', 'strawberry_cake', 'pumpkin_pie',
+  'fried_egg', 'milkshake', 'truffle_dish',
+  'ice_cream', 'hotdog',
+]);
+
 // Preset wall-color choices for House and Mansion — offered as a picker in
 // the Shop before buying, so not every player's home is identically
 // colored. Whitelisted (validated in /place-object) so an arbitrary color
@@ -620,6 +631,9 @@ module.exports = function shopRoutes(db) {
     const { itemId, quantity } = req.body || {};
     const qty = parseInt(quantity, 10);
     if (!itemId || !Number.isFinite(qty) || qty < 1) return res.status(400).json({ error: 'Invalid deposit' });
+    if (!FOOD_ITEM_IDS.has(itemId)) {
+      return res.status(400).json({ error: 'The Refrigerator only holds ready-to-eat food — cooked dishes or Park snacks, not raw ingredients.' });
+    }
 
     const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
     if (!farm) return res.status(404).json({ error: 'Farm not found' });

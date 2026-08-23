@@ -550,13 +550,24 @@
       });
   }
 
-  // Refrigerator — cold storage specifically for cooking ingredients,
-  // separate from the general-purpose Storage Shed above. The Stove's
-  // /api/farm/cook pulls from here first (see server/routes/farm.js), so
-  // parking crops/animal products here instead of the Bag still leaves
-  // them usable for cooking.
+  // What's actually allowed in the Refrigerator — mirrors FOOD_ITEM_IDS in
+  // server/routes/shop.js, kept here just so the panel only shows food as
+  // an option to deposit in the first place, instead of listing every Bag
+  // item and letting the server reject the non-food ones after the fact.
+  const FOOD_ITEM_IDS = new Set([
+    'bread', 'rice_bowl', 'corn_soup', 'carrot_stew', 'mashed_potato', 'tomato_soup', 'strawberry_cake', 'pumpkin_pie',
+    'fried_egg', 'milkshake', 'truffle_dish',
+    'ice_cream', 'hotdog',
+  ]);
+
+  // Refrigerator — cold storage specifically for READY-TO-EAT food (cooked
+  // dishes + Park snacks), NOT raw ingredients — this is deliberately
+  // narrower than the general-purpose Storage Shed above. /api/farm/eat
+  // pulls from here first (see server/routes/farm.js), so parking food
+  // here instead of the Bag still leaves it eatable.
   async function openFridgePanel() {
-    const [bagItems, fridgeItems] = await Promise.all([Api.inventory(), Api.fridge()]);
+    const [bagItemsAll, fridgeItems] = await Promise.all([Api.inventory(), Api.fridge()]);
+    const bagItems = bagItemsAll.filter((r) => FOOD_ITEM_IDS.has(r.item_id));
     UI.openPanel('Refrigerator');
     UI.renderStoragePanel(bagItems, fridgeItems,
       async (itemId, qty) => {
