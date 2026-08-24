@@ -133,6 +133,7 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     crop_death_unwatered_seconds: { label: 'Crop dies if left unwatered', category: 'crop_types' },
     crop_wither_unharvested_seconds: { label: 'Crop withers if left un-harvested', category: 'crop_types' },
     animal_starve_seconds: { label: 'Animal dies if not fed', category: 'animal_types' },
+    animal_cold_death_seconds: { label: 'Animal dies if left cold (no Fireplace/Bonfire nearby at night)', category: 'animal_types' },
   };
 
   // GET /api/admin/timers — every tunable timer, per-item AND global,

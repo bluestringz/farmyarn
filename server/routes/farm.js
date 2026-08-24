@@ -1,6 +1,6 @@
 const express = require('express');
 const {
-  nowSec, resolveCropStates, resolveAnimalDeaths, grantRewards, addInventory, notify,
+  nowSec, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths, grantRewards, addInventory, notify,
   resolveEnergy, spendEnergy, addEnergy, xpProgress, rollHarvestQuantity,
 } = require('../lib/gameLogic');
 const {
@@ -21,6 +21,7 @@ module.exports = function farmRoutes(db, io) {
   function serializeFarm(farm) {
     resolveCropStates(db, farm.id);
     resolveAnimalDeaths(db, farm.id);
+    resolveAnimalColdDeaths(db, farm.id);
     const tiles = db.prepare('SELECT x, y, state FROM farm_tiles WHERE farm_id = ?').all(farm.id);
     const crops = db.prepare('SELECT * FROM crops WHERE farm_id = ?').all(farm.id);
     const objects = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND location = 'outdoor'").all(farm.id).map(resolveObject);
@@ -136,7 +137,8 @@ module.exports = function farmRoutes(db, io) {
   function handleInteriorRequest(req, res, farmOwnerId) {
     const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(farmOwnerId);
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
-    resolveAnimalDeaths(db, farm.id); // covers animals in here too, not just outdoor — same farm_id either way
+    resolveAnimalDeaths(db, farm.id);
+    resolveAnimalColdDeaths(db, farm.id); // covers animals in here too, not just outdoor — same farm_id either way
 
     const buildingId = parseInt(req.query.buildingId, 10);
     if (buildingId) {

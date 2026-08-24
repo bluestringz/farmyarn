@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FarmYARN — Player Manual</title>
+<style>
+  :root {
+    --cream: #fff6e3;
+    --cream-dark: #f3e4c0;
+    --wood: #8a5a34;
+    --wood-dark: #5e3b1f;
+    --leaf: #4f8f2e;
+    --ink: #3a2a18;
+    --ink-soft: #6b5638;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', Verdana, Tahoma, sans-serif;
+    background: linear-gradient(180deg, #cfe8ff 0%, #e8f4d9 100%);
+    color: var(--ink);
+    line-height: 1.55;
+  }
+  header {
+    background: var(--wood-dark);
+    color: var(--cream);
+    padding: 22px 20px;
+    text-align: center;
+    border-bottom: 6px solid var(--wood);
+  }
+  header h1 {
+    margin: 0 0 6px;
+    font-size: 28px;
+  }
+  header p {
+    margin: 0;
+    color: var(--cream-dark);
+    font-size: 14px;
+  }
+  .layout {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    gap: 24px;
+    padding: 24px 16px 80px;
+    align-items: flex-start;
+  }
+  nav.toc {
+    flex: 0 0 260px;
+    position: sticky;
+    top: 16px;
+    background: var(--cream);
+    border: 3px solid var(--wood);
+    border-radius: 14px;
+    padding: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+  }
+  nav.toc h2 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    color: var(--wood-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  nav.toc ol {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 13.5px;
+  }
+  nav.toc li { margin-bottom: 6px; }
+  nav.toc a {
+    color: var(--ink);
+    text-decoration: none;
+  }
+  nav.toc a:hover { color: var(--leaf); text-decoration: underline; }
+  main {
+    flex: 1;
+    min-width: 0;
+  }
+  section {
+    background: var(--cream);
+    border: 3px solid var(--wood);
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+  section h2 {
+    margin-top: 0;
+    color: var(--wood-dark);
+    border-bottom: 2px solid var(--cream-dark);
+    padding-bottom: 8px;
+    font-size: 21px;
+    scroll-margin-top: 16px;
+  }
+  section h3 {
+    color: var(--wood-dark);
+    font-size: 16px;
+    margin-bottom: 6px;
+  }
+  p { margin: 8px 0; }
+  ul, ol { margin: 8px 0; padding-left: 22px; }
+  li { margin-bottom: 4px; }
+  .tip {
+    background: var(--cream-dark);
+    border-left: 5px solid var(--leaf);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  .tip strong { color: var(--leaf); }
+  .warn {
+    background: #fbe4e0;
+    border-left: 5px solid #c0392b;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  .warn strong { color: #c0392b; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 10px 0;
+    font-size: 13.5px;
+  }
+  th, td {
+    border: 1px solid var(--cream-dark);
+    padding: 6px 10px;
+    text-align: left;
+  }
+  th {
+    background: var(--wood);
+    color: var(--cream);
+  }
+  tr:nth-child(even) { background: var(--cream-dark); }
+  code {
+    background: var(--cream-dark);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 13px;
+  }
+  .back-to-top {
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+  .back-to-top:hover { color: var(--leaf); }
+  @media (max-width: 820px) {
+    .layout { flex-direction: column; }
+    nav.toc { position: static; width: 100%; max-height: none; flex: none; }
+  }
+</style>
+</head>
+<body id="top">
+
+<header>
+  <h1>🌾 FarmYARN — Player Manual</h1>
+  <p>Everything a new farmer needs to know, all in one place.</p>
+</header>
+
+<div class="layout">
+
+  <nav class="toc" aria-label="Table of Contents">
+    <h2>Table of Contents</h2>
+    <ol>
+      <li><a href="#getting-started">Getting Started</a></li>
+      <li><a href="#moving-around">Moving Around</a></li>
+      <li><a href="#farming-basics">Farming Basics</a></li>
+      <li><a href="#energy-resting">Energy &amp; Resting</a></li>
+      <li><a href="#animals">Animals</a></li>
+      <li><a href="#staying-warm">Keeping Animals Warm (Fireplace &amp; Bonfire)</a></li>
+      <li><a href="#buildings">Buildings</a></li>
+      <li><a href="#decorating">Interior Decorating</a></li>
+      <li><a href="#closet">The Closet &amp; Costumes</a></li>
+      <li><a href="#special-outfits">Special Outfits (GM Points)</a></li>
+      <li><a href="#cooking">Cooking &amp; the Refrigerator</a></li>
+      <li><a href="#storage">Storage Shed vs. Refrigerator</a></li>
+      <li><a href="#shop-currency">The Shop &amp; Currencies</a></li>
+      <li><a href="#casino">The Casino</a></li>
+      <li><a href="#market">The Market</a></li>
+      <li><a href="#park">Central Park</a></li>
+      <li><a href="#friends">Friends &amp; Visiting Farms</a></li>
+      <li><a href="#leaderboard">Leaderboard</a></li>
+      <li><a href="#day-night">Day, Night &amp; Lighting</a></li>
+      <li><a href="#expanding">Expanding Your Farm</a></li>
+      <li><a href="#tips">Tips for New Players</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <section id="getting-started">
+      <h2>1. Getting Started</h2>
+      <p>Welcome to FarmYARN! When you first sign up, you'll spawn on your own private plot with a free Farmhouse already built. From here, you can farm, raise animals, decorate, cook, dress up, and visit your friends' farms — at your own pace, with friends if you'd like.</p>
+      <h3>Your character</h3>
+      <p>Your character walks around the world exactly like you'd expect — tap anywhere to walk there, tap an object to interact with it. Whatever tool you have selected on the bottom toolbar decides what tapping <em>does</em>.</p>
+      <div class="tip"><strong>Tip:</strong> If you're not sure what a button does, most tools show a small hint or toast message the first time you use them.</div>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="moving-around">
+      <h2>2. Moving Around</h2>
+      <ul>
+        <li><strong>Walk:</strong> Tap any open tile — your character will actually walk there (not teleport).</li>
+        <li><strong>Zoom/Pan:</strong> Pinch or scroll to zoom, drag to pan. Once you manually zoom, the game remembers your preference and won't snap back to a default view on its own.</li>
+        <li><strong>Entering a building:</strong> Tap your house, Coop, Barn, or Mansion. Your character will actually walk up to the front door, the screen fades briefly, and you appear just inside. Leaving works the same way in reverse — you'll come back out right at the same door you used to go in.</li>
+        <li><strong>The Casino</strong> (inside Central Park) works the same way — walk up to the door, fade in, and you're inside.</li>
+      </ul>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="farming-basics">
+      <h2>3. Farming Basics</h2>
+      <p>Growing crops is the heart of the game. It's a simple four-step loop:</p>
+      <ol>
+        <li><strong>Plow</strong> — turns grass into farmable soil. Select the Plow tool and tap a grass tile.</li>
+        <li><strong>Plant</strong> — select the Plant tool, which opens the Seed Picker so you can choose which seed to plant and see how many you own. Tap a plowed tile to plant. You'll need to buy seeds from the Shop first if you don't have any.</li>
+        <li><strong>Water</strong> — crops grow properly once watered at least once. Select Water and tap (or hold and drag across several tiles at once — no need to tap one at a time).</li>
+        <li><strong>Harvest</strong> — once a crop finishes growing, select Harvest and tap it to collect the yield.</li>
+      </ol>
+      <div class="warn"><strong>Don't neglect your crops!</strong> A crop left unwatered too long will die outright. A crop that's fully grown but left un-harvested too long will wither on the vine. Both are admin-configurable, but expect roughly half a day either way.</div>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="energy-resting">
+      <h2>4. Energy &amp; Resting</h2>
+      <p>Plowing, planting, watering, and most other actions cost Energy. You can see your current Energy in the top bar.</p>
+      <ul>
+        <li>Energy slowly regenerates over time on its own.</li>
+        <li><strong>Eating food</strong> (cooked dishes or Park snacks) restores Energy instantly.</li>
+        <li><strong>Sitting or lying down</strong> on a chair, bench, or bed makes Energy regenerate faster while you're resting. Tap the furniture to sit/lie down (your character will actually walk over to it first), and tap it again to get up.</li>
+      </ul>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="animals">
+      <h2>5. Animals</h2>
+      <p>Buy animals from the Shop's Animal tab, then place them either outdoors on the open farm or inside a Chicken Coop / Cow Barn's interior.</p>
+      <h3>Feeding</h3>
+      <p>Animals need feed, made from Wheat at the Silo (a building you must own). Select the <strong>Feed</strong> tool — this opens the Feed Picker, showing all four feed types and how many of each you're carrying. You must tap the correct feed type in the picker <em>first</em>, then tap the matching animal, or nothing will happen.</p>
+      <table>
+        <tr><th>Animal</th><th>Needs</th></tr>
+        <tr><td>Chicken</td><td>Chicken Feed</td></tr>
+        <tr><td>Sheep</td><td>Sheep Feed</td></tr>
+        <tr><td>Pig</td><td>Pig Feed</td></tr>
+        <tr><td>Cow</td><td>Cow Feed</td></tr>
+      </table>
+      <h3>Collecting</h3>
+      <p>Once fed, an animal produces something over time (eggs, wool, etc.) — tap it once ready to collect. Look for the green checkmark badge above it.</p>
+      <div class="warn"><strong>Animals can die of starvation</strong> if they go unfed for too long (about a day, admin-configurable). A small badge above the animal shows its feed status: orange with a "!" means it needs feeding, green with a "✓" means it's fed and just waiting on its timer.</div>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="staying-warm">
+      <h2>6. Keeping Animals Warm (Fireplace &amp; Bonfire)</h2>
+      <p>Besides feeding, animals also need to stay warm <strong>at night</strong>:</p>
+      <ul>
+        <li><strong>Animals housed inside a Coop or Barn</strong> need a <strong>Fireplace</strong> placed somewhere in that same room.</li>
+        <li><strong>Animals kept outdoors</strong> on the open farm need a <strong>Bonfire</strong> (a purchasable decoration) within a few tiles of them.</li>
+      </ul>
+      <p>During the day, animals are always safe regardless of nearby heat. At night, an animal without a nearby heat source shows a small <strong>❄️ blue snowflake badge</strong> above it — that's your warning. If it stays cold too long (about 4 hours, admin-configurable), it can die of cold. Bringing the heat source back in range (or waiting for daytime) resets the clock — a partial cold spell doesn't carry over.</p>
+      <div class="tip"><strong>Tip:</strong> One Fireplace covers the WHOLE room it's placed in — you don't need one per animal. One Bonfire outdoors covers every animal within its radius.</div>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="buildings">
+      <h2>7. Buildings</h2>
+      <table>
+        <tr><th>Building</th><th>What it's for</th></tr>
+        <tr><td>Farmhouse</td><td>Your starting home — free, granted automatically. Has a Bed and a Closet inside once you decorate.</td></tr>
+        <tr><td>Chicken Coop / Cow Barn / Barn</td><td>Houses animals indoors, each with its own small interior room.</td></tr>
+        <tr><td>Mansion</td><td>A large, multi-floor building you can decorate extensively.</td></tr>
+        <tr><td>Silo</td><td>Required to craft animal feed from Wheat.</td></tr>
+        <tr><td>Workshop</td><td>Craft your own furniture from Wood (logs from chopping trees) instead of buying it.</td></tr>
+        <tr><td>Storage Shed</td><td>General-purpose overflow storage for your Bag — see <a href="#storage">Storage</a>.</td></tr>
+      </table>
+      <div class="warn"><strong>Buildings can't be moved or rotated once placed.</strong> If you want a different position or facing, you'll need to remove it and place a new one — choosing the facing you want during that fresh placement.</div>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="decorating">
+      <h2>8. Interior Decorating</h2>
+      <p>Step inside any of your buildings and use the <strong>Decorate</strong> tool to furnish the room — tables, chairs, beds, shelves, and more.</p>
+      <h3>Wall-mounted décor</h3>
+      <p>Items like the <strong>TV, Air Conditioner, Wall Light,</strong> and <strong>Paintings</strong> only make sense flush against a wall. They can only be placed along the <strong>top row</strong>, or the <strong>leftmost/rightmost column</strong> of the room — not the open bottom row facing the camera.</p>
+      <h3>Tabletop décor</h3>
+      <p>The <strong>Table Lamp</strong> and <strong>TV</strong> specifically have to sit on top of an actual <strong>Dining Table</strong> or <strong>Side Table</strong> — they can't just go on open floor.</p>
+      <div class="tip"><strong>Tip:</strong> A Table Lamp, Wall Light, or Fireplace also lights up the room at night — see <a href="#day-night">Day, Night &amp; Lighting</a>.</div>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="closet">
+      <h2>9. The Closet &amp; Costumes</h2>
+      <div class="warn"><strong>Buying a costume in the Shop does NOT put it on.</strong> It only adds it to what you own — the Shop's Buy button just turns into "Owned" afterward.</div>
+      <p>To actually wear something, place a <strong>Closet</strong> (bought from the Shop's Interior tab) inside your house and tap it. It shows every costume you currently own, with a "Wear" button on each — that's the only place in the game that changes your look.</p>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="special-outfits">
+      <h2>10. Special Outfits (GM Points)</h2>
+      <p>Special Outfits (currently Lancer, Sorcerer, and Swordsman) are a rarer costume tier with their own animated magic aura that follows you around while worn. They're bought in the Shop's ⭐ Special tab, but unlike regular costumes:</p>
+      <ul>
+        <li>They cost <strong>GM Points</strong>, never Premium Points — and GM Points can <em>only</em> be granted by an admin. There's no way to earn or buy them through normal play.</li>
+        <li>They're a <strong>14-day rental</strong> (regular costumes are 7 days).</li>
+        <li>Just like regular costumes, buying one doesn't wear it — you still need the Closet.</li>
+      </ul>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="cooking">
+      <h2>11. Cooking &amp; the Refrigerator</h2>
+      <p>Place a <strong>Stove</strong> inside your house and tap it to cook harvested crops into food. Eating food restores Energy — see <a href="#energy-resting">Energy &amp; Resting</a>.</p>
+      <h3>The Refrigerator</h3>
+      <p>A <strong>2-Door Refrigerator</strong> (Shop → Interior) gives you cold storage specifically for <strong>ready-to-eat food</strong> — cooked dishes and Park snacks (Ice Cream, Hot Dog) — separate from your Bag. It does <em>not</em> accept raw crops/ingredients. Tap it to deposit or withdraw. When you eat, the game checks the Refrigerator first, then your Bag.</p>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="storage">
+      <h2>12. Storage Shed vs. Refrigerator</h2>
+      <table>
+        <tr><th></th><th>Storage Shed</th><th>Refrigerator</th></tr>
+        <tr><td>What it holds</td><td>Anything from your Bag</td><td>Only cooked food &amp; Park snacks</td></tr>
+        <tr><td>Where</td><td>Outdoor building</td><td>Indoor furniture</td></tr>
+        <tr><td>Purpose</td><td>General overflow so your Bag doesn't get cluttered</td><td>Keeps your food supply organized and still eatable straight from there</td></tr>
+      </table>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="shop-currency">
+      <h2>13. The Shop &amp; Currencies</h2>
+      <table>
+        <tr><th>Currency</th><th>How you get it</th><th>What it's for</th></tr>
+        <tr><td>🪙 Coins</td><td>Harvesting, collecting, selling, daily rewards</td><td>Most everyday purchases</td></tr>
+        <tr><td>💎 Premium Points</td><td>Earned through play/rewards</td><td>Regular costumes (7-day rentals), name changes</td></tr>
+        <tr><td>🎖️ GM Points</td><td><strong>Admin-granted only</strong> — no other way to get these</td><td>Special Outfits (14-day rentals) exclusively</td></tr>
+      </table>
+      <p>The Shop is organized into tabs: Seeds, Buildings, Animals, Decor, Interior, Outfits, and ⭐ Special. Some items may have a limited <strong>stock</strong> (shown as "X left in stock") — these sell out and need an admin to restock them.</p>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="casino">
+      <h2>14. The Casino</h2>
+      <p>Found inside Central Park (walk up to its door like any building). Three floors, three games:</p>
+      <table>
+        <tr><th>Floor</th><th>Game</th><th>How it works</th></tr>
+        <tr><td>1</td><td>Color Game</td><td>Pick a bet amount, then a color. 3 blocks drop — match to win Energy.</td></tr>
+        <tr><td>2</td><td>Claw Machine</td><td>Fixed bet, grab for a prize — Energy or occasionally Premium Points.</td></tr>
+        <tr><td>3</td><td>Lucky 777</td><td>Classic slot machine. Choose your bet, spin, match symbols. The rarest possible prize is landing "GM GM GM" — an actual GM Points reward.</td></tr>
+      </table>
+      <div class="tip"><strong>Tip:</strong> The panels show <em>possible rewards</em>, not exact odds — bigger prizes are rarer, and betting more generally means a real shot at a bigger win, but also a lower chance of winning at all.</div>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="market">
+      <h2>15. The Market</h2>
+      <p>A shared plaza where every player's stall lives side by side. Rent a stall to sell items (including costumes you're not using — as long as their rental hasn't expired) to other players, or browse everyone else's stalls to buy.</p>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="park">
+      <h2>16. Central Park</h2>
+      <p>A shared hangout space — sit on a bench, buy snacks (Ice Cream, Hot Dog) from a cart, and it's also where the Casino building is. See other online players walking around here too.</p>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="friends">
+      <h2>17. Friends &amp; Visiting Farms</h2>
+      <p>Add friends to help each other out — water a friend's crops, or just visit and walk around their farm. You can also step inside a friend's house/coop/barn the same way you do your own.</p>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="leaderboard">
+      <h2>18. Leaderboard</h2>
+      <p>The 🏆 <strong>Most Rich</strong> panel (top-left of the screen) ranks the top 10 players by coins on hand. Top 3 get a medal (🥇🥈🥉) with special styling. Admin accounts never appear on it.</p>
+      <div class="tip"><strong>Note:</strong> The ranking only updates once a day, right at midnight (Philippine Time) — it won't shift in real time as people earn or spend coins throughout the day.</div>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="day-night">
+      <h2>19. Day, Night &amp; Lighting</h2>
+      <p>The game follows real time — your farm and house both visibly darken at night. Placing light sources pushes the darkness back:</p>
+      <ul>
+        <li><strong>Outdoors:</strong> Lamp Post, Bonfire</li>
+        <li><strong>Indoors:</strong> Table Lamp, Wall Light, Fireplace</li>
+      </ul>
+      <p>These all have a gentle "breathing" glow and small glowing particles drifting around them, so your farm actually feels alive at night instead of just going dark.</p>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="expanding">
+      <h2>20. Expanding Your Farm</h2>
+      <p>Use the <strong>Expand</strong> button on the toolbar to grow your farm's size for a coin cost that increases with each expansion. A bigger farm means more room for crops, animals, and decorations.</p>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+    <section id="tips">
+      <h2>21. Tips for New Players</h2>
+      <ul>
+        <li>Water your crops as soon as you plant them — an unwatered crop can die.</li>
+        <li>Build a Silo early if you plan to raise animals — you can't make feed without one.</li>
+        <li>Keep an eye on the ❄️ badge on your animals once you have any housed outdoors or without a Fireplace — a Bonfire is cheap insurance.</li>
+        <li>Don't forget the Closet — buying a costume is only half the job.</li>
+        <li>Rest (sit/lie down) instead of just waiting around when your Energy is low — it regenerates faster.</li>
+        <li>Check the Shop regularly — some items have limited stock and won't always be available.</li>
+      </ul>
+      <a class="back-to-top" href="#top">↑ Back to top</a>
+    </section>
+
+  </main>
+</div>
+
+</body>
+</html>

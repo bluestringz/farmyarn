@@ -596,6 +596,12 @@ function seedContent(db) {
     { id: 'bench',      name: 'Bench',       cost: 40,  required_level: 2, width: 1, height: 1, sprite: 'bench', growable: 0, growth_seconds: 0 },
     { id: 'crafted_bench', name: 'Crafted Bench', cost: 0, required_level: 1, width: 1, height: 1, sprite: 'bench', growable: 0, growth_seconds: 0 },
     { id: 'lamp',       name: 'Lamp Post',   cost: 60,  required_level: 2, width: 1, height: 1, sprite: 'lamp', growable: 0, growth_seconds: 0 },
+    // Keeps outdoor animals warm at night within a few tiles of it — see
+    // resolveAnimalColdDeaths in server/lib/gameLogic.js. An animal kept
+    // outdoors (not housed in a coop/barn) with no Bonfire nearby at
+    // night, for too long, dies of cold — same as a coop/barn animal with
+    // no Fireplace inside.
+    { id: 'bonfire',    name: 'Bonfire',     cost: 80,  required_level: 1, width: 1, height: 1, sprite: 'bonfire', growable: 0, growth_seconds: 0 },
     { id: 'sign',       name: 'Sign',        cost: 25,  required_level: 1, width: 1, height: 1, sprite: 'sign', growable: 0, growth_seconds: 0 },
     { id: 'path',       name: 'Path Tile',   cost: 8,   required_level: 1, width: 1, height: 1, sprite: 'path', growable: 0, growth_seconds: 0 },
     { id: 'pond',       name: 'Pond',        cost: 150, required_level: 3, width: 2, height: 2, sprite: 'pond', growable: 0, growth_seconds: 0 },

@@ -44,6 +44,7 @@ const DEFAULT_TIMERS = {
   crop_death_unwatered_seconds: 12 * 3600,
   crop_wither_unharvested_seconds: 12 * 3600,
   animal_starve_seconds: 24 * 3600,
+  animal_cold_death_seconds: 4 * 3600,
 };
 
 // Reads one tunable global timer (in seconds) from game_settings, falling
@@ -115,6 +116,62 @@ function resolveAnimalDeaths(db, farmId) {
     const referencePoint = (state && state.lastFed) || animal.created_at;
     if (t - referencePoint > ANIMAL_STARVE_SECONDS) {
       db.prepare('DELETE FROM farm_objects WHERE id = ?').run(animal.id);
+    }
+  }
+}
+
+// A chicken/pig/sheep/cow left cold too long also dies — separate from
+// starvation above. An animal is "cold" only at night AND without a heat
+// source nearby: a Fireplace somewhere in the SAME indoor room for one
+// housed in a coop/barn, or a Bonfire within BONFIRE_RADIUS tiles for one
+// kept outdoors on the open farm. Unlike starvation (a single "hasn't
+// been fed since X" timestamp), coldness is a live environmental
+// condition that can start and stop — state.coldSince marks when it FIRST
+// went cold; it's cleared the moment it's warm again (day breaks, or a
+// heat source shows up nearby), so partial cold spells never carry over
+// and stack toward death. Same lazy "resolve whenever the farm is
+// fetched" pattern as everything else here — this is not a live ticking
+// simulation.
+const BONFIRE_RADIUS = 3; // tiles, outdoor Bonfire only
+
+function resolveAnimalColdDeaths(db, farmId) {
+  const t = nowSec();
+  // Filipino playerbase — Philippine Time (UTC+8), same convention as
+  // todayStr() in routes/player.js, so "is it night" here agrees with
+  // what the player actually sees in the client's own day/night tint
+  // (which uses the player's local device clock, virtually always PHT).
+  const phtHour = new Date(t * 1000 + 8 * 3600 * 1000).getUTCHours();
+  const isNight = phtHour >= 19 || phtHour < 5;
+
+  const animals = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND object_type = 'animal'").all(farmId);
+  if (animals.length === 0) return;
+
+  const COLD_DEATH_SECONDS = getTimerSetting(db, 'animal_cold_death_seconds');
+  const fireplaceLocations = new Set(
+    db.prepare("SELECT DISTINCT location FROM farm_objects WHERE farm_id = ? AND object_type = 'interior' AND item_id = 'fireplace'")
+      .all(farmId).map((r) => r.location)
+  );
+  const bonfires = db.prepare("SELECT grid_x, grid_y FROM farm_objects WHERE farm_id = ? AND object_type = 'decoration' AND item_id = 'bonfire' AND location = 'outdoor'").all(farmId);
+
+  for (const animal of animals) {
+    const isWarm = animal.location === 'outdoor'
+      ? bonfires.some((b) => Math.abs(b.grid_x - animal.grid_x) <= BONFIRE_RADIUS && Math.abs(b.grid_y - animal.grid_y) <= BONFIRE_RADIUS)
+      : fireplaceLocations.has(animal.location);
+    const isCold = isNight && !isWarm;
+
+    let state = {};
+    try { state = animal.state ? JSON.parse(animal.state) : {}; } catch (e) { state = {}; }
+
+    if (isCold) {
+      if (!state.coldSince) {
+        state.coldSince = t;
+        db.prepare('UPDATE farm_objects SET state = ? WHERE id = ?').run(JSON.stringify(state), animal.id);
+      } else if (t - state.coldSince > COLD_DEATH_SECONDS) {
+        db.prepare('DELETE FROM farm_objects WHERE id = ?').run(animal.id);
+      }
+    } else if (state.coldSince) {
+      delete state.coldSince;
+      db.prepare('UPDATE farm_objects SET state = ? WHERE id = ?').run(JSON.stringify(state), animal.id);
     }
   }
 }
@@ -276,7 +333,7 @@ function isReservedName(name) {
   return RESERVED_NAME_EXACT.some((term) => new RegExp(`^${term}\\d*$`).test(normalized));
 }
 module.exports = {
-  nowSec, xpForLevel, levelForXp, xpProgress, initFarmTiles, resolveCropStates, resolveAnimalDeaths,
+  nowSec, xpForLevel, levelForXp, xpProgress, initFarmTiles, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths,
   grantRewards, addInventory, notify, resolveEnergy, spendEnergy, addEnergy, MAX_ENERGY,
   isReservedName, startResting, stopResting, resolveEquippedOutfit, rollHarvestQuantity, rollAnimalQuantity,
   getTimerSetting, DEFAULT_TIMERS,

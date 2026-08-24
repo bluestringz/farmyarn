@@ -223,6 +223,7 @@ const DECORATION_STYLE = {
   hay_bale: { shape: 'hay',     body: '#e8c25a', bodyDark: '#c9a13c', band: '#a9714a' },
   bench:    { shape: 'bench',   wood: '#8b5e34', woodDark: '#6b4423' },
   lamp:     { shape: 'lamp',    post: '#4a3521', glass: '#fff3b0', glow: '#ffdd88' },
+  bonfire:  { shape: 'bonfire', wood: '#6b4423', flame: '#ff9d3c', glow: '#ff7a1a' },
   sign:     { shape: 'sign',    post: '#6b4423', board: '#c7a877', boardDark: '#a9714a' },
   path:     { shape: 'path',    stone: '#c9c2b0', stoneDark: '#a9a08a' },
   pond:     { shape: 'pond',    water: '#5ab0ff', waterDark: '#3d8fe0', reed: '#4f8f2e' },
@@ -1754,7 +1755,7 @@ class FarmGame {
       const lampSources = this.mode === 'indoor' ? (this.interior && this.interior.objects) : (this.farm && this.farm.objects);
       if (isFullNight && lampSources) {
         for (const obj of lampSources) {
-          const isOutdoorLamp = obj.object_type === 'decoration' && obj.item_id === 'lamp';
+          const isOutdoorLamp = obj.object_type === 'decoration' && (obj.item_id === 'lamp' || obj.item_id === 'bonfire');
           const isIndoorLamp = obj.object_type === 'interior' && (obj.item_id === 'table_lamp' || obj.item_id === 'wall_light' || obj.item_id === 'fireplace');
           if (!isOutdoorLamp && !isIndoorLamp) continue;
           let worldX = (obj.grid_x + 0.5) * TILE;
@@ -2440,6 +2441,7 @@ class FarmGame {
         const ready = t >= last + (this._animalProdSeconds(obj.item_id) || 600) && fed;
         this._drawAnimal(px, py, pw, ph, obj.item_id, ready, obj.rotation || 0);
         this._drawFeedIndicator(px, py, pw, fed, ready);
+        if (this._isAnimalCold(obj)) this._drawColdIndicator(px, py, pw);
       } else if (FarmGame.MUST_SIT_ON_TABLE.has(obj.item_id) && tableTiles.has(`${obj.grid_x},${obj.grid_y}`)) {
         tabletopDecor.push({ obj, px, py, pw, ph });
       } else if (FarmGame.WALL_MOUNTED_FURNITURE.has(obj.item_id) && obj.grid_y === 0) {
@@ -3654,6 +3656,7 @@ class FarmGame {
       const ready = t >= last + (this._animalProdSeconds(obj.item_id) || 600) && fed;
       this._drawAnimal(px, py, pw, ph, obj.item_id, ready, obj.rotation || 0);
       this._drawFeedIndicator(px, py, pw, fed, ready);
+      if (this._isAnimalCold(obj)) this._drawColdIndicator(px, py, pw);
     }
   }
 
@@ -4127,6 +4130,39 @@ class FarmGame {
     return !!(state.lastFed && state.lastFed >= last);
   }
 
+  // True once the server has marked this animal as currently cold (no
+  // Fireplace/Bonfire nearby at night — see resolveAnimalColdDeaths in
+  // server/lib/gameLogic.js). Cleared server-side the moment it's warm
+  // again, so this only shows while genuinely at risk.
+  _isAnimalCold(obj) {
+    if (!obj.state) return false;
+    let state;
+    try { state = JSON.parse(obj.state); } catch (e) { return false; }
+    return !!state.coldSince;
+  }
+
+  // Small badge ABOVE the feed indicator warning that this animal is
+  // currently cold and, left this way too long, will die — same "at a
+  // glance" badge language as the feed indicator, just its own icon/color
+  // and a higher position so the two never overlap.
+  _drawColdIndicator(px, py, pw) {
+    const ctx = this.ctx;
+    const cx = px + pw / 2, cy = py - 22;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+    ctx.fillStyle = '#3d8fe0';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('❄️', cx, cy + 1);
+    ctx.restore();
+  }
+
   // Small badge above the animal showing feed status at a glance: an
   // orange "🍽️" bubble while it still needs feeding, a green "✓" once fed
   // and just waiting on its production timer. Once ready (fed AND timer
@@ -4552,6 +4588,55 @@ class FarmGame {
       ctx.moveTo(cx - w * 0.14, y + h * 0.12); ctx.lineTo(cx + w * 0.14, y + h * 0.12);
       ctx.moveTo(cx, y + h * 0.05); ctx.lineTo(cx, y + h * 0.28);
       ctx.stroke();
+    } else if (style.shape === 'bonfire') {
+      const cx = x + w / 2;
+      const t = performance.now() / 1000;
+      const phase = (x + y) * 0.013;
+      // Crossed logs on the ground — the "fuel pile" a campfire sits on.
+      ctx.strokeStyle = style.wood;
+      ctx.lineWidth = w * 0.09;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx - w * 0.28, y + h * 0.82); ctx.lineTo(cx + w * 0.22, y + h * 0.6);
+      ctx.moveTo(cx + w * 0.28, y + h * 0.82); ctx.lineTo(cx - w * 0.22, y + h * 0.6);
+      ctx.stroke();
+
+      // Same "breathing" flame + rising-ember treatment as the indoor
+      // Fireplace (see _drawFurniture's 'fireplace' branch) — ground-level
+      // campfire version, ungated by any box/mantel around it.
+      const pulse = 0.6 + 0.4 * Math.sin(t * 2.2 + phase);
+      ctx.save();
+      ctx.shadowColor = style.glow;
+      ctx.shadowBlur = 6 + pulse * 10;
+      ctx.globalAlpha = 0.8 + pulse * 0.2;
+      ctx.fillStyle = style.flame;
+      ctx.beginPath();
+      ctx.moveTo(cx - w * 0.14, y + h * 0.62);
+      ctx.quadraticCurveTo(cx - w * 0.2, y + h * 0.4, cx - w * 0.04, y + h * 0.3);
+      ctx.quadraticCurveTo(cx, y + h * 0.44, cx + w * 0.1, y + h * 0.32);
+      ctx.quadraticCurveTo(cx + w * 0.2, y + h * 0.46, cx + w * 0.14, y + h * 0.62);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#ffe08a';
+      ctx.beginPath(); ctx.ellipse(cx, y + h * 0.54, w * 0.08, h * 0.08, 0, 0, Math.PI * 2); ctx.fill();
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const emberCount = 3;
+      for (let i = 0; i < emberCount; i++) {
+        const cycle = (t * 0.55 + i / emberCount + phase * 0.1) % 1;
+        const ex = cx + w * (i - 1) * 0.14 + Math.sin(t * 3 + i * 2) * w * 0.04;
+        const ey = y + h * 0.4 - cycle * h * 0.5;
+        const flicker = (1 - cycle) * (0.5 + 0.5 * Math.sin(t * 6 + i * 3));
+        const haloGrad = ctx.createRadialGradient(ex, ey, 0, ex, ey, 4);
+        haloGrad.addColorStop(0, `rgba(255,140,40,${Math.max(0, flicker)})`);
+        haloGrad.addColorStop(1, 'rgba(255,140,40,0)');
+        ctx.fillStyle = haloGrad;
+        ctx.beginPath(); ctx.arc(ex, ey, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(255,220,150,${Math.max(0, flicker)})`;
+        ctx.beginPath(); ctx.arc(ex, ey, 1, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
     } else if (style.shape === 'sign') {
       const cx = x + w / 2;
       ctx.fillStyle = style.post;
