@@ -318,6 +318,13 @@ class FarmGame {
     // _updateFreeRoamMovement.
     this.autoApplyToolActive = false;
     this._lastAutoApplyKey = null;
+    this._lastAutoApplyTime = 0;
+    // Set by main.js: true unless the active tool is Plant/Feed AND
+    // nothing's been picked yet (a seed, a feed type) — see setTool() and
+    // the Seed/Feed Picker onSelect callbacks for where this gets kept in
+    // sync. Plow/Water/Harvest don't need anything picked, so this is
+    // just always true for those.
+    this.autoApplySelectionReady = true;
     this.onReachStaircase = null; // callback() — free-roam movement stepped onto a staircase tile indoors
     this.casinoLocks = new Map(); // machineId -> username currently occupying it (visual only — see casino:lock socket flow for actual enforcement)
     this.highlightFn = null; // (x,y) => 'valid'|'invalid'|null, drawn as overlay
@@ -936,11 +943,26 @@ class FarmGame {
     // key naturally changes again the moment the character leaves and
     // later returns to the same tile, so revisiting it re-applies
     // correctly rather than being silently skipped forever.
-    if (this.mode === 'outdoor' && this.autoApplyToolActive) {
+    //
+    // Two extra guards versus the very first version of this:
+    //  - autoApplySelectionReady (set by main.js) — Plant/Feed need a
+    //    seed/feed type actually picked first; without this, walking with
+    //    Plant selected but no seed chosen yet fired an attempt (and a
+    //    rejection toast) on every single tile instead of just doing
+    //    nothing until a seed is actually picked, same as tapping would.
+    //  - a real-time throttle — each tile-action is a full server round
+    //    trip (plow/water/plant/harvest/feed) PLUS a full farm refresh;
+    //    walking fast could queue up several of those overlapping before
+    //    the first even finished, which is exactly the kind of thing that
+    //    reads as "laggy" — this caps it to at most a few per second so
+    //    each one actually gets to finish landing before the next fires.
+    if (this.mode === 'outdoor' && this.autoApplyToolActive && this.autoApplySelectionReady) {
       const curTileX = Math.floor(c.x / TILE), curTileY = Math.floor(c.y / TILE);
       const key = `${curTileX},${curTileY}`;
-      if (key !== this._lastAutoApplyKey) {
+      const now = performance.now();
+      if (key !== this._lastAutoApplyKey && (!this._lastAutoApplyTime || now - this._lastAutoApplyTime > 280)) {
         this._lastAutoApplyKey = key;
+        this._lastAutoApplyTime = now;
         // Same dispatch a TAP at this exact position would use — an
         // object here (a crop to harvest, an animal to feed) takes
         // priority, otherwise it's a plain ground tile (plow/water/plant).

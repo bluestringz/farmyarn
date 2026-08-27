@@ -887,6 +887,22 @@
     setTool(state.tool === tool ? null : tool);
   }
 
+  // Plow/Water/Harvest don't need anything picked first, so they're
+  // always "ready" — Plant/Feed specifically need a seed/feed type
+  // actually selected before free-roam auto-apply is allowed to touch
+  // anything (see game.js's autoApplySelectionReady). Called whenever the
+  // active tool changes AND whenever a seed/feed gets picked, so this
+  // stays in sync with whichever of those happened most recently.
+  function updateAutoApplySelectionReady() {
+    if (state.tool === 'plant') {
+      game.autoApplySelectionReady = !!(state.buildSelection && state.buildSelection.category === 'crop');
+    } else if (state.tool === 'feed') {
+      game.autoApplySelectionReady = !!state.selectedFeedId;
+    } else {
+      game.autoApplySelectionReady = true;
+    }
+  }
+
   function setTool(tool) {
     state.tool = tool;
     state.buildSelection = null;
@@ -898,6 +914,7 @@
     // works exactly as it always did regardless of this.
     const AUTO_APPLY_TOOLS = new Set(['plow', 'water', 'plant', 'harvest', 'feed']);
     game.setAutoApplyToolActive(AUTO_APPLY_TOOLS.has(tool));
+    updateAutoApplySelectionReady(); // buildSelection/selectedFeedId were both just cleared above, so this correctly reads as "not ready yet" for Plant/Feed until something's actually picked
     document.querySelectorAll('.tool-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.tool === tool);
     });
@@ -969,6 +986,7 @@
     }));
     UI.renderPicker(picker, feedsOwned, 'animal', state.me, (id) => {
       state.selectedFeedId = id;
+      updateAutoApplySelectionReady();
     }, state.selectedFeedId);
   }
 
@@ -991,6 +1009,7 @@
     UI.renderPicker(picker, seedsOwned, 'crops', state.me, (id) => {
       state.buildSelection = { category: 'crop', itemId: id };
       game.setPlacementSelectionActive(true);
+      updateAutoApplySelectionReady();
       UI.toast(`Selected ${id}. Tap a plowed tile to plant.`);
     });
   }
