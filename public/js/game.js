@@ -1228,11 +1228,23 @@ class FarmGame {
 
   // ---- Interior (house) mode ----
   setInteriorMode(interiorData) {
+    // Only recenter the camera and reset the character back to the
+    // default spawn spot on an ACTUAL fresh entry into a DIFFERENT room
+    // — `location` uniquely identifies which specific room this is (the
+    // house, or one particular coop/barn/floor — see locationForBuilding
+    // server-side). Feeding or harvesting an animal housed indoors calls
+    // this same function again afterward just to refresh THIS room's
+    // data (refreshInterior in main.js) — recentering unconditionally on
+    // every one of those snapped the view (and the character's
+    // position) back to the default spawn point every single time,
+    // exactly like setFarm() used to before it got the same fix.
+    const isSameRoom = this.mode === 'indoor' && this.interior && this.interior.location === interiorData.location;
     this.mode = 'indoor';
     this.interior = interiorData;
     this._doorExitTriggered = false; // fresh room — allow the door-exit check to fire again
     this._staircaseTriggered = false; // fresh room — allow the staircase check to fire again
     this._serverTimeOffset = interiorData.serverTime - Date.now() / 1000;
+    if (isSameRoom) return;
     // 0.6 tiles of margin on left/right/top matches wallDepth in
     // _drawIndoorRoom — without this, the camera fit only accounted for
     // the bare floor and could clip the wall strips right at the edge of
