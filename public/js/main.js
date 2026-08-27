@@ -1688,7 +1688,7 @@
           return;
         }
         if (['building', 'decoration', 'animal', 'interior'].includes(cat)) {
-          const res = await Api.buyPlaceable(cat, itemId, 1);
+          const res = await Api.buyPlaceable(cat, itemId, qty || 1);
           state.me.coins = res.coins;
           renderTopbar();
           // House/Mansion's chosen wall color (picked in the Shop card
@@ -1707,7 +1707,13 @@
           // cap reflects the purchase immediately instead of needing a
           // page reload.
           state.catalog = await Api.catalog();
-          await renderShopPanel(cat === 'interior' ? 'interiors' : cat === 'building' ? 'buildings' : cat === 'animal' ? 'animals' : 'decorations');
+          // Reuse the ACTUAL active tab (this function's own `category`
+          // parameter) rather than re-deriving an approximation from
+          // `cat` — `cat` is the server-side category ('decoration'),
+          // which both the plain Decor tab AND the Fruit Trees tab share,
+          // so deriving from it alone always bounced back to Decor even
+          // when the purchase happened from Fruit Trees.
+          await renderShopPanel(category);
           return;
         }
       } catch (err) {

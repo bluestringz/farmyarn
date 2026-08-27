@@ -302,10 +302,15 @@ const UI = (() => {
       // at once) — give them a quantity field instead of one-click-at-a-time,
       // plus a MAX button that fills in exactly as many as their coins can
       // cover (or as many as are left in stock, if capped) so they're not
-      // stuck guessing/doing the math themselves.
-      const maxAffordable = Math.max(1, Math.min(99, Math.floor(player.coins / cost), hasStockCap ? Math.max(1, item.currentStock) : 99));
-      const qtyRow = isCrops && !locked && !outOfStock
-        ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="${hasStockCap ? Math.max(1, item.currentStock) : 99}" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
+      // stuck guessing/doing the math themselves. Fruit trees get the same
+      // treatment (planting several at once is normal too), just capped at
+      // 20 per purchase instead of 99 — a whole field's worth of trees in
+      // one buy would be a LOT to place one at a time afterward anyway.
+      const isFruitTreeTab = activeCategory === 'fruit_trees';
+      const qtyCap = isFruitTreeTab ? 20 : 99;
+      const maxAffordable = Math.max(1, Math.min(qtyCap, Math.floor(player.coins / cost), hasStockCap ? Math.max(1, item.currentStock) : qtyCap));
+      const qtyRow = (isCrops || isFruitTreeTab) && !locked && !outOfStock
+        ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="${hasStockCap ? Math.min(qtyCap, Math.max(1, item.currentStock)) : qtyCap}" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
         : '';
       const colorOptions = BUILDING_COLOR_OPTIONS[item.id];
       const isMansion = item.id === 'mansion';
@@ -357,7 +362,12 @@ const UI = (() => {
     body.querySelectorAll('.shop-card button[data-item]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const qtyInput = body.querySelector(`input[data-qty-for="${btn.dataset.item}"]`);
-        const qty = qtyInput ? Math.max(1, Math.min(99, parseInt(qtyInput.value, 10) || 1)) : 1;
+        // Same 20-per-purchase cap as the input's own max attribute (see
+        // qtyCap above) — the HTML max attribute alone doesn't strictly
+        // stop someone from typing in a bigger number, so this needs its
+        // own matching clamp, not the flat 99 every OTHER category uses.
+        const qtyCapForClick = activeCategory === 'fruit_trees' ? 20 : 99;
+        const qty = qtyInput ? Math.max(1, Math.min(qtyCapForClick, parseInt(qtyInput.value, 10) || 1)) : 1;
         const swatchRow = body.querySelector(`.color-swatch-row[data-swatches-for="${btn.dataset.item}"]`);
         const selectedSwatch = swatchRow ? swatchRow.querySelector('.color-swatch.selected') : null;
         onBuy(buyCategory, btn.dataset.item, qty, selectedSwatch ? selectedSwatch.dataset.color : undefined);

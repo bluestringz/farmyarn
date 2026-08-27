@@ -271,6 +271,12 @@ class FarmGame {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.camera = { x: 0, y: 0, scale: 1 };
+    // Used to apply extra-aggressive rendering shortcuts specifically
+    // where they're needed most — see _lowDetailGlow's threshold in
+    // _draw(). maxTouchPoints alone isn't quite enough (some touch-
+    // capable laptops/2-in-1s would false-positive), so this also
+    // requires a phone-sized viewport.
+    this._isMobileDevice = (navigator.maxTouchPoints > 0 || 'ontouchstart' in window) && Math.min(window.innerWidth, window.innerHeight) < 500;
     // Once the player manually pinch/scroll-zooms, their chosen zoom level
     // should stick across entering/exiting the house, market, park, etc.
     // instead of snapping back to the auto-fit default every time. Only
@@ -1466,7 +1472,14 @@ class FarmGame {
 
   _resize() {
     const rect = this.canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    // Capped at 2x — a phone's TRUE devicePixelRatio can be 3x or higher,
+    // which makes the canvas's actual pixel buffer (and therefore the raw
+    // fill-rate cost of every single draw call, every frame) up to ~2.25x
+    // more work than necessary for a sharpness difference most players
+    // wouldn't even notice on a small phone screen. This is a direct,
+    // meaningful performance win specifically where it matters most —
+    // mobile.
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
     this._dpr = dpr;
     this.canvas.width = rect.width * dpr;
     this.canvas.height = rect.height * dpr;
@@ -1923,8 +1936,19 @@ class FarmGame {
     // rather than depending on the browser to tell us. If the canvas's
     // drawing buffer no longer matches its current CSS box size (times
     // devicePixelRatio), resize it before drawing this frame.
-    const dpr = window.devicePixelRatio || 1;
-    if (Math.round(rect.width * dpr) !== this.canvas.width || Math.round(rect.height * dpr) !== this.canvas.height) {
+    //
+    // Debounced to at most once every 250ms — switching to another app
+    // mid-call (a video call overlay, a picture-in-picture window, the
+    // OS's own app-switcher) can make the reported viewport size
+    // genuinely unstable for a moment while the transition settles, and
+    // resizing the canvas on EVERY such fluctuation (re-clearing and
+    // redrawing at a new size each time) is exactly what reads as the
+    // screen visibly flickering/blinking during that transition.
+    const dpr = Math.min(2, window.devicePixelRatio || 1); // must match the same cap _resize() applies, or this check would never agree and re-resize every single frame for nothing
+    const now = performance.now();
+    if ((Math.round(rect.width * dpr) !== this.canvas.width || Math.round(rect.height * dpr) !== this.canvas.height)
+        && (!this._lastResizeCheckTime || now - this._lastResizeCheckTime > 250)) {
+      this._lastResizeCheckTime = now;
       this._resize();
     }
     // Computed ONCE per frame (not per-object) — ctx.shadowBlur is
@@ -1938,7 +1962,12 @@ class FarmGame {
     // every one of those effects skips its shadowBlur pass entirely
     // (falling back to a flat, cheap fill with no blur) rather than
     // paying that cost for a detail nobody can really see at that scale.
-    this._lowDetailGlow = this.camera.scale < 0.6;
+    // Mobile gets a MORE generous threshold (triggers low-detail even
+    // when less zoomed-out) — phones are exactly where this kind of
+    // rendering cost is felt the most, so it's worth trading a bit more
+    // of that glow detail away, more often, specifically there.
+    const glowThreshold = this._isMobileDevice ? 0.85 : 0.6;
+    this._lowDetailGlow = this.camera.scale < glowThreshold;
     // If a previous frame threw mid-draw (after ctx.save()/translate() but
     // before the matching ctx.restore()), the canvas would be left with a
     // leaked transform — and since clearRect() is itself affected by the
