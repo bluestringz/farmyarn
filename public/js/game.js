@@ -313,6 +313,11 @@ class FarmGame {
     this.onReachBuildingEntry = null; // callback(buildingObj) — free-roam movement bumped into a building's wall outdoors
     this.onReachCasinoEntry = null; // callback() — free-roam movement bumped into the Casino's wall inside the Park
     this.onReachCasinoExit = null; // callback() — free-roam movement reached the bottom-center exit tile on Casino floor 1
+    // Continuous "walk over it to apply" mode for Plow/Water/Plant/
+    // Harvest/Feed — see setAutoApplyToolActive() and its use in
+    // _updateFreeRoamMovement.
+    this.autoApplyToolActive = false;
+    this._lastAutoApplyKey = null;
     this.onReachStaircase = null; // callback() — free-roam movement stepped onto a staircase tile indoors
     this.casinoLocks = new Map(); // machineId -> username currently occupying it (visual only — see casino:lock socket flow for actual enforcement)
     this.highlightFn = null; // (x,y) => 'valid'|'invalid'|null, drawn as overlay
@@ -644,26 +649,63 @@ class FarmGame {
       d: 'right', arrowright: 'right',
     };
     const isTypingTarget = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-    window.addEventListener('keydown', (e) => {
+    // Stored as bound instance methods (not anonymous closures) so
+    // destroy() can actually remove these exact same function references
+    // later — every previous version of this created a fresh FarmGame
+    // instance on each bootGame() (e.g. an expired session bouncing back
+    // to login, then logging in again) without ever detaching the OLD
+    // instance's window-level listeners first, silently stacking up an
+    // extra full set of keydown/keyup/blur handlers per re-login, each
+    // one still running (against an otherwise-abandoned instance) on
+    // every single keystroke from then on — a real, compounding source
+    // of exactly the kind of creeping lag this was built to prevent.
+    this._onKeyDown = (e) => {
       if (isTypingTarget(e.target)) return; // don't hijack WASD while typing in chat/quantity fields etc.
       const dir = KEY_TO_DIR[e.key.toLowerCase()];
       if (dir) { this._keysHeld[dir] = true; }
-    });
-    window.addEventListener('keyup', (e) => {
+    };
+    this._onKeyUp = (e) => {
       const dir = KEY_TO_DIR[e.key.toLowerCase()];
       if (dir) { this._keysHeld[dir] = false; }
-    });
+    };
     // Releasing focus (e.g. alt-tabbing away) mid-press would otherwise
     // leave a key "stuck" held forever since no keyup ever fires.
-    window.addEventListener('blur', () => {
+    this._onBlur = () => {
       this._keysHeld.up = this._keysHeld.down = this._keysHeld.left = this._keysHeld.right = false;
-    });
+    };
+    window.addEventListener('keydown', this._onKeyDown);
+    window.addEventListener('keyup', this._onKeyUp);
+    window.addEventListener('blur', this._onBlur);
+  }
+
+  // Removes this instance's window-level listeners and stops its render
+  // loop — call this on the OLD game instance before replacing it with a
+  // new one (see bootGame in main.js), so re-logging-in during the same
+  // page load doesn't leave a discarded instance's handlers still
+  // silently running forever underneath the new one.
+  destroy() {
+    if (this._onKeyDown) window.removeEventListener('keydown', this._onKeyDown);
+    if (this._onKeyUp) window.removeEventListener('keyup', this._onKeyUp);
+    if (this._onBlur) window.removeEventListener('blur', this._onBlur);
+    if (this._raf) cancelAnimationFrame(this._raf);
   }
 
   // Called by the on-screen joystick (see main.js) with a vector whose
   // components are each in [-1, 1] (0,0 in the center, magnitude 1 at the
   // edge of the joystick's travel), or null when the joystick isn't
   // currently being touched.
+  // Called by main.js's setTool() — true while Plow/Water/Plant/Harvest/
+  // Feed is the active tool, so free-roam movement (WASD/joystick) can
+  // apply that tool to whichever tile the character is currently
+  // standing on as they walk, instead of requiring a separate tap per
+  // tile. Tap-to-act on a specific tile still works exactly as before
+  // regardless of this — this only adds the "walking over it also does
+  // it" behavior on top.
+  setAutoApplyToolActive(active) {
+    this.autoApplyToolActive = !!active;
+    this._lastAutoApplyKey = null; // fresh start — don't remember a tile from the tool that was active before
+  }
+
   setJoystickVector(vector) {
     this._joystickVector = vector;
   }
@@ -884,6 +926,30 @@ class FarmGame {
         }
       }
     }
+
+    // Continuous Plow/Water/Plant/Harvest/Feed — apply to whichever tile
+    // the character is CURRENTLY standing on as they walk, instead of
+    // needing a separate tap per tile. Only outdoors (that's the only
+    // place these tools operate), and only on a NEW tile since the last
+    // one applied (so standing still, or continuing to walk across the
+    // SAME tile across several frames, doesn't repeat the action) — the
+    // key naturally changes again the moment the character leaves and
+    // later returns to the same tile, so revisiting it re-applies
+    // correctly rather than being silently skipped forever.
+    if (this.mode === 'outdoor' && this.autoApplyToolActive) {
+      const curTileX = Math.floor(c.x / TILE), curTileY = Math.floor(c.y / TILE);
+      const key = `${curTileX},${curTileY}`;
+      if (key !== this._lastAutoApplyKey) {
+        this._lastAutoApplyKey = key;
+        // Same dispatch a TAP at this exact position would use — an
+        // object here (a crop to harvest, an animal to feed) takes
+        // priority, otherwise it's a plain ground tile (plow/water/plant).
+        const obj = this._objectAt(curTileX, curTileY);
+        if (obj && this.onObjectClick) this.onObjectClick(obj);
+        else if (this.onTileClick) this.onTileClick(curTileX, curTileY);
+      }
+    }
+
     return true;
   }
 

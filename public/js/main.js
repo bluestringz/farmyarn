@@ -24,6 +24,12 @@
   };
 
   let game;
+  // Guards the one-time static-DOM-listener setup in bootGame() (see
+  // there for why) — bootGame() itself can legitimately run more than
+  // once per page load (an expired session bouncing back to login, then
+  // logging in again), but these specific listeners should only ever be
+  // attached once regardless.
+  let staticUIInitialized = false;
 
   const ACTION_ICON = { plow: '🚜', unplow: '↩️', plant: '🌱', water: '💧', harvest: '🧺', build: '🏗️', collect: '🧺', decorate: '🖼️' };
 
@@ -151,6 +157,14 @@
     document.getElementById('auth-screen').classList.add('hidden');
     document.getElementById('game-screen').classList.remove('hidden');
 
+    // bootGame() can genuinely run more than once in the same page load
+    // (an expired session bouncing back to the login screen, then
+    // logging in again) — without cleaning up the PREVIOUS instance
+    // first, its window-level keyboard listeners and its own independent
+    // requestAnimationFrame render loop kept running forever underneath
+    // the new one, silently stacking up more of both on every re-login
+    // and compounding into real, creeping lag over a long session.
+    if (game) game.destroy();
     game = new FarmGame(document.getElementById('farm-canvas'));
     game.onTileClick = handleTileClick;
     game.onObjectClick = handleObjectClick;
@@ -228,13 +242,26 @@
     if (!state.me.displayName) await promptForProfileName();
     connectSocket(); // must exist before loadOwnFarm() so the first space:join isn't dropped
     await loadOwnFarm();
-    initToolbar();
-    initTopbarActions();
-    initAvatarUpload();
-    initPlacementBar();
-    initChat();
+    // Every one of these attaches listeners to STATIC DOM elements that
+    // never get recreated (only `game`/`state` get reset on a repeat
+    // bootGame() — the buttons themselves are the same ones from the
+    // very first page load) — so, same reasoning as initJoystick/
+    // initToolbar's own guards, they only ever need to run once no
+    // matter how many times bootGame() itself runs in a session (an
+    // expired token bouncing back to login, then logging back in, was
+    // silently re-attaching a full second — or third, or more — copy of
+    // every one of these on top of the originals, each click/keystroke/
+    // tap from then on firing once per copy still attached).
+    if (!staticUIInitialized) {
+      staticUIInitialized = true;
+      initToolbar();
+      initTopbarActions();
+      initAvatarUpload();
+      initPlacementBar();
+      initChat();
+      initLeaderboard();
+    }
     checkDailyReward();
-    initLeaderboard();
 
     setInterval(refreshPlayer, 20000); // keep energy/coins reasonably fresh
     setInterval(refreshCurrentFarm, 45000); // catch server-side changes (friend watered a crop, etc.)
@@ -400,7 +427,18 @@
   // there, same feel as most mobile twin-stick games. Only one finger is
   // tracked at a time (by touch identifier), so a second finger tapping
   // elsewhere (a tool button, etc.) is unaffected.
+  let joystickInitialized = false;
   function initJoystick() {
+    // The zone is a static DOM element that persists across repeated
+    // bootGame() calls (only the `game` variable it references gets
+    // reassigned) — so its listeners only ever need attaching ONCE.
+    // Re-running this on a second bootGame() would attach a SECOND
+    // complete set of touchstart/touchmove/touchend handlers on top of
+    // the first, firing every finger movement twice (or more, with every
+    // further re-login) — real, compounding lag exactly like the
+    // keyboard-listener duplication this same bug caused elsewhere.
+    if (joystickInitialized) return;
+    joystickInitialized = true;
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     if (!isTouchDevice) return; // PC uses WASD only — leave the zone out of the DOM's active path entirely
 
@@ -781,7 +819,14 @@
 
   // ---------------- Toolbar / tools ----------------
 
+  let toolbarInitialized = false;
   function initToolbar() {
+    // Same reasoning as initJoystick's guard — these buttons are static
+    // DOM elements that persist across repeated bootGame() calls, so
+    // attaching their click listeners more than once would fire each
+    // click multiple times instead of adding any real functionality.
+    if (toolbarInitialized) return;
+    toolbarInitialized = true;
     document.querySelectorAll('.tool-btn').forEach((btn) => {
       btn.addEventListener('click', () => onToolButton(btn.dataset.tool));
     });
@@ -847,6 +892,12 @@
     state.buildSelection = null;
     state.selectedFeedId = null;
     clearPendingPlacement();
+    // Plow/Water/Plant/Harvest/Feed apply continuously as the character
+    // walks over a tile (WASD/joystick), not just on a tap — see
+    // _updateFreeRoamMovement in game.js. Tapping a specific tile still
+    // works exactly as it always did regardless of this.
+    const AUTO_APPLY_TOOLS = new Set(['plow', 'water', 'plant', 'harvest', 'feed']);
+    game.setAutoApplyToolActive(AUTO_APPLY_TOOLS.has(tool));
     document.querySelectorAll('.tool-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.tool === tool);
     });

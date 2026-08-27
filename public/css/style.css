@@ -491,22 +491,26 @@ button { font-family: inherit; cursor: pointer; }
 /* ---- Popovers (seed picker / build picker) ---- */
 .popover {
   position: absolute;
-  bottom: 14px;
-  left: 50%;
-  transform: translateX(-50%);
+  /* Right side, dropping down near the (also right-side) toolbar instead
+     of centered at the bottom — matches where the button that opened it
+     actually lives now, and stops it from sitting in the middle of the
+     farm view blocking whatever's directly behind it. */
+  right: 68px;
+  top: 60px;
   background: var(--cream);
   border: 4px solid var(--wood);
   border-radius: 18px;
   padding: 10px;
   display: flex;
-  flex-flow: row nowrap;
-  align-items: flex-start;
+  flex-flow: column nowrap;
+  align-items: center;
   gap: 8px;
-  overflow-x: auto;
-  max-width: 92vw;
-  max-height: 130px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-width: 92px;
+  max-height: 65vh;
   box-shadow: 0 6px 0 rgba(94,59,31,0.3);
-  z-index: 12;
+  z-index: 56;
 }
 button.picker-item {
   flex: 0 0 auto;
@@ -1016,7 +1020,7 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   .chat-input-row input { font-size: 16px; } /* 16px prevents iOS auto-zoom-in on focus */
 
   .side-panel { width: 100vw; }
-  .popover { max-width: 96vw; }
+  .popover { right: 54px; max-width: 76px; max-height: 58vh; }
   .placement-bar { bottom: 8px; padding: 6px; gap: 6px; }
   .placement-bar button { padding: 7px 12px; font-size: 12px; }
 
