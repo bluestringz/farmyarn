@@ -570,15 +570,44 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
 /* ---- Bottom toolbar (signpost) ---- */
 .toolbar {
   display: flex;
-  justify-content: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   background: var(--wood);
   border-top: 5px solid var(--wood-dark);
-  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
-  overflow-x: auto;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   flex-shrink: 0;
   z-index: 20;
 }
+/* Small strip of 3 tabs above the actual tool buttons — only ONE group of
+   ~5-6 tools shows at a time (whichever tab is active) instead of all 16
+   buttons at once wrapping onto multiple rows, which used to eat up to
+   96px of vertical height that could otherwise show the farm — a real
+   problem on a short landscape mobile screen especially. */
+.toolbar-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.toolbar-tab {
+  background: var(--cream-dark);
+  border: 2px solid var(--wood-dark);
+  border-radius: 10px;
+  padding: 3px 16px;
+  font-size: 17px;
+  cursor: pointer;
+  color: var(--wood-dark);
+}
+.toolbar-tab.active {
+  background: var(--sun);
+  border-color: var(--sun-dark);
+}
+.toolbar-group {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  overflow-x: auto;
+}
+.toolbar-group.hidden { display: none; }
 .tool-btn {
   flex-shrink: 0;
   display: flex;
@@ -960,17 +989,13 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   .toolbar {
     gap: 4px;
     padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
-    -webkit-overflow-scrolling: touch;
-    /* 13 buttons never fit in one row on a phone, and relying on a
-       horizontal swipe to reach the rest wasn't obvious/reliable enough —
-       wrap onto multiple rows instead so every tool is visible up front
-       with no scrolling needed at all. */
-    flex-wrap: wrap;
-    overflow-x: visible;
-    justify-content: center;
-    max-height: 96px;
-    overflow-y: auto;
   }
+  /* Only one group of ~5-6 buttons shows at a time now (see the tab
+     strip), so it comfortably fits in a single row on a phone without
+     needing the old multi-row wrap — this just keeps a horizontal-scroll
+     fallback for anything unusually narrow. */
+  .toolbar-group { -webkit-overflow-scrolling: touch; }
+  .toolbar-tab { padding: 3px 12px; font-size: 15px; }
   .tool-btn { min-width: 44px; flex: 0 1 auto; padding: 4px 6px; }
   .tool-icon { font-size: 16px; }
   .tool-label { font-size: 8px; }
@@ -1019,6 +1044,7 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
     padding: 3px 6px calc(3px + env(safe-area-inset-bottom));
     gap: 3px;
   }
+  .toolbar-tab { padding: 2px 10px; font-size: 13px; }
   .tool-btn { min-width: 36px; padding: 3px 5px; }
   .tool-icon { font-size: 14px; }
   .tool-label { display: none; } /* icon-only — labels cost too much vertical room here */
@@ -1115,9 +1141,23 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
 }
 
 /* ---- Leaderboard (Most Rich) ---- */
-.leaderboard-panel {
+.leaderboard-trophy-btn {
+  background: var(--cream);
+  border: 2px solid var(--wood-dark);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+.leaderboard-popup {
   position: fixed;
-  top: 70px;
+  top: 60px;
   left: 10px;
   width: 210px;
   max-width: calc(100vw - 20px);
@@ -1129,21 +1169,13 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   overflow: hidden;
 }
 .leaderboard-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   background: var(--wood);
   color: var(--cream);
   font-family: 'Baloo 2', cursive;
   font-weight: 800;
   font-size: 13px;
   padding: 6px 10px;
-  cursor: pointer;
-  user-select: none;
 }
-.leaderboard-caret { font-size: 11px; transition: transform 0.15s ease; }
-.leaderboard-panel.collapsed .leaderboard-caret { transform: rotate(-90deg); }
-.leaderboard-panel.collapsed .leaderboard-list { display: none; }
 .leaderboard-list {
   list-style: none;
   margin: 0;
@@ -1207,7 +1239,7 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
 .leaderboard-row.rank-3 .leaderboard-rank { font-size: 15px; }
 
 @media (max-width: 640px) {
-  .leaderboard-panel { top: 96px; width: 170px; }
+  .leaderboard-popup { top: 96px; width: 170px; }
   .leaderboard-row { font-size: 11px; }
   .leaderboard-row.rank-1 { font-size: 12.5px; }
   .leaderboard-row.rank-2 { font-size: 12px; }
@@ -1220,11 +1252,11 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
    tricks alone just decide WHICH of the two wins an overlap and hides
    the other's content — they don't stop the overlap itself, which is
    what actually needs fixing here. */
-body:has(.visiting-banner:not(.hidden)) .leaderboard-panel {
+body:has(.visiting-banner:not(.hidden)) .leaderboard-popup {
   top: 116px;
 }
 @media (max-width: 640px) {
-  body:has(.visiting-banner:not(.hidden)) .leaderboard-panel {
+  body:has(.visiting-banner:not(.hidden)) .leaderboard-popup {
     top: 142px;
   }
 }

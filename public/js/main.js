@@ -239,16 +239,32 @@
     setInterval(refreshPlayer, 20000); // keep energy/coins reasonably fresh
     setInterval(refreshCurrentFarm, 45000); // catch server-side changes (friend watered a crop, etc.)
     setInterval(() => { if (state.inMarket) refreshMarketStalls(); }, 20000); // keep stall listings fresh
-    setInterval(loadLeaderboard, 5 * 60000); // the ranking itself only changes once a day (see server), this just catches the midnight rollover for anyone who stays online that long without reloading
+    // No periodic leaderboard refresh needed anymore — it's a popup now,
+    // fetched fresh every time it's actually opened (see initLeaderboard),
+    // so there's nothing stale to catch up on while it's sitting hidden.
   }
 
   // ---- Leaderboard (Most Rich) ----
+  // Now a popup opened by tapping the 🏆 trophy button next to the Level
+  // display, instead of a persistent panel that always sat on screen —
+  // it never fights with a banner (or anything else) for space when
+  // nobody's actually looking at it.
   function initLeaderboard() {
-    const panel = document.getElementById('leaderboard-panel');
-    document.getElementById('leaderboard-toggle').addEventListener('click', () => {
-      panel.classList.toggle('collapsed');
+    const popup = document.getElementById('leaderboard-popup');
+    const trophyBtn = document.getElementById('leaderboard-trophy-btn');
+    trophyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const opening = popup.classList.contains('hidden');
+      if (opening) await loadLeaderboard();
+      popup.classList.toggle('hidden');
     });
-    loadLeaderboard();
+    // Tapping anywhere else closes it — same "tap outside to dismiss"
+    // convention as any other popover in the game.
+    document.addEventListener('click', (e) => {
+      if (!popup.classList.contains('hidden') && !popup.contains(e.target) && e.target !== trophyBtn) {
+        popup.classList.add('hidden');
+      }
+    });
   }
 
   async function loadLeaderboard() {
@@ -768,6 +784,22 @@
   function initToolbar() {
     document.querySelectorAll('.tool-btn').forEach((btn) => {
       btn.addEventListener('click', () => onToolButton(btn.dataset.tool));
+    });
+    // Toolbar tabs — only one group of tools shows at a time (Farming /
+    // Build & Decorate / Shop & Places). Switching tabs never touches
+    // state.tool itself — an active tool from a now-hidden group (say,
+    // Water) stays active in the background exactly as if its button
+    // were still visible; switching back to that tab shows it still
+    // highlighted. This is purely which BUTTONS are visible, not a
+    // change to what's currently selected.
+    document.querySelectorAll('.toolbar-tab').forEach((tabBtn) => {
+      tabBtn.addEventListener('click', () => {
+        const target = tabBtn.dataset.toolbarTab;
+        document.querySelectorAll('.toolbar-tab').forEach((b) => b.classList.toggle('active', b === tabBtn));
+        document.querySelectorAll('.toolbar-group').forEach((g) => {
+          g.classList.toggle('hidden', g.dataset.toolbarGroup !== target);
+        });
+      });
     });
   }
 
