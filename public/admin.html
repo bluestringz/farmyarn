@@ -95,6 +95,7 @@
       <option value="crop_types">🌾 Crops</option>
       <option value="animal_types">🐄 Animals</option>
       <option value="decoration_types">🌳 Decorations (Trees)</option>
+      <option value="decoration_types:fruit_tree">🍎 Fruit Trees</option>
     </select>
     <table id="timers-table">
       <thead><tr><th>Category</th><th>Type</th><th>Name</th><th>Setting</th><th>Current</th><th>New (hours)</th><th></th></tr></thead>
@@ -229,6 +230,11 @@ const TABLE_LABELS = {
   'item_types:food': '🍲 Cooked Food',
   'item_types:material': '🪵 Crafting Material',
   'item_types:fruit': '🍎 Fruit',
+  // Same split for decoration_types — fruit trees (Mango/Apple/Avocado)
+  // get their own category instead of sitting in generic "Decoration"
+  // alongside fences/lamps/bonfires (see displayCategory in both
+  // /shop-prices and /timers).
+  'decoration_types:fruit_tree': '🍎 Fruit Tree',
 };
 const FIELD_LABELS = { seed_cost: 'Seed Cost', sell_price: 'Sell Price', cost: 'Buy Cost', energy_restore: 'Energy Restored' };
 
@@ -324,7 +330,7 @@ function fmtHours(seconds) {
 function renderTimers() {
   const tbody = document.querySelector('#timers-table tbody');
   const categoryFilter = document.getElementById('timer-category-filter').value;
-  const rows = allTimers.filter((r) => !categoryFilter || r.table === categoryFilter);
+  const rows = allTimers.filter((r) => !categoryFilter || r.displayCategory === categoryFilter);
 
   tbody.innerHTML = rows.map((r) => {
     const rowKey = `${r.kind}:${r.table}:${r.id}:${r.field}`;
@@ -332,7 +338,7 @@ function renderTimers() {
     const nameLabel = r.kind === 'item' ? escapeHtml(r.name) : '<em>applies to all</em>';
     return `
     <tr data-row-key="${rowKey}" data-kind="${r.kind}" data-table="${r.table}" data-id="${r.id}" data-field="${r.field}">
-      <td>${TABLE_LABELS[r.table] || r.table}</td>
+      <td>${TABLE_LABELS[r.displayCategory] || TABLE_LABELS[r.table] || r.table}</td>
       <td>${typeLabel}</td>
       <td>${nameLabel}</td>
       <td>${escapeHtml(r.label)}</td>

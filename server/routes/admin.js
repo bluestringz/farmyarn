@@ -88,17 +88,23 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
   // filter can split them into their own findable groups — Egg/Milk/Wool/
   // Truffle used to be buried in one big generic "Item/Material" bucket
   // alongside completely unrelated crafting materials and cooked food,
-  // making them hard to actually find. `table` itself stays the real
-  // table name throughout (still what /set-price acts on) — this is
-  // purely an extra filtering hint, not a different table.
+  // making them hard to actually find. Fruit trees (Mango/Apple/Avocado)
+  // get the same treatment within decoration_types — produces_item_id
+  // being set is what marks a decoration as a fruit tree — so they're
+  // not buried among fences/lamps/bonfires either. `table` itself stays
+  // the real table name throughout (still what /set-price acts on) —
+  // this is purely an extra filtering hint, not a different table.
   router.get('/shop-prices', (req, res) => {
     const rows = [];
     for (const table of Object.keys(PRICE_TABLES)) {
       const items = db.prepare(`SELECT * FROM ${table}`).all();
       for (const item of items) {
+        let displayCategory = table;
+        if (table === 'item_types') displayCategory = `item_types:${item.category}`;
+        else if (table === 'decoration_types' && item.produces_item_id) displayCategory = 'decoration_types:fruit_tree';
         rows.push({
           table, id: item.id, name: item.name,
-          displayCategory: table === 'item_types' ? `item_types:${item.category}` : table,
+          displayCategory,
           fields: PRICE_TABLES[table].reduce((acc, f) => { acc[f] = item[f]; return acc; }, {}),
         });
       }
@@ -165,9 +171,15 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     for (const table of Object.keys(TIMER_TABLES)) {
       const items = db.prepare(`SELECT * FROM ${table}`).all();
       for (const item of items) {
+        // Same displayCategory idea as /shop-prices — fruit trees
+        // (Mango/Apple/Avocado) get split out of decoration_types'
+        // generic bucket so they're not buried among fences/lamps/
+        // bonfires, which don't have growth/production/lifespan timers
+        // that mean anything anyway.
+        const displayCategory = table === 'decoration_types' && item.produces_item_id ? 'decoration_types:fruit_tree' : table;
         for (const field of TIMER_TABLES[table]) {
           rows.push({
-            kind: 'item', table, id: item.id, name: item.name, field,
+            kind: 'item', table, displayCategory, id: item.id, name: item.name, field,
             label: TIMER_FIELD_LABELS[field] || field, valueSeconds: item[field],
           });
         }
@@ -176,7 +188,7 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     for (const key of Object.keys(GLOBAL_TIMERS)) {
       const def = GLOBAL_TIMERS[key];
       rows.push({
-        kind: 'global', table: def.category, id: key, name: def.label,
+        kind: 'global', table: def.category, displayCategory: def.category, id: key, name: def.label,
         field: key, label: def.label, valueSeconds: getTimerSetting(db, key),
       });
     }
