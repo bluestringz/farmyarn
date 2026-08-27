@@ -298,6 +298,10 @@ button { font-family: inherit; cursor: pointer; }
   color: inherit;
   cursor: pointer;
 }
+.icon-btn.active {
+  background: var(--sun);
+  border-color: var(--sun-dark);
+}
 .badge {
   position: absolute;
   top: -4px; right: -4px;
@@ -1237,7 +1241,11 @@ body:has(.visiting-banner:not(.hidden)) .leaderboard-panel {
 /* ---- Virtual joystick (free-roam movement on touch devices) ---- */
 .joystick-zone {
   position: absolute;
-  left: 0;
+  /* Bottom-RIGHT, not left — the Chat button sits bottom-left (see
+     .chat-fab), and this zone used to sit right on top of it with a
+     higher z-index, so the joystick captured every touch there before
+     the chat button ever got a chance to. */
+  right: 0;
   bottom: 0;
   width: 42%;
   max-width: 260px;

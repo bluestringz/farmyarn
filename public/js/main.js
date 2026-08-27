@@ -2053,6 +2053,7 @@
     refreshNotifBadge();
     setInterval(refreshNotifBadge, 15000);
     initMusic();
+    initFullscreenToggle();
   }
 
   function initMusic() {
@@ -2074,6 +2075,48 @@
       };
       document.addEventListener('pointerdown', tryStartOnce, { once: true });
     }
+  }
+
+  // Toggles the browser's actual Fullscreen API — on mobile this hides
+  // the address bar and other browser chrome, reclaiming that space for
+  // the game itself (biggest win in landscape, where the address bar
+  // otherwise eats a large fraction of the already-short screen height).
+  // Support varies by browser (notably weak/absent on iOS Safari for
+  // arbitrary elements, though Android Chrome and most desktop browsers
+  // handle it fine) — this fails visibly with a toast rather than
+  // silently doing nothing if the API isn't there or the browser refuses.
+  function initFullscreenToggle() {
+    const btn = document.getElementById('fullscreen-toggle-btn');
+    const supported = !!(document.documentElement.requestFullscreen
+      || document.documentElement.webkitRequestFullscreen
+      || document.documentElement.mozRequestFullScreen
+      || document.documentElement.msRequestFullscreen);
+    const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement
+      || document.mozFullScreenElement || document.msFullscreenElement);
+    const updateIcon = () => { btn.textContent = isFullscreen() ? '⛶' : '⛶'; btn.classList.toggle('active', isFullscreen()); };
+
+    btn.addEventListener('click', async () => {
+      if (!supported) {
+        UI.toast("This browser doesn't support fullscreen mode — try a different browser (Chrome works well on Android).");
+        return;
+      }
+      try {
+        if (!isFullscreen()) {
+          const el = document.documentElement;
+          const request = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+          await request.call(el);
+        } else {
+          const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+          await exit.call(document);
+        }
+      } catch (err) {
+        UI.toast('Fullscreen was blocked or cancelled.');
+      }
+    });
+    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach((evt) => {
+      document.addEventListener(evt, updateIcon);
+    });
+    updateIcon();
   }
 
   async function openFriends() {
