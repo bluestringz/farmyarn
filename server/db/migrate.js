@@ -572,9 +572,7 @@ function seedContent(db) {
   const upsertCrop = db.prepare(`
     INSERT INTO crop_types (id, name, seed_cost, sell_price, xp_reward, growth_seconds, required_level, sprite)
     VALUES (@id, @name, @seed_cost, @sell_price, @xp_reward, @growth_seconds, @required_level, @sprite)
-    ON CONFLICT(id) DO UPDATE SET name=excluded.name, seed_cost=excluded.seed_cost,
-      sell_price=excluded.sell_price, xp_reward=excluded.xp_reward,
-      growth_seconds=excluded.growth_seconds, required_level=excluded.required_level, sprite=excluded.sprite
+    ON CONFLICT(id) DO NOTHING
   `);
 
   const crops = [
@@ -593,9 +591,7 @@ function seedContent(db) {
   const upsertBuilding = db.prepare(`
     INSERT INTO building_types (id, name, cost, required_level, width, height, sprite, category)
     VALUES (@id, @name, @cost, @required_level, @width, @height, @sprite, @category)
-    ON CONFLICT(id) DO UPDATE SET name=excluded.name, cost=excluded.cost,
-      required_level=excluded.required_level, width=excluded.width, height=excluded.height,
-      sprite=excluded.sprite, category=excluded.category
+    ON CONFLICT(id) DO NOTHING
   `);
   const buildings = [
     { id: 'farmhouse',    name: 'House',        cost: 100000, required_level: 1, width: 2, height: 2, sprite: 'farmhouse', category: 'building' },
@@ -617,12 +613,7 @@ function seedContent(db) {
       produces_item_id, production_seconds, fruit_spoil_seconds, lifespan_seconds, yield_min, yield_max)
     VALUES (@id, @name, @cost, @required_level, @width, @height, @sprite, @growable, @growth_seconds,
       @produces_item_id, @production_seconds, @fruit_spoil_seconds, @lifespan_seconds, @yield_min, @yield_max)
-    ON CONFLICT(id) DO UPDATE SET name=excluded.name, cost=excluded.cost,
-      required_level=excluded.required_level, width=excluded.width, height=excluded.height, sprite=excluded.sprite,
-      growable=excluded.growable, growth_seconds=excluded.growth_seconds,
-      produces_item_id=excluded.produces_item_id, production_seconds=excluded.production_seconds,
-      fruit_spoil_seconds=excluded.fruit_spoil_seconds, lifespan_seconds=excluded.lifespan_seconds,
-      yield_min=excluded.yield_min, yield_max=excluded.yield_max
+    ON CONFLICT(id) DO NOTHING
   `);
   // Fruit-tree-only fields default to "not a fruit tree" (0/null) for
   // every other decoration — filled in here so each row below only needs
@@ -666,9 +657,7 @@ function seedContent(db) {
   const upsertAnimal = db.prepare(`
     INSERT INTO animal_types (id, name, cost, required_level, product_item_id, production_seconds, sprite)
     VALUES (@id, @name, @cost, @required_level, @product_item_id, @production_seconds, @sprite)
-    ON CONFLICT(id) DO UPDATE SET name=excluded.name, cost=excluded.cost,
-      required_level=excluded.required_level, product_item_id=excluded.product_item_id,
-      production_seconds=excluded.production_seconds, sprite=excluded.sprite
+    ON CONFLICT(id) DO NOTHING
   `);
   const animals = [
     { id: 'chicken', name: 'Chicken', cost: 100, required_level: 2, product_item_id: 'egg',   production_seconds: 6 * 3600,  sprite: 'chicken' },
@@ -682,8 +671,7 @@ function seedContent(db) {
   const upsertItem = db.prepare(`
     INSERT INTO item_types (id, name, sell_price, sprite, category, energy_restore)
     VALUES (@id, @name, @sell_price, @sprite, @category, @energy_restore)
-    ON CONFLICT(id) DO UPDATE SET name=excluded.name, sell_price=excluded.sell_price,
-      sprite=excluded.sprite, category=excluded.category, energy_restore=excluded.energy_restore
+    ON CONFLICT(id) DO NOTHING
   `);
   const items = [
     { id: 'egg',      name: 'Egg',      sell_price: 12, sprite: 'egg', category: 'animal_product' },
@@ -720,10 +708,7 @@ function seedContent(db) {
   const upsertOutfit = db.prepare(`
     INSERT INTO outfit_types (id, name, cost, required_level, gender, shirt_color, pants_color, hat_color, style, sprite_key, currency, rental_days)
     VALUES (@id, @name, @cost, @required_level, @gender, @shirt_color, @pants_color, @hat_color, @style, @sprite_key, @currency, @rental_days)
-    ON CONFLICT(id) DO UPDATE SET name=excluded.name, cost=excluded.cost, required_level=excluded.required_level,
-      gender=excluded.gender, shirt_color=excluded.shirt_color, pants_color=excluded.pants_color,
-      hat_color=excluded.hat_color, style=excluded.style, sprite_key=excluded.sprite_key,
-      currency=excluded.currency, rental_days=excluded.rental_days
+    ON CONFLICT(id) DO NOTHING
   `);
   // sprite_key selects which character sprite set to actually draw (see
   // public/assets/characters/) — only outfits with a real matching sprite
@@ -758,8 +743,7 @@ function seedContent(db) {
   const upsertInterior = db.prepare(`
     INSERT INTO interior_types (id, name, cost, required_level, width, height, sprite)
     VALUES (@id, @name, @cost, @required_level, @width, @height, @sprite)
-    ON CONFLICT(id) DO UPDATE SET name=excluded.name, cost=excluded.cost,
-      required_level=excluded.required_level, width=excluded.width, height=excluded.height, sprite=excluded.sprite
+    ON CONFLICT(id) DO NOTHING
   `);
   const interiorItems = [
     { id: 'rug',       name: 'Rug',           cost: 40,  required_level: 1, width: 2, height: 1, sprite: 'rug' },

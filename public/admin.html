@@ -253,6 +253,15 @@ async function loadPrices() {
   renderPrices();
 }
 
+// Remembers which price FIELD each row was last showing (keyed by
+// "table:id"), across re-renders — without this, saving a change to,
+// say, Sell Price reloaded the table and reset every row's dropdown back
+// to its FIRST field (Seed Cost), showing THAT field's unrelated,
+// unchanged value instead. The edit itself was never actually lost —
+// it just looked that way because the row silently switched to
+// displaying a different field after saving.
+let selectedFieldByRow = {};
+
 function renderPrices() {
   const tbody = document.querySelector('#prices-table tbody');
   const q = document.getElementById('price-search-input').value.trim().toLowerCase();
@@ -275,25 +284,30 @@ function renderPrices() {
 
   tbody.innerHTML = items.map((item) => {
     const fieldKeys = Object.keys(item.fields);
-    const fieldOptions = fieldKeys.map((f) => `<option value="${f}">${FIELD_LABELS[f] || f}</option>`).join('');
-    const firstValue = item.fields[fieldKeys[0]];
+    const rowKey = `${item.table}:${item.id}`;
+    const remembered = selectedFieldByRow[rowKey];
+    const selectedField = remembered && fieldKeys.includes(remembered) ? remembered : fieldKeys[0];
+    const fieldOptions = fieldKeys.map((f) => `<option value="${f}" ${f === selectedField ? 'selected' : ''}>${FIELD_LABELS[f] || f}</option>`).join('');
+    const currentValue = item.fields[selectedField];
     return `
     <tr data-table="${item.table}" data-id="${item.id}" data-display-category="${item.displayCategory}">
       <td>${categoryLabelFor(item)}</td>
       <td>${escapeHtml(item.name)}</td>
       <td><select class="price-field-select">${fieldOptions}</select></td>
-      <td class="price-current">${iconFor(fieldKeys[0])}${firstValue}</td>
-      <td><input type="number" class="price-input" min="0" value="${firstValue}" style="width:90px"></td>
+      <td class="price-current">${iconFor(selectedField)}${currentValue}</td>
+      <td><input type="number" class="price-input" min="0" value="${currentValue}" style="width:90px"></td>
       <td><button class="price-save-btn">Save</button></td>
     </tr>`;
   }).join('') || '<tr><td colspan="6">No items match.</td></tr>';
 
   tbody.querySelectorAll('tr[data-table]').forEach((tr) => {
     const item = items.find((i) => i.table === tr.dataset.table && String(i.id) === tr.dataset.id && i.displayCategory === tr.dataset.displayCategory);
+    const rowKey = `${tr.dataset.table}:${tr.dataset.id}`;
     const select = tr.querySelector('.price-field-select');
     const input = tr.querySelector('.price-input');
     const currentCell = tr.querySelector('.price-current');
     select.addEventListener('change', () => {
+      selectedFieldByRow[rowKey] = select.value;
       const val = item.fields[select.value];
       input.value = val;
       currentCell.textContent = iconFor(select.value) + val;
@@ -302,6 +316,7 @@ function renderPrices() {
       const value = parseInt(input.value, 10);
       if (!Number.isFinite(value) || value < 0) return alert('Enter a valid price.');
       try {
+        selectedFieldByRow[rowKey] = select.value; // keep showing THIS field after the reload, not reset to the first one
         await api('POST', '/api/admin/set-price', { table: tr.dataset.table, id: tr.dataset.id, field: select.value, value });
         await loadPrices();
       } catch (err) {
