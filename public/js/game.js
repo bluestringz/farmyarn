@@ -1485,14 +1485,15 @@ class FarmGame {
       // a thumb that lands even slightly outside the joystick's zone
       // (onto the canvas itself) would immediately start panning the
       // camera, forcing the player to keep re-grabbing the joystick. A
-      // held-for-1-second requirement before panning actually kicks in
+      // held-for-0.5-second requirement before panning actually kicks in
       // means a stray/incidental touch near the joystick's edge never
       // accumulates enough hold time to pan, while a genuinely deliberate
       // press-and-drag (someone actually trying to look around) still
-      // works exactly as before after that brief wait. Mouse dragging
-      // still doesn't pan at all — that's what right-click-drag is for on
+      // works after that brief wait — 1 full second felt sluggish for a
+      // deliberate pan, so this is half that. Mouse dragging still
+      // doesn't pan at all — that's what right-click-drag is for on
       // desktop — only tracked here to tell taps from drags.
-      if (this._isTouch && performance.now() - this._dragStartTime > 1000) {
+      if (this._isTouch && performance.now() - this._dragStartTime > 500) {
         this.camera.x += dx;
         this.camera.y += dy;
       }

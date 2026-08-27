@@ -341,7 +341,7 @@ button { font-family: inherit; cursor: pointer; }
 /* ---- Global chat box (bottom-left) ---- */
 .chat-box {
   position: fixed;
-  left: 10px;
+  right: 10px;
   bottom: 78px;
   width: min(280px, 42vw);
   max-height: 260px;
@@ -356,10 +356,13 @@ button { font-family: inherit; cursor: pointer; }
 }
 /* Small floating button that opens the chat — sits where the chat box
    itself used to always be, so nothing blocks the farm view until the
-   player actually wants to chat. */
+   player actually wants to chat. Right side, not left — the joystick
+   zone (see .joystick-zone) occupies the bottom-left corner, and the
+   chat used to sit right underneath it, so the joystick captured every
+   touch there before the chat button ever got a chance to. */
 .chat-fab {
   position: fixed;
-  left: 10px;
+  right: 10px;
   bottom: 78px;
   width: 44px;
   height: 44px;
@@ -1241,11 +1244,7 @@ body:has(.visiting-banner:not(.hidden)) .leaderboard-panel {
 /* ---- Virtual joystick (free-roam movement on touch devices) ---- */
 .joystick-zone {
   position: absolute;
-  /* Bottom-RIGHT, not left — the Chat button sits bottom-left (see
-     .chat-fab), and this zone used to sit right on top of it with a
-     higher z-index, so the joystick captured every touch there before
-     the chat button ever got a chance to. */
-  right: 0;
+  left: 0;
   bottom: 0;
   width: 42%;
   max-width: 260px;
