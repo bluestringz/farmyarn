@@ -76,19 +76,31 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     building_types: ['cost'],
     decoration_types: ['cost'],
     animal_types: ['cost'],
-    item_types: ['sell_price'],
+    item_types: ['sell_price', 'energy_restore'],
     interior_types: ['cost'],
   };
 
   // GET /api/admin/shop-prices — every catalog item across every
   // price-bearing table, flattened into one list the admin panel can
-  // render as a single editable table.
+  // render as a single editable table. item_types rows also carry a
+  // `displayCategory` ("item_types:animal_product", "item_types:feed",
+  // etc., from that table's own `category` column) so the admin panel's
+  // filter can split them into their own findable groups — Egg/Milk/Wool/
+  // Truffle used to be buried in one big generic "Item/Material" bucket
+  // alongside completely unrelated crafting materials and cooked food,
+  // making them hard to actually find. `table` itself stays the real
+  // table name throughout (still what /set-price acts on) — this is
+  // purely an extra filtering hint, not a different table.
   router.get('/shop-prices', (req, res) => {
     const rows = [];
     for (const table of Object.keys(PRICE_TABLES)) {
       const items = db.prepare(`SELECT * FROM ${table}`).all();
       for (const item of items) {
-        rows.push({ table, id: item.id, name: item.name, fields: PRICE_TABLES[table].reduce((acc, f) => { acc[f] = item[f]; return acc; }, {}) });
+        rows.push({
+          table, id: item.id, name: item.name,
+          displayCategory: table === 'item_types' ? `item_types:${item.category}` : table,
+          fields: PRICE_TABLES[table].reduce((acc, f) => { acc[f] = item[f]; return acc; }, {}),
+        });
       }
     }
     res.json(rows);
@@ -124,8 +136,17 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
   const TIMER_TABLES = {
     crop_types: ['growth_seconds'],
     animal_types: ['production_seconds'],
+    // Trees (growth_seconds — covers all growable decorations, including
+    // the plain Tree) AND fruit-tree-specific timers (production/spoil/
+    // lifespan — 0 for every non-fruit-tree decoration, so those rows
+    // just won't show meaningful values for those extra fields, same as
+    // any other per-item field that doesn't apply to a given row).
+    decoration_types: ['growth_seconds', 'production_seconds', 'fruit_spoil_seconds', 'lifespan_seconds'],
   };
-  const TIMER_FIELD_LABELS = { growth_seconds: 'Growth Time', production_seconds: 'Production Time' };
+  const TIMER_FIELD_LABELS = {
+    growth_seconds: 'Growth Time', production_seconds: 'Production Time',
+    fruit_spoil_seconds: 'Fruit Spoil Time (uncollected)', lifespan_seconds: 'Lifespan (dies after)',
+  };
 
   // key -> { label, category } — category groups these in the admin UI
   // filter alongside the per-item tables (Crops / Animals / Global Rules).

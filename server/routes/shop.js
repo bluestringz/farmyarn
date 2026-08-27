@@ -622,6 +622,52 @@ module.exports = function shopRoutes(db) {
     res.json({ ok: true, product: animalType.product_item_id, productQuantity: productQty, reward });
   });
 
+  // POST /api/shop/collect-fruit { objectId } — Mango/Apple/Avocado trees
+  // only. Same "ready every production_seconds" shape as collecting from
+  // an animal, but ALSO has to still be within fruit_spoil_seconds of
+  // becoming ready — resolveFruitTreeSpoilage (called via serializeFarm
+  // on every /api/farm/me fetch) already fast-forwards past any fully-
+  // spoiled cycle before this ever runs, so if this route sees the tree
+  // as "ready", that batch is guaranteed to still genuinely be
+  // collectible right now, not a rotted-and-forgotten one.
+  router.post('/collect-fruit', (req, res) => {
+    const { objectId } = req.body || {};
+    const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+
+    const obj = db.prepare("SELECT * FROM farm_objects WHERE id = ? AND farm_id = ? AND object_type = 'decoration'")
+      .get(objectId, farm.id);
+    if (!obj) return res.status(404).json({ error: 'Not found on your farm' });
+
+    const decoType = db.prepare('SELECT * FROM decoration_types WHERE id = ?').get(obj.item_id);
+    if (!decoType || !decoType.produces_item_id) return res.status(400).json({ error: 'Not a fruit tree' });
+
+    let growth = null;
+    try { growth = obj.state ? JSON.parse(obj.state) : null; } catch (e) { growth = null; }
+    const t = nowSec();
+    if (!growth || !growth.growthEndAt || growth.growthEndAt > t) {
+      return res.status(400).json({ error: 'Still growing' });
+    }
+
+    // last_collected_at is set to the PLANTING time at insert (every
+    // farm_object gets it, not just animals), so it's always well before
+    // growthEndAt until the tree is actually collected from at least
+    // once — Math.max (not ||, which last_collected_at being always-truthy
+    // would make dead code) keeps the very first cycle from starting
+    // early: the first fruit is ready production_seconds after MATURITY,
+    // not production_seconds after planting.
+    const last = Math.max(obj.last_collected_at, growth.growthEndAt);
+    const readyAt = last + decoType.production_seconds;
+    if (t < readyAt) return res.status(400).json({ error: 'No fruit ready yet' });
+
+    const qty = decoType.yield_min + Math.floor(Math.random() * (decoType.yield_max - decoType.yield_min + 1));
+    db.prepare('UPDATE farm_objects SET last_collected_at = ? WHERE id = ?').run(t, obj.id);
+    addInventory(db, req.userId, decoType.produces_item_id, qty);
+    const reward = grantRewards(db, req.userId, { coins: 0, xp: 2 });
+
+    res.json({ ok: true, product: decoType.produces_item_id, productQuantity: qty, reward });
+  });
+
   // POST /api/shop/fridge-deposit { itemId, quantity } — moves items from
   // the Bag into the Refrigerator's cold storage (see fridge_storage
   // table) — requires an actual Refrigerator placed somewhere indoors,

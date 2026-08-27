@@ -103,17 +103,6 @@
     </div>
   </header>
 
-  <!-- LEADERBOARD (Most Rich) — persistent widget, top-left, over the
-       canvas. Collapsible since it's a HUD overlay that could otherwise
-       sit on top of gameplay the player wants to see. -->
-  <aside id="leaderboard-panel" class="leaderboard-panel">
-    <div class="leaderboard-header" id="leaderboard-toggle">
-      <span>🏆 Most Rich</span>
-      <span class="leaderboard-caret" id="leaderboard-caret">▾</span>
-    </div>
-    <ol class="leaderboard-list" id="leaderboard-list"></ol>
-  </aside>
-
   <!-- VISITING BANNER -->
   <div id="visiting-banner" class="visiting-banner hidden">
     <span id="visiting-text">Visiting someone's farm</span>
@@ -151,6 +140,23 @@
     <button class="btn btn-small" id="casino-exit-btn">Leave Casino</button>
   </div>
 
+  <!-- LEADERBOARD (Most Rich) — persistent widget, top-left, over the
+       canvas. Collapsible since it's a HUD overlay that could otherwise
+       sit on top of gameplay the player wants to see. Deliberately placed
+       AFTER every banner above (not just given a higher z-index) so it
+       always paints on top of whichever banner happens to be showing —
+       it used to sit BEFORE them in the markup and would get visually
+       covered by a banner (e.g. "Visiting so-and-so's farm") whenever one
+       was active, since document order settles the paint order for
+       otherwise-equal stacking. -->
+  <aside id="leaderboard-panel" class="leaderboard-panel">
+    <div class="leaderboard-header" id="leaderboard-toggle">
+      <span>🏆 Most Rich</span>
+      <span class="leaderboard-caret" id="leaderboard-caret">▾</span>
+    </div>
+    <ol class="leaderboard-list" id="leaderboard-list"></ol>
+  </aside>
+
   <!-- FARM CANVAS -->
   <main class="farm-wrap">
     <canvas id="farm-canvas"></canvas>
@@ -161,6 +167,16 @@
       <button id="placement-rotate" title="Rotate (R)">↻ Rotate</button>
       <button id="placement-confirm" class="confirm" title="Confirm (Enter)">✓ Place</button>
       <button id="placement-cancel" class="cancel" title="Cancel (Esc)">✕ Cancel</button>
+    </div>
+    <!-- Virtual joystick for free-roam movement on touch devices (WASD
+         covers this on PC — see initJoystick() in main.js). Invisible
+         until the player actually touches down inside this corner zone,
+         at which point the base ring appears right where they touched
+         (not a fixed spot) and the knob follows the drag from there. -->
+    <div id="joystick-zone" class="joystick-zone hidden">
+      <div id="joystick-base" class="joystick-base hidden">
+        <div id="joystick-knob" class="joystick-knob"></div>
+      </div>
     </div>
   </main>
 

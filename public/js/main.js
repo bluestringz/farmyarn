@@ -157,6 +157,69 @@
     game.onSelfMove = (x, y) => {
       if (state.socket && state.currentSpace) state.socket.emit('space:move', { space: state.currentSpace, x, y });
     };
+    game.initKeyboardControls();
+    initJoystick();
+    // Free-roam (WASD/joystick) walking to the bottom-center tile of a
+    // house/coop/barn/mansion room exits it, same door-tile logic as
+    // tapping the building itself — but only while actually inside one;
+    // this callback still fires generically off game.js's own mode check,
+    // so this guard just protects against it somehow firing when
+    // state.inHouse is already false (e.g. mid-exit-animation).
+    game.onReachDoorExit = () => {
+      if (state.inHouse) exitHouse();
+    };
+    // Walking (WASD/joystick) into a house/coop/barn/mansion's wall
+    // enters it too — the tap-to-enter path (walkToDoorAndEnter, wired
+    // from the outdoor object-click handler below) already re-walks to
+    // the exact door tile before fading in, so reusing it here means a
+    // "bump" anywhere on the building still visually walks to the real
+    // door rather than fading in from wherever contact happened. Building
+    // taps are blocked while a tool is active (build/plow/etc.) — mirror
+    // that same guard here so free-roam bumping a building mid-decorate
+    // doesn't accidentally walk in.
+    game.onReachBuildingEntry = (obj) => {
+      if (state.inHouse) return;
+      if (state.tool === 'build' || state.tool === 'plow' || state.tool === 'plant' || state.tool === 'harvest'
+          || state.tool === 'move' || state.tool === 'remove') return;
+      if (obj.item_id === 'farmhouse') {
+        walkToDoorAndEnter(obj, enterHouse);
+      } else if (['chicken_coop', 'cow_barn', 'barn', 'mansion'].includes(obj.item_id)) {
+        walkToDoorAndEnter(obj, () => enterBuilding(obj));
+      }
+    };
+    // Walking (WASD/joystick) onto a staircase tile changes floor too —
+    // same logic the tap handler already used, just triggered by position
+    // instead of a tap.
+    game.onReachStaircase = async () => {
+      if (!state.inHouse || state.tool) return;
+      const current = state.interiorSpace.floor || 1;
+      const maxFloor = state.interiorSpace.maxFloor || 1;
+      const nextFloor = current >= maxFloor ? current - 1 : current + 1;
+      if (nextFloor < 1 || nextFloor > maxFloor) return;
+      try {
+        game.setTransitioning(true);
+        await enterBuilding({ id: state.interiorSpace.buildingId }, nextFloor);
+        UI.toast(`Floor ${nextFloor}`);
+      } catch (err) {
+        UI.toast(err.message);
+      } finally {
+        game.setTransitioning(false);
+      }
+    };
+    // Bumping into the Casino's wall while free-roaming inside the Park
+    // enters it too — mirrors onReachBuildingEntry above, just for the
+    // one building that lives in the Park instead of on a farm.
+    game.onReachCasinoEntry = () => {
+      if (state.inCasino || state.inHouse) return;
+      enterCasino();
+    };
+    // Walking to the bottom-center tile on Casino floor 1 exits back to
+    // the Park — same "walk out, don't need to tap a banner button"
+    // treatment as a house's door. Floors 2/3 don't have this (going
+    // "out" from there means taking the stairs down first).
+    game.onReachCasinoExit = () => {
+      if (state.inCasino && state.casinoFloor === 1) exitCasino();
+    };
 
     state.catalog = await Api.catalog();
     window.GameCatalog = state.catalog;
@@ -313,6 +376,71 @@
     });
   }
 
+  // ---------------- Virtual joystick (touch devices only) ----------------
+  // WASD covers PC (see game.initKeyboardControls). On touch devices, this
+  // sets up a corner "zone" that's invisible until the player actually
+  // touches down inside it — the joystick base then appears right where
+  // they touched (not a fixed spot), and the knob follows the drag from
+  // there, same feel as most mobile twin-stick games. Only one finger is
+  // tracked at a time (by touch identifier), so a second finger tapping
+  // elsewhere (a tool button, etc.) is unaffected.
+  function initJoystick() {
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (!isTouchDevice) return; // PC uses WASD only — leave the zone out of the DOM's active path entirely
+
+    const zone = document.getElementById('joystick-zone');
+    const base = document.getElementById('joystick-base');
+    const knob = document.getElementById('joystick-knob');
+    zone.classList.remove('hidden');
+
+    const MAX_RADIUS = 46; // px the knob can travel from center before clamping
+    let activeTouchId = null;
+    let originX = 0, originY = 0;
+
+    function showBaseAt(x, y) {
+      base.style.left = `${x}px`;
+      base.style.top = `${y}px`;
+      base.classList.remove('hidden');
+      knob.style.transform = 'translate(0px, 0px)';
+    }
+
+    zone.addEventListener('touchstart', (e) => {
+      if (activeTouchId !== null) return; // already tracking a finger
+      const t = e.changedTouches[0];
+      activeTouchId = t.identifier;
+      const rect = zone.getBoundingClientRect();
+      originX = t.clientX - rect.left;
+      originY = t.clientY - rect.top;
+      showBaseAt(originX, originY);
+      e.preventDefault();
+      e.stopPropagation(); // belt-and-suspenders — the canvas has its own touch handling; this keeps a joystick touch from ever reaching it
+    }, { passive: false });
+
+    zone.addEventListener('touchmove', (e) => {
+      const t = Array.from(e.changedTouches).find((tt) => tt.identifier === activeTouchId);
+      if (!t) return;
+      const rect = zone.getBoundingClientRect();
+      const curX = t.clientX - rect.left, curY = t.clientY - rect.top;
+      let dx = curX - originX, dy = curY - originY;
+      const dist = Math.hypot(dx, dy);
+      if (dist > MAX_RADIUS) { dx = (dx / dist) * MAX_RADIUS; dy = (dy / dist) * MAX_RADIUS; }
+      knob.style.transform = `translate(${dx}px, ${dy}px)`;
+      game.setJoystickVector({ x: dx / MAX_RADIUS, y: dy / MAX_RADIUS });
+      e.preventDefault();
+      e.stopPropagation();
+    }, { passive: false });
+
+    function endTouch(e) {
+      const t = Array.from(e.changedTouches).find((tt) => tt.identifier === activeTouchId);
+      if (!t) return;
+      activeTouchId = null;
+      base.classList.add('hidden');
+      game.setJoystickVector(null);
+    }
+    zone.addEventListener('touchend', endTouch);
+    zone.addEventListener('touchcancel', endTouch);
+  }
+
   function joinSpace(spaceId) {
     if (state.currentSpace === spaceId) return;
     if (state.currentSpace && state.socket) state.socket.emit('space:leave', { space: state.currentSpace });
@@ -405,13 +533,18 @@
     const def = findDef('building', obj.item_id);
     const width = (def && def.width) || 2, height = (def && def.height) || 2;
     const doorTile = { x: obj.grid_x + Math.floor(width / 2), y: obj.grid_y + height };
-    await game.walkToAndWait(doorTile.x, doorTile.y);
-    state.lastDoorTile = doorTile;
-    await fadeOut();
+    game.setTransitioning(true);
     try {
-      await enterFn();
+      await game.walkToAndWait(doorTile.x, doorTile.y);
+      state.lastDoorTile = doorTile;
+      await fadeOut();
+      try {
+        await enterFn();
+      } finally {
+        await fadeIn();
+      }
     } finally {
-      await fadeIn();
+      game.setTransitioning(false);
     }
   }
 
@@ -587,34 +720,39 @@
   }
 
   async function exitHouse() {
-    // Leaving means you're not on the furniture anymore either — stop the
-    // faster regen rate rather than leave it silently running forever.
-    if (state.me.isResting) {
-      try {
-        const res = await Api.stopResting();
-        state.me.isResting = res.resting;
-        state.me.energy = res.energy;
-        renderTopbar();
-      } catch (err) { /* non-critical — don't block leaving over this */ }
+    game.setTransitioning(true);
+    try {
+      // Leaving means you're not on the furniture anymore either — stop the
+      // faster regen rate rather than leave it silently running forever.
+      if (state.me.isResting) {
+        try {
+          const res = await Api.stopResting();
+          state.me.isResting = res.resting;
+          state.me.energy = res.energy;
+          renderTopbar();
+        } catch (err) { /* non-critical — don't block leaving over this */ }
+      }
+      setLocalRestPose(null);
+      await fadeOut();
+      // Puts the player back RIGHT OUTSIDE the specific building they were
+      // just in (see walkToDoorAndEnter above), not a generic default spot.
+      game.exitInteriorMode(state.lastDoorTile);
+      state.inHouse = false;
+      state.interiorSpace = null;
+      clearPendingPlacement();
+      setTool(null);
+      document.getElementById('house-banner').classList.add('hidden');
+      document.getElementById('coop-banner').classList.add('hidden');
+      // Rejoin whichever outdoor space we actually came from — a visitor
+      // exiting a friend's house/coop/barn belongs back on the FRIEND's
+      // farm, not their own (state.viewingUserId stays set the whole time
+      // they're inside for exactly this reason).
+      if (state.viewingUserId) await loadFarm(state.viewingUserId);
+      else await loadOwnFarm();
+      await fadeIn();
+    } finally {
+      game.setTransitioning(false);
     }
-    setLocalRestPose(null);
-    await fadeOut();
-    // Puts the player back RIGHT OUTSIDE the specific building they were
-    // just in (see walkToDoorAndEnter above), not a generic default spot.
-    game.exitInteriorMode(state.lastDoorTile);
-    state.inHouse = false;
-    state.interiorSpace = null;
-    clearPendingPlacement();
-    setTool(null);
-    document.getElementById('house-banner').classList.add('hidden');
-    document.getElementById('coop-banner').classList.add('hidden');
-    // Rejoin whichever outdoor space we actually came from — a visitor
-    // exiting a friend's house/coop/barn belongs back on the FRIEND's
-    // farm, not their own (state.viewingUserId stays set the whole time
-    // they're inside for exactly this reason).
-    if (state.viewingUserId) await loadFarm(state.viewingUserId);
-    else await loadOwnFarm();
-    await fadeIn();
   }
 
   async function refreshInterior() {
@@ -729,6 +867,14 @@
   // (server/routes/shop.js). Used here both for display labels AND to
   // require picking the correct one before an animal will actually eat.
   const FEED_TYPE_BY_ANIMAL = { chicken: 'chicken_feed', sheep: 'sheep_feed', pig: 'pig_feed', cow: 'cow_feed' };
+
+  // Fruit trees (Mango/Apple/Avocado) — grow and get watered exactly like
+  // the plain Tree (see FarmGame's growable-decoration handling), just
+  // with an ongoing fruit-production/collection life after maturing
+  // instead of a one-time chop-down. Kept as a Set so every place that
+  // already special-cases 'tree' (move-block, water) can extend to cover
+  // these with one check instead of three separate item-id comparisons.
+  const GROWABLE_TREE_IDS = new Set(['mango_tree', 'apple_tree', 'avocado_tree']);
 
   async function openFeedPicker() {
     const picker = document.getElementById('seed-picker');
@@ -1070,8 +1216,8 @@
         UI.toast("Buildings can't be moved — remove and re-place them instead.");
         return;
       }
-      if (obj.item_id === 'tree') {
-        UI.toast("A planted tree can't be moved — chop it down and plant a new one instead.");
+      if (obj.item_id === 'tree' || GROWABLE_TREE_IDS.has(obj.item_id)) {
+        UI.toast("A planted tree can't be moved — remove it and plant a new one instead.");
         return;
       }
       const def = findDef(obj.object_type, obj.item_id);
@@ -1214,7 +1360,7 @@
       return;
     }
 
-    if (state.tool === 'water' && obj.object_type === 'decoration' && obj.item_id === 'tree' && !state.viewingUserId) {
+    if (state.tool === 'water' && obj.object_type === 'decoration' && (obj.item_id === 'tree' || GROWABLE_TREE_IDS.has(obj.item_id)) && !state.viewingUserId) {
       try {
         game.walkTo(obj.grid_x, obj.grid_y, null);
         const res = await Api.waterDecoration(obj.id);
@@ -1237,6 +1383,28 @@
         await refreshPlayer();
         UI.toast(`Chopped the tree — got ${res.logs} logs! 🪵 +${res.reward.xp} XP`);
         game.playAction('🪵');
+        await refreshCurrentFarm();
+      } catch (err) {
+        UI.toast(err.message);
+      }
+      return;
+    }
+
+    // Fruit trees — tap with no tool active to collect ripe fruit, same
+    // "just walk up and tap it" interaction as collecting from an animal.
+    // Unlike the plain Tree, this never removes/chops the tree down —
+    // it just keeps producing until it dies of old age on its own.
+    if (!state.tool && obj.object_type === 'decoration' && GROWABLE_TREE_IDS.has(obj.item_id) && !state.viewingUserId) {
+      if (!obj.ready) {
+        UI.toast(obj.readyAt ? 'No fruit ready yet — check back later.' : 'Still growing.');
+        return;
+      }
+      try {
+        game.walkTo(obj.grid_x, obj.grid_y, null);
+        const res = await Api.collectFruit(obj.id);
+        await refreshPlayer();
+        UI.toast(`Collected ${res.productQuantity}x ${res.product}! +${res.reward.xp} XP`);
+        game.playAction('🍎');
         await refreshCurrentFarm();
       } catch (err) {
         UI.toast(err.message);
@@ -1580,38 +1748,49 @@
   async function enterCasino() {
     // Walk up to the Casino's door first, then fade — same "actually walk
     // there instead of teleporting" treatment as houses/coops/barns.
-    const doorTile = game.getCasinoDoorTile();
-    await game.walkToAndWait(doorTile.x, doorTile.y);
-    await fadeOut();
-    state.inCasino = true;
-    state.casinoFloor = 1;
-    game.setCasinoMode(1);
-    game.onCasinoMachineClick = handleCasinoMachineClick;
-    game.onCasinoStairsClick = handleCasinoStairsClick;
-    joinSpace('casino:1');
-    document.getElementById('park-banner').classList.add('hidden');
-    document.getElementById('casino-banner').classList.remove('hidden');
-    await fadeIn();
+    game.setTransitioning(true);
+    try {
+      const doorTile = game.getCasinoDoorTile();
+      await game.walkToAndWait(doorTile.x, doorTile.y);
+      await fadeOut();
+      state.inCasino = true;
+      state.casinoFloor = 1;
+      game.setCasinoMode(1);
+      game.onCasinoMachineClick = handleCasinoMachineClick;
+      game.onCasinoStairsClick = handleCasinoStairsClick;
+      joinSpace('casino:1');
+      document.getElementById('park-banner').classList.add('hidden');
+      document.getElementById('casino-banner').classList.remove('hidden');
+      await fadeIn();
+    } finally {
+      game.setTransitioning(false);
+    }
   }
 
   async function exitCasino() {
-    releaseCasinoLock();
-    await fadeOut();
-    state.inCasino = false;
-    state.casinoFloor = null;
-    // exitCasinoMode() already places the player right outside the
-    // Casino's own door (see game.js) — no doorTile argument needed here.
-    game.exitCasinoMode();
-    document.getElementById('casino-banner').classList.add('hidden');
-    document.getElementById('park-banner').classList.remove('hidden');
-    joinSpace('park');
-    await fadeIn();
+    game.setTransitioning(true);
+    try {
+      releaseCasinoLock();
+      await fadeOut();
+      state.inCasino = false;
+      state.casinoFloor = null;
+      // exitCasinoMode() already places the player right outside the
+      // Casino's own door (see game.js) — no doorTile argument needed here.
+      game.exitCasinoMode();
+      document.getElementById('casino-banner').classList.add('hidden');
+      document.getElementById('park-banner').classList.remove('hidden');
+      joinSpace('park');
+      await fadeIn();
+    } finally {
+      game.setTransitioning(false);
+    }
   }
 
   function handleCasinoStairsClick(toFloor) {
+    const fromFloor = state.casinoFloor;
     releaseCasinoLock();
     state.casinoFloor = toFloor;
-    game.setCasinoMode(toFloor);
+    game.setCasinoMode(toFloor, fromFloor);
     joinSpace('casino:' + toFloor);
     UI.toast(`Floor ${toFloor}`);
   }

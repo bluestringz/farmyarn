@@ -117,6 +117,7 @@ const Api = (() => {
     plant: (x, y, cropType) => request('POST', '/api/farm/plant', { x, y, cropType }),
     water: (x, y, ownerId) => request('POST', '/api/farm/water', { x, y, ownerId }),
     waterDecoration: (objectId) => request('POST', '/api/farm/water-decoration', { objectId }),
+    collectFruit: (objectId) => request('POST', '/api/shop/collect-fruit', { objectId }),
     harvestTree: (objectId) => request('POST', '/api/farm/harvest-tree', { objectId }),
     harvest: (x, y) => request('POST', '/api/farm/harvest', { x, y }),
     sell: (itemId, quantity) => request('POST', '/api/farm/sell', { itemId, quantity }),

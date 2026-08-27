@@ -84,7 +84,20 @@ function migrate(db) {
     height INTEGER NOT NULL DEFAULT 1,
     sprite TEXT NOT NULL,
     growable INTEGER NOT NULL DEFAULT 0, -- 1 = starts as a sapling and needs time (+ watering) to mature
-    growth_seconds INTEGER NOT NULL DEFAULT 0
+    growth_seconds INTEGER NOT NULL DEFAULT 0,
+    -- Fruit trees only (Mango/Apple/Avocado) — NULL/0 for every other
+    -- decoration. Once mature (growable's growth_seconds elapsed), a fruit
+    -- tree produces produces_item_id every production_seconds, has to be
+    -- collected within fruit_spoil_seconds of becoming ready or that
+    -- batch rots, and the whole tree dies once lifespan_seconds have
+    -- passed since it matured — see resolveFruitTreeSpoilage/
+    -- resolveFruitTreeDeaths in server/lib/gameLogic.js.
+    produces_item_id TEXT,
+    production_seconds INTEGER NOT NULL DEFAULT 0,
+    fruit_spoil_seconds INTEGER NOT NULL DEFAULT 0,
+    lifespan_seconds INTEGER NOT NULL DEFAULT 0,
+    yield_min INTEGER NOT NULL DEFAULT 0,
+    yield_max INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS animal_types (
@@ -102,7 +115,13 @@ function migrate(db) {
     name TEXT NOT NULL,
     sell_price INTEGER NOT NULL DEFAULT 0,
     sprite TEXT NOT NULL,
-    category TEXT NOT NULL DEFAULT 'produce'
+    category TEXT NOT NULL DEFAULT 'produce',
+    -- Only meaningful for food/snacks (category 'food', plus Ice Cream/
+    -- Hot Dog) — how much Energy eating one restores. 0 for everything
+    -- else. Admin-editable via Shop Prices (PRICE_TABLES) alongside
+    -- sell_price, even though it isn't itself a price — see
+    -- /api/farm/eat, which reads this instead of a hardcoded value.
+    energy_restore INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS outfit_types (
@@ -414,6 +433,19 @@ function addColumnsIfMissing(db) {
   if (!outfitTypeCols.includes('rental_days')) {
     db.exec('ALTER TABLE outfit_types ADD COLUMN rental_days INTEGER NOT NULL DEFAULT 7');
   }
+  const decorationTypeCols = db.prepare("PRAGMA table_info(decoration_types)").all().map((c) => c.name);
+  const decorationNewCols = {
+    produces_item_id: 'TEXT', production_seconds: 'INTEGER NOT NULL DEFAULT 0',
+    fruit_spoil_seconds: 'INTEGER NOT NULL DEFAULT 0', lifespan_seconds: 'INTEGER NOT NULL DEFAULT 0',
+    yield_min: 'INTEGER NOT NULL DEFAULT 0', yield_max: 'INTEGER NOT NULL DEFAULT 0',
+  };
+  for (const [col, type] of Object.entries(decorationNewCols)) {
+    if (!decorationTypeCols.includes(col)) db.exec(`ALTER TABLE decoration_types ADD COLUMN ${col} ${type}`);
+  }
+  const itemTypeCols = db.prepare("PRAGMA table_info(item_types)").all().map((c) => c.name);
+  if (!itemTypeCols.includes('energy_restore')) {
+    db.exec('ALTER TABLE item_types ADD COLUMN energy_restore INTEGER NOT NULL DEFAULT 0');
+  }
   if (!existingCols.includes('equipped_outfit')) {
     db.exec('ALTER TABLE users ADD COLUMN equipped_outfit TEXT');
   }
@@ -581,12 +613,22 @@ function seedContent(db) {
   txBuildings(buildings);
 
   const upsertDeco = db.prepare(`
-    INSERT INTO decoration_types (id, name, cost, required_level, width, height, sprite, growable, growth_seconds)
-    VALUES (@id, @name, @cost, @required_level, @width, @height, @sprite, @growable, @growth_seconds)
+    INSERT INTO decoration_types (id, name, cost, required_level, width, height, sprite, growable, growth_seconds,
+      produces_item_id, production_seconds, fruit_spoil_seconds, lifespan_seconds, yield_min, yield_max)
+    VALUES (@id, @name, @cost, @required_level, @width, @height, @sprite, @growable, @growth_seconds,
+      @produces_item_id, @production_seconds, @fruit_spoil_seconds, @lifespan_seconds, @yield_min, @yield_max)
     ON CONFLICT(id) DO UPDATE SET name=excluded.name, cost=excluded.cost,
       required_level=excluded.required_level, width=excluded.width, height=excluded.height, sprite=excluded.sprite,
-      growable=excluded.growable, growth_seconds=excluded.growth_seconds
+      growable=excluded.growable, growth_seconds=excluded.growth_seconds,
+      produces_item_id=excluded.produces_item_id, production_seconds=excluded.production_seconds,
+      fruit_spoil_seconds=excluded.fruit_spoil_seconds, lifespan_seconds=excluded.lifespan_seconds,
+      yield_min=excluded.yield_min, yield_max=excluded.yield_max
   `);
+  // Fruit-tree-only fields default to "not a fruit tree" (0/null) for
+  // every other decoration — filled in here so each row below only needs
+  // to specify them when it actually IS a fruit tree, instead of every
+  // existing decoration needing 6 new boilerplate fields added.
+  const DECORATION_DEFAULTS = { produces_item_id: null, production_seconds: 0, fruit_spoil_seconds: 0, lifespan_seconds: 0, yield_min: 0, yield_max: 0 };
   const decorations = [
     { id: 'fence',      name: 'Fence',       cost: 5,   required_level: 1, width: 1, height: 1, sprite: 'fence', growable: 0, growth_seconds: 0 },
     { id: 'tree',       name: 'Tree',        cost: 50,  required_level: 1, width: 1, height: 1, sprite: 'tree', growable: 1, growth_seconds: 172800 }, // 2 days as a sapling before it's a full tree
@@ -605,7 +647,19 @@ function seedContent(db) {
     { id: 'sign',       name: 'Sign',        cost: 25,  required_level: 1, width: 1, height: 1, sprite: 'sign', growable: 0, growth_seconds: 0 },
     { id: 'path',       name: 'Path Tile',   cost: 8,   required_level: 1, width: 1, height: 1, sprite: 'path', growable: 0, growth_seconds: 0 },
     { id: 'pond',       name: 'Pond',        cost: 150, required_level: 3, width: 2, height: 2, sprite: 'pond', growable: 0, growth_seconds: 0 },
-  ];
+    // Fruit trees — grow like the plain Tree above (1 day to mature,
+    // faster with watering, same as any other growable), but unlike it,
+    // stay alive afterward producing fruit every 6 hours (yield 5-15,
+    // random) for 5 days before dying of old age. Fruit left uncollected
+    // for more than 1 hour after becoming ready rots and is lost — see
+    // resolveFruitTreeSpoilage/resolveFruitTreeDeaths in gameLogic.js.
+    { id: 'mango_tree',   name: 'Mango Tree',   cost: 1500, required_level: 1, width: 1, height: 1, sprite: 'mango_tree',
+      growable: 1, growth_seconds: 86400, produces_item_id: 'mango', production_seconds: 21600, fruit_spoil_seconds: 3600, lifespan_seconds: 432000, yield_min: 5, yield_max: 15 },
+    { id: 'apple_tree',   name: 'Apple Tree',   cost: 2500, required_level: 1, width: 1, height: 1, sprite: 'apple_tree',
+      growable: 1, growth_seconds: 86400, produces_item_id: 'apple', production_seconds: 21600, fruit_spoil_seconds: 3600, lifespan_seconds: 432000, yield_min: 5, yield_max: 15 },
+    { id: 'avocado_tree', name: 'Avocado Tree', cost: 3500, required_level: 1, width: 1, height: 1, sprite: 'avocado_tree',
+      growable: 1, growth_seconds: 86400, produces_item_id: 'avocado', production_seconds: 21600, fruit_spoil_seconds: 3600, lifespan_seconds: 432000, yield_min: 5, yield_max: 15 },
+  ].map((d) => ({ ...DECORATION_DEFAULTS, ...d }));
   const txDeco = db.transaction((rows) => rows.forEach((r) => upsertDeco.run(r)));
   txDeco(decorations);
 
@@ -626,35 +680,40 @@ function seedContent(db) {
   txAnimals(animals);
 
   const upsertItem = db.prepare(`
-    INSERT INTO item_types (id, name, sell_price, sprite, category)
-    VALUES (@id, @name, @sell_price, @sprite, @category)
+    INSERT INTO item_types (id, name, sell_price, sprite, category, energy_restore)
+    VALUES (@id, @name, @sell_price, @sprite, @category, @energy_restore)
     ON CONFLICT(id) DO UPDATE SET name=excluded.name, sell_price=excluded.sell_price,
-      sprite=excluded.sprite, category=excluded.category
+      sprite=excluded.sprite, category=excluded.category, energy_restore=excluded.energy_restore
   `);
   const items = [
     { id: 'egg',      name: 'Egg',      sell_price: 12, sprite: 'egg', category: 'animal_product' },
     { id: 'milk',     name: 'Milk',     sell_price: 45, sprite: 'milk', category: 'animal_product' },
     { id: 'wool',     name: 'Wool',     sell_price: 38, sprite: 'wool', category: 'animal_product' },
     { id: 'truffle',  name: 'Truffle',  sell_price: 60, sprite: 'truffle', category: 'animal_product' },
+    { id: 'mango',    name: 'Mango',    sell_price: 20, sprite: 'mango', category: 'fruit' },
+    { id: 'apple',    name: 'Apple',    sell_price: 35, sprite: 'apple', category: 'fruit' },
+    { id: 'avocado',  name: 'Avocado',  sell_price: 45, sprite: 'avocado', category: 'fruit' },
     { id: 'log',      name: 'Log',      sell_price: 25, sprite: 'log', category: 'material' },
     { id: 'chicken_feed', name: 'Chicken Feed', sell_price: 3, sprite: 'feed', category: 'feed' },
     { id: 'cow_feed',     name: 'Cow Feed',     sell_price: 6, sprite: 'feed', category: 'feed' },
     { id: 'sheep_feed',   name: 'Sheep Feed',   sell_price: 5, sprite: 'feed', category: 'feed' },
     { id: 'pig_feed',     name: 'Pig Feed',     sell_price: 7, sprite: 'feed', category: 'feed' },
-    { id: 'bread',            name: 'Bread',            sell_price: 5,  sprite: 'food', category: 'food' },
-    { id: 'rice_bowl',        name: 'Rice Bowl',        sell_price: 9,  sprite: 'food', category: 'food' },
-    { id: 'corn_soup',        name: 'Corn Soup',        sell_price: 13, sprite: 'food', category: 'food' },
-    { id: 'carrot_stew',      name: 'Carrot Stew',      sell_price: 15, sprite: 'food', category: 'food' },
-    { id: 'mashed_potato',    name: 'Mashed Potato',    sell_price: 30, sprite: 'food', category: 'food' },
-    { id: 'tomato_soup',      name: 'Tomato Soup',      sell_price: 38, sprite: 'food', category: 'food' },
-    { id: 'strawberry_cake',  name: 'Strawberry Cake',  sell_price: 65, sprite: 'food', category: 'food' },
-    { id: 'pumpkin_pie',      name: 'Pumpkin Pie',      sell_price: 120, sprite: 'food', category: 'food' },
-    { id: 'ice_cream',        name: 'Ice Cream',        sell_price: 0,   sprite: 'food', category: 'food' },
-    { id: 'hotdog',           name: 'Hotdog',           sell_price: 0,   sprite: 'food', category: 'food' },
-    { id: 'fried_egg',        name: 'Fried Egg',        sell_price: 20,  sprite: 'food', category: 'food' },
-    { id: 'milkshake',        name: 'Milkshake',        sell_price: 55,  sprite: 'food', category: 'food' },
-    { id: 'truffle_dish',     name: 'Truffle Dish',     sell_price: 140, sprite: 'food', category: 'food' },
-  ];
+    // energy_restore is what /api/farm/eat actually grants — admin-editable
+    // via Shop Prices alongside sell_price, see PRICE_TABLES in admin.js.
+    { id: 'bread',            name: 'Bread',            sell_price: 5,  sprite: 'food', category: 'food', energy_restore: 5 },
+    { id: 'rice_bowl',        name: 'Rice Bowl',        sell_price: 9,  sprite: 'food', category: 'food', energy_restore: 6 },
+    { id: 'corn_soup',        name: 'Corn Soup',        sell_price: 13, sprite: 'food', category: 'food', energy_restore: 7 },
+    { id: 'carrot_stew',      name: 'Carrot Stew',      sell_price: 15, sprite: 'food', category: 'food', energy_restore: 8 },
+    { id: 'mashed_potato',    name: 'Mashed Potato',    sell_price: 30, sprite: 'food', category: 'food', energy_restore: 10 },
+    { id: 'tomato_soup',      name: 'Tomato Soup',      sell_price: 38, sprite: 'food', category: 'food', energy_restore: 11 },
+    { id: 'strawberry_cake',  name: 'Strawberry Cake',  sell_price: 65, sprite: 'food', category: 'food', energy_restore: 14 },
+    { id: 'pumpkin_pie',      name: 'Pumpkin Pie',      sell_price: 120, sprite: 'food', category: 'food', energy_restore: 17 },
+    { id: 'ice_cream',        name: 'Ice Cream',        sell_price: 0,   sprite: 'food', category: 'food', energy_restore: 5 },
+    { id: 'hotdog',           name: 'Hotdog',           sell_price: 0,   sprite: 'food', category: 'food', energy_restore: 8 },
+    { id: 'fried_egg',        name: 'Fried Egg',        sell_price: 20,  sprite: 'food', category: 'food', energy_restore: 6 },
+    { id: 'milkshake',        name: 'Milkshake',        sell_price: 55,  sprite: 'food', category: 'food', energy_restore: 10 },
+    { id: 'truffle_dish',     name: 'Truffle Dish',     sell_price: 140, sprite: 'food', category: 'food', energy_restore: 18 },
+  ].map((it) => ({ energy_restore: 0, ...it }));
   const txItems = db.transaction((rows) => rows.forEach((r) => upsertItem.run(r)));
   txItems(items);
 

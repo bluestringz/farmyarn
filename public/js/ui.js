@@ -79,6 +79,9 @@ const UI = (() => {
     // decorations
     fence: 'Blocks walking — fences auto-connect to neighboring fence tiles, and you can route your farm paths around them.',
     tree: 'Plant it and water it — takes 2 days to grow into a full tree you can chop for logs.',
+    mango_tree: 'Plant it and water it — takes 1 day to mature, then produces Mangoes every 6 hours for 5 days. Collect within 1 hour of ripening or that batch rots.',
+    apple_tree: 'Plant it and water it — takes 1 day to mature, then produces Apples every 6 hours for 5 days. Collect within 1 hour of ripening or that batch rots.',
+    avocado_tree: 'Plant it and water it — takes 1 day to mature, then produces Avocados every 6 hours for 5 days. Collect within 1 hour of ripening or that batch rots.',
     flower: 'Purely decorative flower bed to brighten up your farm.',
     bush: 'Purely decorative shrub for landscaping your farm.',
     hay_bale: 'Purely decorative — classic farm scenery.',
@@ -135,6 +138,7 @@ const UI = (() => {
       { key: 'buildings', label: 'Buildings' },
       { key: 'animals', label: 'Animals' },
       { key: 'decorations', label: 'Decor' },
+      { key: 'fruit_trees', label: '🍎 Fruit Trees' },
       { key: 'interiors', label: 'Interior' },
       { key: 'outfits', label: 'Outfits' },
       { key: 'special_outfits', label: '⭐ Special' },
@@ -247,19 +251,32 @@ const UI = (() => {
       return;
     }
 
-    const catalogKey = activeCategory === 'interiors' ? 'interiors' : activeCategory;
+    const catalogKey = activeCategory === 'interiors' ? 'interiors'
+      : activeCategory === 'fruit_trees' ? 'decorations'
+      : activeCategory;
     const buyCategory = activeCategory === 'interiors' ? 'interior'
       : activeCategory === 'buildings' ? 'building'
       : activeCategory === 'animals' ? 'animal'
       : activeCategory === 'decorations' ? 'decoration'
+      : activeCategory === 'fruit_trees' ? 'decoration'
       : 'crops';
-    const items = (catalog[catalogKey] || []).filter((item) =>
+    const items = (catalog[catalogKey] || []).filter((item) => {
       // Workshop-crafted furniture (crafted_bench, crafted_bed, etc.) is
       // never bought here with coins — it's made at the Workshop from
       // Wood instead (cost: 0 in the catalog is the tell). Filtering it
       // out of Decor/Interior here keeps the Shop from showing something
       // that would look free but can't actually be bought this way.
-      !item.id.startsWith('crafted_'));
+      if (item.id.startsWith('crafted_')) return false;
+      // Fruit trees (Mango/Apple/Avocado) get their own dedicated tab —
+      // produces_item_id is what marks a decoration as a fruit tree (see
+      // decoration_types in server/db/migrate.js) — so the regular Decor
+      // tab excludes them (avoids listing the same item in two tabs) and
+      // the Fruit Trees tab shows ONLY them.
+      const isFruitTree = !!item.produces_item_id;
+      if (activeCategory === 'fruit_trees') return isFruitTree;
+      if (activeCategory === 'decorations') return !isFruitTree;
+      return true;
+    });
     const isCrops = activeCategory === 'crops';
     const cards = items.map((item) => {
       const cost = item.seed_cost ?? item.cost;
@@ -273,8 +290,14 @@ const UI = (() => {
       const stockLine = hasStockCap
         ? `<div class="shop-level" style="${outOfStock ? 'color:#c0392b;font-weight:700;' : ''}">${outOfStock ? 'Out of stock' : `${item.currentStock} left in stock`}</div>`
         : '';
-      const glyphMap = { crops: '🌱', buildings: '🏗️', animals: '🐾', decorations: '🌷', interiors: '🛋️' };
-      const durationLine = isCrops ? `<div class="shop-level">⏱ ${formatDuration(item.growth_seconds)} to harvest</div>` : '';
+      const glyphMap = { crops: '🌱', buildings: '🏗️', animals: '🐾', decorations: '🌷', fruit_trees: '🍎', interiors: '🛋️' };
+      // Fruit Trees is one category with 3 different actual fruits — a
+      // single shared glyph made every card show an apple regardless of
+      // which tree it actually was. Per-item lookup, falling back to the
+      // category's generic glyph for anything not in this list.
+      const FRUIT_TREE_ICONS = { mango_tree: '🥭', apple_tree: '🍎', avocado_tree: '🥑' };
+      const iconFor = (it) => FRUIT_TREE_ICONS[it.id] || glyphMap[activeCategory];
+      const durationLine = isCrops || activeCategory === 'fruit_trees' ? `<div class="shop-level">⏱ ${formatDuration(item.growth_seconds)} to grow</div>` : '';
       // Seeds are the one thing people buy in bulk (to plant a whole field
       // at once) — give them a quantity field instead of one-click-at-a-time,
       // plus a MAX button that fills in exactly as many as their coins can
@@ -296,7 +319,7 @@ const UI = (() => {
         </div>` : '';
       return `
         <div class="shop-card">
-          <div class="shop-icon">${glyphMap[activeCategory]}</div>
+          <div class="shop-icon">${iconFor(item)}</div>
           <div class="shop-name">${item.name}</div>
           <div class="shop-price">🪙 ${cost}${isCrops ? ' each' : ''}</div>
           ${durationLine}
@@ -313,6 +336,8 @@ const UI = (() => {
 
     const hint = isCrops
       ? '<p class="panel-hint">Buy seeds here, then use the 🌱 Plant tool to put them in the ground.</p>'
+      : activeCategory === 'fruit_trees'
+      ? '<p class="panel-hint">Buy here, then use the 🏗️ Build tool to plant it — water it to speed up growth, then collect fruit every few hours once it matures.</p>'
       : activeCategory === 'interiors'
       ? '<p class="panel-hint">Buy furniture here, then use the Decorate tool inside your house to place it.</p>'
       : '<p class="panel-hint">Buy here, then use the 🏗️ Build tool to place it — you can preview and rotate before confirming.</p>';

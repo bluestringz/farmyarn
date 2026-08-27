@@ -218,6 +218,9 @@ const CROP_GLYPH = {
 const DECORATION_STYLE = {
   fence:    { shape: 'fence',   wood: '#a9714a' },
   tree:     { shape: 'tree',    trunk: '#8b5e34', leaf: '#4f8f2e', leafDark: '#3c7020' },
+  mango_tree:   { shape: 'tree', trunk: '#7a5230', leaf: '#5a9e35', leafDark: '#437828', fruit: '#f5a623' },
+  apple_tree:   { shape: 'tree', trunk: '#6b4423', leaf: '#4a8f3c', leafDark: '#386b2d', fruit: '#d0392b' },
+  avocado_tree: { shape: 'tree', trunk: '#5e4022', leaf: '#356b35', leafDark: '#264d27', fruit: '#7a9c3f' },
   flower:   { shape: 'flower',  soil: '#7a5232', colors: ['#e05a7e', '#f4c95d', '#f0f0f0', '#c48bd9'] },
   bush:     { shape: 'bush',    leaf: '#5aa32e', leafDark: '#468022' },
   hay_bale: { shape: 'hay',     body: '#e8c25a', bodyDark: '#c9a13c', band: '#a9714a' },
@@ -297,6 +300,20 @@ class FarmGame {
     this.onParkCasinoClick = null; // callback() — tapped the Casino building in the Park
     this.onCasinoMachineClick = null; // callback(machineId, machineType) — tapped a betting machine inside the Casino
     this.onCasinoStairsClick = null;  // callback(toFloor) — tapped a Casino staircase
+    // ---- Free-roam movement (WASD/arrow keys on PC, virtual joystick on
+    // mobile) — an alternative to tap-to-walk. Both can be used side by
+    // side; whichever moves the character most recently just wins each
+    // frame. See initKeyboardControls()/setJoystickVector() and
+    // _updateFreeRoamMovement().
+    this._keysHeld = { up: false, down: false, left: false, right: false };
+    this._joystickVector = null; // { x, y }, each in [-1, 1], set by the on-screen joystick while dragged; null when not in use
+    this._freeRoaming = false; // true on any frame free-roam movement actually happened — used to keep the camera following
+    this._transitioning = false; // true while an enter/exit-building transition (walk-to-door, fade) is in progress — see setTransitioning()
+    this.onReachDoorExit = null; // callback() — free-roam movement reached the door tile (bottom-center) of the current interior room
+    this.onReachBuildingEntry = null; // callback(buildingObj) — free-roam movement bumped into a building's wall outdoors
+    this.onReachCasinoEntry = null; // callback() — free-roam movement bumped into the Casino's wall inside the Park
+    this.onReachCasinoExit = null; // callback() — free-roam movement reached the bottom-center exit tile on Casino floor 1
+    this.onReachStaircase = null; // callback() — free-roam movement stepped onto a staircase tile indoors
     this.casinoLocks = new Map(); // machineId -> username currently occupying it (visual only — see casino:lock socket flow for actual enforcement)
     this.highlightFn = null; // (x,y) => 'valid'|'invalid'|null, drawn as overlay
     this._ghost = null; // { category, itemId, x, y, rotation, def } pending-placement preview
@@ -338,6 +355,22 @@ class FarmGame {
     this._bindEvents();
     this._resize();
     window.addEventListener('resize', () => this._resize());
+    // Mobile browsers often DON'T fire the plain 'resize' event when their
+    // own UI chrome (the URL bar) auto-collapses/expands as the player
+    // scrolls or interacts continuously — which free-roam movement makes
+    // much more likely than the occasional tap ever did. Without this,
+    // the canvas's CSS box resizes instantly (flex layout), but its
+    // internal drawing buffer (canvas.width/height, set in _resize())
+    // doesn't follow until a resize event fires — so the browser just
+    // stretches the OLD lower-resolution bitmap to fill the newly-
+    // revealed area at the bottom of the screen in the meantime, which is
+    // exactly what reads as a smeary/"dirty" bottom edge while moving.
+    // visualViewport's own resize/scroll events are the reliable way
+    // mobile browsers signal this specific kind of chrome-driven change.
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => this._resize());
+      window.visualViewport.addEventListener('scroll', () => this._resize());
+    }
     this._raf = requestAnimationFrame(() => this._loop());
   }
 
@@ -503,7 +536,7 @@ class FarmGame {
       const blocked = new Set();
       if (this.farm) {
         for (const obj of this.farm.objects) {
-          if (obj.object_type === 'decoration' && obj.item_id === 'fence') {
+          if (obj.object_type === 'decoration' && (obj.item_id === 'fence' || obj.item_id === 'tree' || FarmGame.FRUIT_TREE_IDS.has(obj.item_id))) {
             blocked.add(`${obj.grid_x},${obj.grid_y}`);
           } else if (obj.object_type === 'building') {
             const def = this._defFor(obj);
@@ -597,6 +630,279 @@ class FarmGame {
   // See placementSelectionActive's comment in the constructor.
   setPlacementSelectionActive(active) {
     this.placementSelectionActive = !!active;
+  }
+
+  // ---- Free-roam movement: WASD/arrow keys (PC) + a virtual joystick
+  // (mobile) as an alternative to tap-to-walk. Call this once after
+  // creating the game instance (see main.js) — it attaches window-level
+  // keydown/keyup listeners.
+  initKeyboardControls() {
+    const KEY_TO_DIR = {
+      w: 'up', arrowup: 'up',
+      s: 'down', arrowdown: 'down',
+      a: 'left', arrowleft: 'left',
+      d: 'right', arrowright: 'right',
+    };
+    const isTypingTarget = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    window.addEventListener('keydown', (e) => {
+      if (isTypingTarget(e.target)) return; // don't hijack WASD while typing in chat/quantity fields etc.
+      const dir = KEY_TO_DIR[e.key.toLowerCase()];
+      if (dir) { this._keysHeld[dir] = true; }
+    });
+    window.addEventListener('keyup', (e) => {
+      const dir = KEY_TO_DIR[e.key.toLowerCase()];
+      if (dir) { this._keysHeld[dir] = false; }
+    });
+    // Releasing focus (e.g. alt-tabbing away) mid-press would otherwise
+    // leave a key "stuck" held forever since no keyup ever fires.
+    window.addEventListener('blur', () => {
+      this._keysHeld.up = this._keysHeld.down = this._keysHeld.left = this._keysHeld.right = false;
+    });
+  }
+
+  // Called by the on-screen joystick (see main.js) with a vector whose
+  // components are each in [-1, 1] (0,0 in the center, magnitude 1 at the
+  // edge of the joystick's travel), or null when the joystick isn't
+  // currently being touched.
+  setJoystickVector(vector) {
+    this._joystickVector = vector;
+  }
+
+  // Runs every frame BEFORE the normal tap-to-walk actor update — if
+  // there's any held-key or joystick input right now, it directly drives
+  // the local character's position (bypassing pathfinding entirely, same
+  // as a twin-stick game) and marks _freeRoaming so the camera keeps
+  // following. If there's no input this frame, it does nothing and the
+  // existing tap-to-walk _updateActor takes over as usual — the two
+  // systems never fight because free-roam only acts while input is
+  // actively held.
+  // Called by main.js around any walk-to-door/fade enter-or-exit sequence
+  // — pauses free-roam movement entirely while true, so a held WASD key
+  // or joystick doesn't fight the scripted walk-to-door animation that
+  // sequence plays.
+  setTransitioning(active) {
+    this._transitioning = !!active;
+  }
+
+  _updateFreeRoamMovement(dt) {
+    if (this._character.restPose) return false; // sitting/lying — don't glide around mid-pose
+    if (this._transitioning) return false; // a scripted enter/exit walk is already driving the character
+    let dx = 0, dy = 0;
+    if (this._keysHeld.up) dy -= 1;
+    if (this._keysHeld.down) dy += 1;
+    if (this._keysHeld.left) dx -= 1;
+    if (this._keysHeld.right) dx += 1;
+    if (this._joystickVector) { dx += this._joystickVector.x; dy += this._joystickVector.y; }
+
+    const mag = Math.hypot(dx, dy);
+    if (mag < 0.08) { this._freeRoaming = false; return false; }
+
+    // Keyboard input is always full-speed; the joystick's magnitude (how
+    // far from center it's dragged) scales speed down for finer control,
+    // same as a real analog stick — but the DIRECTION is always
+    // normalized so diagonal movement isn't faster than cardinal.
+    const speedScale = Math.min(1, mag);
+    const ndx = dx / mag, ndy = dy / mag;
+
+    const c = this._character;
+    const speed = TILE * 3.2;
+    const moveDist = speed * dt * speedScale;
+    let nx = c.x + ndx * moveDist;
+    let ny = c.y + ndy * moveDist;
+
+    // Per-axis collision so the character slides along a wall/fence/tree
+    // instead of fully stopping the instant a diagonal move clips a
+    // corner — the same forgiving feel most top-down games use.
+    let bumpedIntoBuilding = null;
+    if (this.mode === 'outdoor' && this.farm) {
+      const blocked = this._getBlockedTileSet();
+      const curTileX = Math.floor(c.x / TILE), curTileY = Math.floor(c.y / TILE);
+      const tryTileX = Math.floor(nx / TILE), tryTileY = Math.floor(ny / TILE);
+      if (blocked.has(`${tryTileX},${curTileY}`)) {
+        nx = c.x;
+        bumpedIntoBuilding = bumpedIntoBuilding || this._buildingDoorBumpAt(tryTileX, curTileY);
+      }
+      if (blocked.has(`${curTileX},${tryTileY}`)) {
+        ny = c.y;
+        bumpedIntoBuilding = bumpedIntoBuilding || this._buildingDoorBumpAt(curTileX, tryTileY);
+      }
+      nx = Math.max(0, Math.min(this.farm.width * TILE - 1, nx));
+      ny = Math.max(0, Math.min(this.farm.height * TILE - 1, ny));
+    } else if (this.mode === 'indoor' && this.interior) {
+      nx = Math.max(0, Math.min(this.interior.width * TILE - 1, nx));
+      ny = Math.max(0, Math.min(this.interior.height * TILE - 1, ny));
+    } else if (this.mode === 'market') {
+      nx = Math.max(0, Math.min(MARKET_WIDTH * TILE - 1, nx));
+      ny = Math.max(0, Math.min(MARKET_HEIGHT * TILE - 1, ny));
+    } else if (this.mode === 'park') {
+      // The Casino building sitting inside the Park needs the SAME
+      // "bump the wall to walk in" treatment as farm buildings — it used
+      // to have no collision at all in free-roam, so the character just
+      // walked straight through/over it instead of being stopped and
+      // ushered in the same way every other enterable building works.
+      const curTileX = Math.floor(c.x / TILE), curTileY = Math.floor(c.y / TILE);
+      const tryTileX = Math.floor(nx / TILE), tryTileY = Math.floor(ny / TILE);
+      const isCasinoTile = (tx, ty) => tx >= CASINO_BUILDING.x && tx < CASINO_BUILDING.x + CASINO_BUILDING.width
+        && ty >= CASINO_BUILDING.y && ty < CASINO_BUILDING.y + CASINO_BUILDING.height;
+      // Only the ONE tile directly against the Casino's own door triggers
+      // entry — not anywhere else on its perimeter, same "just brushing
+      // past the wall shouldn't suddenly walk you in" fix as buildings
+      // outdoors (see _buildingDoorBumpAt).
+      const casinoDoorApproachX = CASINO_BUILDING.x + Math.floor(CASINO_BUILDING.width / 2);
+      const casinoDoorApproachY = CASINO_BUILDING.y + CASINO_BUILDING.height - 1;
+      const isCasinoDoorApproach = (tx, ty) => tx === casinoDoorApproachX && ty === casinoDoorApproachY;
+      if (isCasinoTile(tryTileX, curTileY)) {
+        nx = c.x;
+        if (isCasinoDoorApproach(tryTileX, curTileY)) bumpedIntoBuilding = bumpedIntoBuilding || 'casino';
+      }
+      if (isCasinoTile(curTileX, tryTileY)) {
+        ny = c.y;
+        if (isCasinoDoorApproach(curTileX, tryTileY)) bumpedIntoBuilding = bumpedIntoBuilding || 'casino';
+      }
+      nx = Math.max(0, Math.min(PARK_WIDTH * TILE - 1, nx));
+      ny = Math.max(0, Math.min(PARK_HEIGHT * TILE - 1, ny));
+    } else if (this.mode === 'casino') {
+      nx = Math.max(0, Math.min(CASINO_INTERIOR_WIDTH * TILE - 1, nx));
+      ny = Math.max(0, Math.min(CASINO_INTERIOR_HEIGHT * TILE - 1, ny));
+    } else {
+      return false; // unknown mode — don't move blindly
+    }
+
+    c.x = nx; c.y = ny; c.targetX = nx; c.targetY = ny;
+    c.path = []; c.pendingAction = null;
+    c.moving = true;
+    c.bob = Math.sin((performance.now() / 1000) * 12) * 3;
+    if (c.walkFrameTimer !== undefined) {
+      c.walkFrameTimer += dt;
+      if (c.walkFrameTimer > 0.22) { c.walkFrameTimer = 0; c.walkFrame = c.walkFrame === 0 ? 1 : 0; }
+    }
+    // Facing follows whichever axis is dominant this frame, same
+    // convention tap-to-walk already uses.
+    if (Math.abs(ndx) > Math.abs(ndy)) c.facingDir = ndx > 0 ? 'right' : 'left';
+    else c.facingDir = ndy > 0 ? 'down' : 'up';
+
+    this._freeRoaming = true;
+
+    // Walking INTO a building (bumping its wall while free-roaming)
+    // enters it — same idea as the door-exit check below, just the
+    // entering half. Debounced with _buildingEntryTriggered so holding a
+    // direction against the same wall doesn't fire repeatedly while the
+    // (async, fade-in-fade-out) entry sequence is still playing out; the
+    // flag clears again the moment a frame ISN'T bumping any building, so
+    // walking away and back — or approaching a different building later
+    // — both work as expected.
+    if (bumpedIntoBuilding === 'casino' && this.onReachCasinoEntry && !this._buildingEntryTriggered) {
+      this._buildingEntryTriggered = true;
+      this.onReachCasinoEntry();
+    } else if (bumpedIntoBuilding && bumpedIntoBuilding !== 'casino' && this.onReachBuildingEntry && !this._buildingEntryTriggered) {
+      this._buildingEntryTriggered = true;
+      this.onReachBuildingEntry(bumpedIntoBuilding);
+    } else if (!bumpedIntoBuilding) {
+      this._buildingEntryTriggered = false;
+    }
+
+    // Broadcast position to other players sharing this space so they see
+    // you moving in real time too — but throttled, since this runs every
+    // single frame (60/sec) while tap-to-walk's onSelfMove only ever
+    // fires once per waypoint. Broadcasting unthrottled here would flood
+    // the socket with ~60 space:move events per second.
+    const nowMs = performance.now();
+    if (this.onSelfMove && (!this._lastSelfMoveBroadcast || nowMs - this._lastSelfMoveBroadcast > 150)) {
+      this._lastSelfMoveBroadcast = nowMs;
+      this.onSelfMove(Math.floor(c.x / TILE), Math.floor(c.y / TILE));
+    }
+
+    // Reaching the door (bottom-center tile) of an interior room while
+    // free-roaming exits the building — see onReachDoorExit in main.js.
+    // Tap-to-walk doesn't trigger this (tapping there is more likely
+    // "I'm interacting with something at the bottom of the room" than
+    // "I'm deliberately walking out"), and it's debounced with
+    // _doorExitTriggered so holding a direction against the door for
+    // multiple frames only fires it once.
+    //
+    // This used to fire the instant the character stepped into the last
+    // ROW at all — but the exit-mat marker is drawn right at the room's
+    // true bottom EDGE (see _drawIndoorRoom), a good distance further
+    // down within that same row, so the character visibly hadn't reached
+    // the line yet when it already exited. Checking the actual
+    // continuous Y position against a threshold near that edge (not just
+    // "which row, floor-divided" c.y happens to floor to) means the
+    // character genuinely has to walk down to the line first.
+    if (this.mode === 'indoor' && this.interior && this.onReachDoorExit && !this._doorExitTriggered) {
+      const doorX = Math.floor(this.interior.width / 2);
+      const curTileX = Math.floor(c.x / TILE);
+      const nearBottomEdge = c.y >= (this.interior.height - 0.15) * TILE;
+      if (curTileX === doorX && nearBottomEdge) {
+        this._doorExitTriggered = true;
+        this.onReachDoorExit();
+      }
+    }
+    // Same idea for a staircase — walking onto its tile in a multi-floor
+    // building (the mansion, currently) changes floor, no tap needed.
+    // Reset the debounce flag the moment the character steps OFF the
+    // staircase tile (not just on floor-change) so stepping back onto it
+    // later still works, not just once per room visit.
+    if (this.mode === 'indoor' && this.interior) {
+      const curTileX = Math.floor(c.x / TILE), curTileY = Math.floor(c.y / TILE);
+      const onStaircase = this.interior.objects.some((o) => o.object_type === 'interior' && o.item_id === 'staircase' && o.grid_x === curTileX && o.grid_y === curTileY);
+      if (onStaircase) {
+        if (this.onReachStaircase && !this._staircaseTriggered) {
+          this._staircaseTriggered = true;
+          this.onReachStaircase();
+        }
+      } else {
+        this._staircaseTriggered = false;
+      }
+    }
+
+    // Casino floors get the same two triggers as a house room — walking
+    // onto a staircase tile changes floor (same list of stair positions
+    // the tap handler already reads from CASINO_FLOOR_LAYOUT), and,
+    // floor 1 only, walking to the bottom-center tile exits back to the
+    // Park — the Casino used to have neither, so both the staircases and
+    // the way out only worked by tapping them directly, never by just
+    // walking there.
+    if (this.mode === 'casino') {
+      const curTileX = Math.floor(c.x / TILE), curTileY = Math.floor(c.y / TILE);
+      const layout = CASINO_FLOOR_LAYOUT[this.casinoFloor] || CASINO_FLOOR_LAYOUT[1];
+      const onStairs = (layout.stairs || []).find((s) => s.x === curTileX && s.y === curTileY);
+      if (onStairs) {
+        if (this.onCasinoStairsClick && !this._staircaseTriggered) {
+          this._staircaseTriggered = true;
+          this.onCasinoStairsClick(onStairs.toFloor);
+        }
+      } else {
+        this._staircaseTriggered = false;
+      }
+
+      if (this.casinoFloor === 1 && this.onReachCasinoExit && !this._doorExitTriggered) {
+        const exitX = Math.floor(CASINO_INTERIOR_WIDTH / 2);
+        const exitY = CASINO_INTERIOR_HEIGHT - 1;
+        if (curTileX === exitX && curTileY === exitY) {
+          this._doorExitTriggered = true;
+          this.onReachCasinoExit();
+        }
+      }
+    }
+    return true;
+  }
+
+  // Smoothly pans the camera to keep the character in view while
+  // free-roaming (tap-to-walk deliberately does NOT do this — the camera
+  // only recenters on mode transitions there, so short walks don't yank
+  // the view around). Skipped entirely once the player has manually
+  // zoomed AND panned away on purpose... no: manual zoom is still
+  // respected (this only ever pans, never touches camera.scale), so a
+  // zoomed-in player free-roaming still gets smooth following at their
+  // own zoom level.
+  _updateCameraFollow() {
+    if (!this._freeRoaming) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const targetX = rect.width / 2 - this._character.x * this.camera.scale;
+    const targetY = rect.height / 2 - this._character.y * this.camera.scale;
+    const lerp = 0.14;
+    this.camera.x += (targetX - this.camera.x) * lerp;
+    this.camera.y += (targetY - this.camera.y) * lerp;
   }
 
   walkToAndWait(tileX, tileY) {
@@ -836,6 +1142,8 @@ class FarmGame {
   setInteriorMode(interiorData) {
     this.mode = 'indoor';
     this.interior = interiorData;
+    this._doorExitTriggered = false; // fresh room — allow the door-exit check to fire again
+    this._staircaseTriggered = false; // fresh room — allow the staircase check to fire again
     this._serverTimeOffset = interiorData.serverTime - Date.now() / 1000;
     // 0.6 tiles of margin on left/right/top matches wallDepth in
     // _drawIndoorRoom — without this, the camera fit only accounted for
@@ -915,11 +1223,31 @@ class FarmGame {
   }
 
   // ---- Casino (nested inside the Park) ----
-  setCasinoMode(floor) {
+  setCasinoMode(floor, fromFloor) {
     this.mode = 'casino';
     this.casinoFloor = floor || 1;
+    this._doorExitTriggered = false; // fresh floor — allow the exit-door check to fire again
+    this._staircaseTriggered = false; // fresh floor — allow the staircase check to fire again
     this._centerCameraFor(CASINO_INTERIOR_WIDTH, CASINO_INTERIOR_HEIGHT);
-    const wx = (CASINO_INTERIOR_WIDTH / 2) * TILE, wy = (CASINO_INTERIOR_HEIGHT * 0.75) * TILE;
+    // Arrive right at the specific staircase that was just used, not a
+    // generic center spot — this used to always place the player at the
+    // same fixed center-ish point on every floor regardless of which
+    // staircase brought them there, which read as "climbing the stairs
+    // teleports you away from where you climbed them." The staircase on
+    // THIS floor that leads back to fromFloor is exactly the one that
+    // was just climbed, so arriving there (just below it, not exactly on
+    // it — stepping OFF the stairs, not immediately back onto them) is
+    // the natural landing spot.
+    const layout = CASINO_FLOOR_LAYOUT[this.casinoFloor] || CASINO_FLOOR_LAYOUT[1];
+    const arrivalStair = fromFloor ? (layout.stairs || []).find((s) => s.toFloor === fromFloor) : null;
+    const wx = arrivalStair ? (arrivalStair.x + 0.5) * TILE : (CASINO_INTERIOR_WIDTH / 2) * TILE;
+    // Landing needs real clearance from the stairs tile itself — 1.3
+    // tiles wasn't enough: holding the SAME direction key right after
+    // climbing (a completely natural thing to keep doing) walked the
+    // character straight back onto the stairs almost immediately, since
+    // every floor's staircases sit in the same fixed row — bouncing
+    // between floors over and over instead of actually arriving anywhere.
+    const wy = arrivalStair ? (arrivalStair.y + 3) * TILE : (CASINO_INTERIOR_HEIGHT * 0.75) * TILE;
     this._character.x = wx; this._character.y = wy;
     this._character.targetX = wx; this._character.targetY = wy;
     this._character.moving = false;
@@ -1082,6 +1410,7 @@ class FarmGame {
       this._dragMoved = false;
       this._isTouch = !!e.touches;
       this._lastPointer = getPos(e);
+      this._dragStartTime = performance.now();
     };
 
     const pointerMove = (e) => {
@@ -1151,11 +1480,19 @@ class FarmGame {
       }
 
       // Touch has no right-click equivalent, so a one-finger drag pans the
-      // map directly (this is safe on touch specifically: a real tap never
-      // triggers noticeable movement, so it doesn't fight with tap-to-act).
-      // Mouse dragging still doesn't pan — that's what right-click-drag is
-      // for on desktop — only tracked here to tell taps from drags.
-      if (this._isTouch) {
+      // map directly. This used to activate the instant a single-finger
+      // touch moved at all — which fought with the joystick specifically:
+      // a thumb that lands even slightly outside the joystick's zone
+      // (onto the canvas itself) would immediately start panning the
+      // camera, forcing the player to keep re-grabbing the joystick. A
+      // held-for-1-second requirement before panning actually kicks in
+      // means a stray/incidental touch near the joystick's edge never
+      // accumulates enough hold time to pan, while a genuinely deliberate
+      // press-and-drag (someone actually trying to look around) still
+      // works exactly as before after that brief wait. Mouse dragging
+      // still doesn't pan at all — that's what right-click-drag is for on
+      // desktop — only tracked here to tell taps from drags.
+      if (this._isTouch && performance.now() - this._dragStartTime > 1000) {
         this.camera.x += dx;
         this.camera.y += dy;
       }
@@ -1337,6 +1674,42 @@ class FarmGame {
     if (this.onTileClick) this.onTileClick(tile.x, tile.y);
   }
 
+  // Like _objectAt, but only returns BUILDING objects — used by the
+  // free-roam collision check to tell "bumped into a building's wall"
+  // (which should trigger walking in) apart from "bumped into a fence/
+  // tree" (which should just stop movement, nothing more).
+  // Only matches the ONE tile directly against the door (the building's
+  // own bottom row, at the door's center column) — not anywhere else on
+  // its perimeter. Used specifically for the free-roam "bump into a
+  // building to walk in" trigger; earlier this matched ANY tile of the
+  // building's whole footprint, so just walking along/brushing past its
+  // side wall while passing by would unexpectedly walk the player
+  // straight in, which read as too eager — this only reacts to actually
+  // walking up against the door itself.
+  _buildingDoorBumpAt(x, y) {
+    if (!this.farm) return null;
+    for (const obj of this.farm.objects) {
+      if (obj.object_type !== 'building' || !FarmGame.ENTERABLE_BUILDING_IDS.has(obj.item_id)) continue;
+      const def = this._defFor(obj);
+      const w = (def && def.width) || 1, h = (def && def.height) || 1;
+      const doorApproachX = obj.grid_x + Math.floor(w / 2);
+      const doorApproachY = obj.grid_y + h - 1;
+      if (x === doorApproachX && y === doorApproachY) return obj;
+    }
+    return null;
+  }
+
+  _buildingAt(x, y) {
+    if (!this.farm) return null;
+    for (const obj of this.farm.objects) {
+      if (obj.object_type !== 'building') continue;
+      const def = this._defFor(obj);
+      const w = (def && def.width) || 1, h = (def && def.height) || 1;
+      if (x >= obj.grid_x && x < obj.grid_x + w && y >= obj.grid_y && y < obj.grid_y + h) return obj;
+    }
+    return null;
+  }
+
   _objectAt(x, y) {
     const objects = this.mode === 'indoor' ? (this.interior && this.interior.objects) : (this.farm && this.farm.objects);
     if (!objects) return null;
@@ -1382,7 +1755,16 @@ class FarmGame {
   }
 
   _updateCharacter(dt, now) {
-    this._updateActor(this._character, dt, now);
+    // If free-roam (WASD/joystick) moved the character this frame, it
+    // already handled position AND the walk-animation frame/moving flag
+    // itself — running the normal tap-to-walk _updateActor on TOP of that
+    // in the same frame would immediately see targetX/Y already equal to
+    // x/y (free-roam sets both) and flip c.moving back to false before a
+    // single frame gets drawn, making the character look like it's
+    // standing still while actually gliding around.
+    const freeRoamed = this._updateFreeRoamMovement(dt);
+    if (!freeRoamed) this._updateActor(this._character, dt, now);
+    this._updateCameraFollow();
     if (this._character.chatTimer > 0) {
       this._character.chatTimer -= dt;
       if (this._character.chatTimer <= 0) { this._character.chatTimer = 0; this._character.chatText = null; }
@@ -1433,6 +1815,17 @@ class FarmGame {
   _draw() {
     const ctx = this.ctx;
     const rect = this.canvas.getBoundingClientRect();
+    // Self-correcting fallback for the same mobile-chrome-collapse issue
+    // the visualViewport listeners above handle — cheap to check every
+    // frame (just a couple of number comparisons), and catches it
+    // regardless of whether any particular resize event actually fired,
+    // rather than depending on the browser to tell us. If the canvas's
+    // drawing buffer no longer matches its current CSS box size (times
+    // devicePixelRatio), resize it before drawing this frame.
+    const dpr = window.devicePixelRatio || 1;
+    if (Math.round(rect.width * dpr) !== this.canvas.width || Math.round(rect.height * dpr) !== this.canvas.height) {
+      this._resize();
+    }
     // If a previous frame threw mid-draw (after ctx.save()/translate() but
     // before the matching ctx.restore()), the canvas would be left with a
     // leaked transform — and since clearRect() is itself affected by the
@@ -1518,6 +1911,11 @@ class FarmGame {
     this._visibleBounds = this._getVisibleTileBounds();
     this._drawTiles();
     this._drawFlatDecorations();
+    // Door markers moved indoors only — see _drawIndoorRoom's exit-mat
+    // strip near the bottom-center door tile. An outdoor marker read as
+    // floating/disconnected from the building itself even after fixing
+    // its vertical position, so this is simpler: just show where to walk
+    // OUT from inside the room, not where the door is from outside.
     this._drawSceneSorted();
     this._drawWaterEffects();
     this._drawHoverGlow(this.farm.width, this.farm.height);
@@ -1643,6 +2041,9 @@ class FarmGame {
   // character. Sorting them like a vertical object was why the character
   // could appear to walk "under" a path tile instead of over it.
   static FLAT_DECORATIONS = new Set(['path', 'pond']);
+  // Mango/Apple/Avocado — see _drawFruitTree and decoration_types'
+  // produces_item_id column (server/db/migrate.js).
+  static FRUIT_TREE_IDS = new Set(['mango_tree', 'apple_tree', 'avocado_tree']);
 
   _drawSceneSorted() {
     const t = this._estimatedServerTime();
@@ -1706,6 +2107,10 @@ class FarmGame {
       }
     }
   }
+
+  // The set of building types walking into triggers auto-entry (see
+  // onReachBuildingEntry in main.js).
+  static ENTERABLE_BUILDING_IDS = new Set(['farmhouse', 'chicken_coop', 'cow_barn', 'barn', 'mansion']);
 
   // Time-of-day tint + a December snowfall, both driven off the player's
   // actual real-world clock (not an in-game clock) — drawn last, in screen
@@ -2390,6 +2795,19 @@ class FarmGame {
     ctx.beginPath();
     ctx.moveTo(-wallDepth, h); ctx.lineTo(-wallDepth, -wallDepth); ctx.lineTo(w + wallDepth, -wallDepth); ctx.lineTo(w + wallDepth, h);
     ctx.stroke();
+
+    // Exit marker — a simple pulsing underline at the bottom-center door
+    // column, right at the room's open bottom edge (the side facing the
+    // camera, where onReachDoorExit actually triggers) — just showing
+    // where walking out happens, nothing fancier than a bar.
+    const doorX = Math.floor(this.interior.width / 2);
+    const t = performance.now() / 1000;
+    const pulse = 0.5 + 0.3 * Math.sin(t * 2);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#ffd24a';
+    ctx.fillRect(doorX * TILE + TILE * 0.15, h - 5, TILE * 0.7, 5);
+    ctx.restore();
   }
 
   // Which interior furniture is wall-mounted (see WALL_MOUNTED_ITEMS in
@@ -3649,7 +4067,7 @@ class FarmGame {
     } else if (obj.object_type === 'decoration') {
       let growthState = null;
       if (obj.state) { try { growthState = JSON.parse(obj.state); } catch (e) { growthState = null; } }
-      this._drawDecoration(px, py, pw, ph, obj.item_id, obj.rotation || 0, obj.grid_x, obj.grid_y, this.farm.objects, growthState);
+      this._drawDecoration(px, py, pw, ph, obj.item_id, obj.rotation || 0, obj.grid_x, obj.grid_y, this.farm.objects, growthState, obj.ready);
     } else if (obj.object_type === 'animal') {
       const last = obj.last_collected_at || obj.created_at;
       const fed = this._isAnimalFed(obj);
@@ -4214,7 +4632,7 @@ class FarmGame {
   // is only used for growable decorations like trees — a sapling that's
   // still growing gets a distinct sprite + progress bar instead of an
   // instant full-grown look.
-  _drawDecoration(px, py, pw, ph, itemId, rotation, gridX, gridY, allObjects, growthState) {
+  _drawDecoration(px, py, pw, ph, itemId, rotation, gridX, gridY, allObjects, growthState, ready) {
     const ctx = this.ctx;
     // Workshop-crafted decorations (currently just crafted_bench) reuse
     // the same SHAPE as their store-bought counterpart — strip the prefix
@@ -4236,6 +4654,11 @@ class FarmGame {
 
     if (itemId === 'tree' && growthState) {
       this._drawGrowingTree(x, y, w, h, style, growthState);
+      return;
+    }
+
+    if (FarmGame.FRUIT_TREE_IDS.has(itemId) && growthState) {
+      this._drawFruitTree(x, y, w, h, style, growthState, ready);
       return;
     }
 
@@ -4302,6 +4725,81 @@ class FarmGame {
     ctx.fillRect(x + 8, y + h - 10, barW, 5);
     ctx.fillStyle = growthState.watered ? '#5ab0ff' : '#ffc84a';
     ctx.fillRect(x + 8, y + h - 10, barW * progress, 5);
+  }
+
+  // Mango/Apple/Avocado trees — same sapling→mature growth arc as the
+  // plain Tree (_drawGrowingTree), but the mature form stays alive
+  // afterward with visible fruit dots in the foliage, plus a pulsing
+  // golden glow underneath whenever obj.ready is true (see
+  // server/routes/farm.js's resolveObject) so a ripe tree is spottable
+  // from across the farm, the same "at a glance" language an animal's own
+  // ready glow already uses.
+  _drawFruitTree(x, y, w, h, style, growthState, ready) {
+    const ctx = this.ctx;
+    const t = this._estimatedServerTime();
+    const total = growthState.growthEndAt - growthState.plantedAt;
+    const elapsed = Math.min(total, Math.max(0, t - growthState.plantedAt));
+    const progress = total > 0 ? elapsed / total : 1;
+    const matured = progress >= 1 && !!growthState.watered;
+
+    this._groundShadow(x, y, w, h);
+
+    if (!matured) {
+      const scale = 0.35 + progress * 0.65;
+      ctx.save();
+      ctx.translate(x + w / 2, y + h * 0.85);
+      ctx.scale(scale, scale);
+      ctx.translate(-(x + w / 2), -(y + h * 0.85));
+      ctx.fillStyle = style.trunk;
+      ctx.fillRect(x + w * 0.46, y + h * 0.55, w * 0.08, h * 0.3);
+      ctx.fillStyle = style.leaf;
+      ctx.beginPath();
+      ctx.arc(x + w * 0.5, y + h * 0.5, w * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = shade(style.leafDark, -10);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+
+      const barW = w - 16;
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      ctx.fillRect(x + 7, y + h - 11, barW + 2, 7);
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.fillRect(x + 8, y + h - 10, barW, 5);
+      ctx.fillStyle = growthState.watered ? '#5ab0ff' : '#ffc84a';
+      ctx.fillRect(x + 8, y + h - 10, barW * progress, 5);
+      return;
+    }
+
+    ctx.fillStyle = style.trunk;
+    ctx.fillRect(x + w * 0.44, y + h * 0.5, w * 0.12, h * 0.42);
+    ctx.fillStyle = style.leaf;
+    ctx.beginPath();
+    ctx.arc(x + w * 0.5, y + h * 0.4, w * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = shade(style.leafDark, -10);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    const fruitSpots = [[0.36, 0.32], [0.58, 0.28], [0.68, 0.46], [0.44, 0.5], [0.3, 0.48]];
+    ctx.fillStyle = style.fruit;
+    for (const [fx, fy] of fruitSpots) {
+      ctx.beginPath();
+      ctx.arc(x + w * fx, y + h * fy, w * 0.045, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (ready) {
+      const tt = performance.now() / 1000;
+      const pulse = 0.5 + 0.3 * Math.sin(tt * 2.4);
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#ffd24a';
+      ctx.beginPath();
+      ctx.ellipse(x + w / 2, y + h * 0.86, w * 0.34, h * 0.12, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   // Auto-connecting fence, like a classic tile-based fence system: looks at

@@ -1,6 +1,7 @@
 const express = require('express');
 const {
-  nowSec, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths, grantRewards, addInventory, notify,
+  nowSec, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths, resolveFruitTreeSpoilage, resolveFruitTreeDeaths,
+  grantRewards, addInventory, notify,
   resolveEnergy, spendEnergy, addEnergy, xpProgress, rollHarvestQuantity,
 } = require('../lib/gameLogic');
 const {
@@ -22,6 +23,8 @@ module.exports = function farmRoutes(db, io) {
     resolveCropStates(db, farm.id);
     resolveAnimalDeaths(db, farm.id);
     resolveAnimalColdDeaths(db, farm.id);
+    resolveFruitTreeSpoilage(db, farm.id);
+    resolveFruitTreeDeaths(db, farm.id);
     const tiles = db.prepare('SELECT x, y, state FROM farm_tiles WHERE farm_id = ?').all(farm.id);
     const crops = db.prepare('SELECT * FROM crops WHERE farm_id = ?').all(farm.id);
     const objects = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND location = 'outdoor'").all(farm.id).map(resolveObject);
@@ -46,6 +49,25 @@ module.exports = function farmRoutes(db, io) {
   // Animal objects carry production state in the `state` JSON column so we don't need
   // a separate table; resolve "ready to collect" here, at read time, using server time.
   function resolveObject(obj) {
+    if (obj.object_type === 'decoration') {
+      const decoType = db.prepare('SELECT * FROM decoration_types WHERE id = ?').get(obj.item_id);
+      if (decoType && decoType.produces_item_id) {
+        let growth = null;
+        try { growth = obj.state ? JSON.parse(obj.state) : null; } catch (e) { growth = null; }
+        const mature = !!(growth && growth.growthEndAt && growth.growthEndAt <= nowSec());
+        if (!mature) return obj; // still a sapling — nothing to report yet
+        // Math.max, not || — last_collected_at is set to the PLANTING
+        // time at insert (always truthy), so it needs to be compared
+        // against growthEndAt rather than treated as "unset until first
+        // collected" the way it would read for animals (whose
+        // last_collected_at can genuinely be null pre-first-collection).
+        const last = Math.max(obj.last_collected_at, growth.growthEndAt);
+        const readyAt = last + decoType.production_seconds;
+        const spoilAt = readyAt + decoType.fruit_spoil_seconds;
+        return { ...obj, readyAt, ready: nowSec() >= readyAt, fruitSpoilsAt: spoilAt };
+      }
+      return obj;
+    }
     if (obj.object_type !== 'animal') return obj;
     const animalType = db.prepare('SELECT * FROM animal_types WHERE id = ?').get(obj.item_id);
     if (!animalType) return obj;
@@ -501,6 +523,12 @@ module.exports = function farmRoutes(db, io) {
   // restores energy when eaten. Bigger/slower-growing crops make food that
   // restores more energy, matching their higher value everywhere else.
   const COOK_RECIPES = {
+    // NOTE: each recipe's own energyRestore field below is no longer what
+    // actually grants Energy — /api/farm/eat now reads item_types.
+    // energy_restore instead (admin-editable via Shop Prices), so an
+    // admin can tune it without a code change. These are left as
+    // reference/documentation of the original balance values; only
+    // cropCost and foodItemId are still actually read from here.
     wheat:      { cropCost: 2, foodItemId: 'bread',           energyRestore: 5 },
     rice:       { cropCost: 2, foodItemId: 'rice_bowl',       energyRestore: 6 },
     corn:       { cropCost: 2, foodItemId: 'corn_soup',       energyRestore: 7 },
@@ -518,6 +546,8 @@ module.exports = function farmRoutes(db, io) {
 
   // Ready-made snacks bought directly with coins at the Central Park carts
   // (not cooked at a Stove like the recipes above) — see /api/park/buy-snack.
+  // Same note as COOK_RECIPES: energyRestore below is unused now — actual
+  // Energy granted comes from item_types.energy_restore via /api/farm/eat.
   const PARK_SNACKS = {
     ice_cream: { coinCost: 75, energyRestore: 5 },
     hotdog:    { coinCost: 100, energyRestore: 8 },
@@ -579,26 +609,30 @@ module.exports = function farmRoutes(db, io) {
   // POST /api/farm/eat { foodItemId } — consumes 1 food item, restores energy.
   router.post('/eat', (req, res) => {
     const { foodItemId } = req.body || {};
-    // Food can come from either a Stove recipe (COOK_RECIPES, keyed by
-    // ingredient) or a Central Park snack cart (PARK_SNACKS, keyed
-    // directly by the food's own item id) — normalize both into the same
-    // { foodItemId, energyRestore } shape before looking up what's owned.
-    const cooked = Object.values(COOK_RECIPES).find((r) => r.foodItemId === foodItemId);
-    const snack = PARK_SNACKS[foodItemId];
-    const energyRestore = cooked ? cooked.energyRestore : snack ? snack.energyRestore : null;
-    if (energyRestore === null) return res.status(400).json({ error: 'Unknown food item' });
+    // energy_restore now lives on item_types (admin-editable via Shop
+    // Prices — see PRICE_TABLES in admin.js), not a hardcoded constant
+    // here, so an admin can actually tune how much Energy any food or
+    // Park snack restores. Anything with energy_restore <= 0 either
+    // isn't food or an admin has explicitly zeroed it out — either way,
+    // not eatable.
+    const foodType = db.prepare('SELECT * FROM item_types WHERE id = ?').get(foodItemId);
+    if (!foodType || foodType.energy_restore <= 0) return res.status(400).json({ error: 'Unknown food item' });
+    const energyRestore = foodType.energy_restore;
 
-    // Food kept in the Refrigerator gets eaten FIRST, then the Bag — same
-    // "the fridge is just where this food lives, not a separate pool"
-    // idea as everywhere else this pattern shows up.
-    const fridgeRow = db.prepare('SELECT * FROM fridge_storage WHERE user_id = ? AND item_id = ?').get(req.userId, foodItemId);
-    if (fridgeRow && fridgeRow.quantity >= 1) {
-      db.prepare('UPDATE fridge_storage SET quantity = quantity - 1 WHERE id = ?').run(fridgeRow.id);
-    } else {
-      const foodRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, foodItemId);
-      if (!foodRow || foodRow.quantity < 1) return res.status(400).json({ error: "You don't have any of that to eat" });
-      db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(foodRow.id);
-    }
+    // This is invoked from the Bag panel specifically, so it only ever
+    // eats from the Bag — the Refrigerator is a separate pool with its
+    // own deposit/withdraw actions (see /api/shop/fridge-deposit and
+    // -withdraw), not something this silently reaches into. Eating used
+    // to check the Refrigerator FIRST regardless of which panel the
+    // player actually tapped "Eat" from, which meant eating something
+    // shown in the Bag could — confusingly — deduct from the fridge's
+    // stock of that same food instead of the Bag's. Want to eat what's
+    // in the fridge specifically? Withdraw it to the Bag first, then eat
+    // it from there.
+    const foodRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, foodItemId);
+    if (!foodRow || foodRow.quantity < 1) return res.status(400).json({ error: "You don't have any of that to eat" });
+    db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(foodRow.id);
+
     const energy = addEnergy(db, req.userId, energyRestore);
     res.json({ ok: true, energy, energyRestored: energyRestore });
   });

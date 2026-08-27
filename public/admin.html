@@ -94,6 +94,7 @@
       <option value="">All Categories</option>
       <option value="crop_types">🌾 Crops</option>
       <option value="animal_types">🐄 Animals</option>
+      <option value="decoration_types">🌳 Decorations (Trees)</option>
     </select>
     <table id="timers-table">
       <thead><tr><th>Category</th><th>Type</th><th>Name</th><th>Setting</th><th>Current</th><th>New (hours)</th><th></th></tr></thead>
@@ -217,17 +218,28 @@ async function loadStats() {
 }
 
 let allPrices = [];
-const TABLE_LABELS = { crop_types: 'Crop', building_types: 'Building', decoration_types: 'Decoration', animal_types: 'Animal', item_types: 'Item/Material', interior_types: 'Furniture' };
-const FIELD_LABELS = { seed_cost: 'Seed Cost', sell_price: 'Sell Price', cost: 'Buy Cost' };
+const TABLE_LABELS = {
+  crop_types: 'Crop', building_types: 'Building', decoration_types: 'Decoration', animal_types: 'Animal', interior_types: 'Furniture',
+  // item_types is split into its own findable sub-categories (see
+  // displayCategory in the /shop-prices response) instead of one big
+  // generic "Item/Material" bucket that buried Egg/Milk/Wool/Truffle
+  // alongside unrelated crafting materials and cooked food.
+  'item_types:animal_product': '🥚 Animal Product',
+  'item_types:feed': '🌾 Animal Feed',
+  'item_types:food': '🍲 Cooked Food',
+  'item_types:material': '🪵 Crafting Material',
+  'item_types:fruit': '🍎 Fruit',
+};
+const FIELD_LABELS = { seed_cost: 'Seed Cost', sell_price: 'Sell Price', cost: 'Buy Cost', energy_restore: 'Energy Restored' };
 
 async function loadPrices() {
   allPrices = await api('GET', '/api/admin/shop-prices');
   const categorySelect = document.getElementById('price-category-filter');
   if (categorySelect.options.length <= 1) {
-    for (const table of Object.keys(TABLE_LABELS)) {
+    for (const cat of Object.keys(TABLE_LABELS)) {
       const opt = document.createElement('option');
-      opt.value = table;
-      opt.textContent = TABLE_LABELS[table];
+      opt.value = cat;
+      opt.textContent = TABLE_LABELS[cat];
       categorySelect.appendChild(opt);
     }
   }
@@ -239,7 +251,7 @@ function renderPrices() {
   const q = document.getElementById('price-search-input').value.trim().toLowerCase();
   const categoryFilter = document.getElementById('price-category-filter').value;
   const items = allPrices.filter((item) => {
-    if (categoryFilter && item.table !== categoryFilter) return false;
+    if (categoryFilter && item.displayCategory !== categoryFilter) return false;
     if (q && !item.name.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -248,30 +260,36 @@ function renderPrices() {
   // multiple price fields (a crop's seed cost AND sell price) gets a
   // dropdown to pick which one this row is currently editing, instead of
   // permanently taking up a separate line for each field.
+  // Icon shown next to the current/editable value — most price fields are
+  // coins, but energy_restore isn't a price at all, so it gets its own
+  // icon rather than misleadingly showing a coin next to an Energy number.
+  const FIELD_ICONS = { energy_restore: '⚡' };
+  const iconFor = (field) => FIELD_ICONS[field] || '🪙';
+
   tbody.innerHTML = items.map((item) => {
     const fieldKeys = Object.keys(item.fields);
     const fieldOptions = fieldKeys.map((f) => `<option value="${f}">${FIELD_LABELS[f] || f}</option>`).join('');
     const firstValue = item.fields[fieldKeys[0]];
     return `
-    <tr data-table="${item.table}" data-id="${item.id}">
-      <td>${TABLE_LABELS[item.table] || item.table}</td>
+    <tr data-table="${item.table}" data-id="${item.id}" data-display-category="${item.displayCategory}">
+      <td>${TABLE_LABELS[item.displayCategory] || item.table}</td>
       <td>${escapeHtml(item.name)}</td>
       <td><select class="price-field-select">${fieldOptions}</select></td>
-      <td class="price-current">🪙${firstValue}</td>
+      <td class="price-current">${iconFor(fieldKeys[0])}${firstValue}</td>
       <td><input type="number" class="price-input" min="0" value="${firstValue}" style="width:90px"></td>
       <td><button class="price-save-btn">Save</button></td>
     </tr>`;
   }).join('') || '<tr><td colspan="6">No items match.</td></tr>';
 
   tbody.querySelectorAll('tr[data-table]').forEach((tr) => {
-    const item = items.find((i) => i.table === tr.dataset.table && String(i.id) === tr.dataset.id);
+    const item = items.find((i) => i.table === tr.dataset.table && String(i.id) === tr.dataset.id && i.displayCategory === tr.dataset.displayCategory);
     const select = tr.querySelector('.price-field-select');
     const input = tr.querySelector('.price-input');
     const currentCell = tr.querySelector('.price-current');
     select.addEventListener('change', () => {
       const val = item.fields[select.value];
       input.value = val;
-      currentCell.textContent = '🪙' + val;
+      currentCell.textContent = iconFor(select.value) + val;
     });
     tr.querySelector('.price-save-btn').addEventListener('click', async () => {
       const value = parseInt(input.value, 10);

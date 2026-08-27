@@ -179,6 +179,68 @@ function resolveAnimalColdDeaths(db, farmId) {
 // Resolve animal production readiness is handled inline at read-time (see routes/farm.js)
 // since animal state lives inside farm_objects.state as JSON, not a dedicated table.
 
+// Fruit trees (Mango/Apple/Avocado) — see decoration_types' produces_item_id
+// etc. columns. Once mature (the SAME growable-decoration growth state
+// every tree/sapling already uses — state.growthEndAt), a fruit tree
+// keeps producing on a repeating cycle: ready every production_seconds,
+// but if left uncollected for longer than fruit_spoil_seconds past
+// becoming ready, that batch rots — this fast-forwards last_collected_at
+// past every FULLY SPOILED cycle a farm hasn't been visited during, so a
+// long-neglected tree doesn't show ancient "ready" fruit that's actually
+// long gone, and so collect-fruit's own readiness check only ever sees a
+// batch that's genuinely still collectible right now.
+function resolveFruitTreeSpoilage(db, farmId) {
+  const t = nowSec();
+  const trees = db.prepare(`
+    SELECT fo.id, fo.state, fo.last_collected_at, dt.production_seconds, dt.fruit_spoil_seconds
+    FROM farm_objects fo JOIN decoration_types dt ON fo.item_id = dt.id
+    WHERE fo.farm_id = ? AND fo.object_type = 'decoration' AND dt.produces_item_id IS NOT NULL
+  `).all(farmId);
+  for (const tree of trees) {
+    let growth;
+    try { growth = tree.state ? JSON.parse(tree.state) : null; } catch (e) { growth = null; }
+    if (!growth || !growth.growthEndAt || growth.growthEndAt > t) continue; // still a sapling
+    const cycleLen = tree.production_seconds;
+    const spoilLen = tree.fruit_spoil_seconds;
+    if (!cycleLen) continue;
+    // Math.max, not || — see the same reasoning in shop.js's
+    // /collect-fruit and farm.js's resolveObject: last_collected_at is
+    // set to the PLANTING time at insert (always truthy), not left null
+    // until first collected the way it naturally is for animals.
+    const startBase = Math.max(tree.last_collected_at, growth.growthEndAt);
+    let base = startBase;
+    let iterations = 0;
+    while (t >= base + cycleLen + spoilLen && iterations < 1000) {
+      base += cycleLen;
+      iterations++;
+    }
+    if (base !== startBase) {
+      db.prepare('UPDATE farm_objects SET last_collected_at = ? WHERE id = ?').run(base, tree.id);
+    }
+  }
+}
+
+// A fruit tree dies of old age lifespan_seconds after it MATURES (not
+// from when it was planted) — same lazy "resolve whenever the farm is
+// read" pattern as every other neglect/death check in this file.
+function resolveFruitTreeDeaths(db, farmId) {
+  const t = nowSec();
+  const trees = db.prepare(`
+    SELECT fo.id, fo.state, dt.lifespan_seconds
+    FROM farm_objects fo JOIN decoration_types dt ON fo.item_id = dt.id
+    WHERE fo.farm_id = ? AND fo.object_type = 'decoration' AND dt.produces_item_id IS NOT NULL
+  `).all(farmId);
+  for (const tree of trees) {
+    let growth;
+    try { growth = tree.state ? JSON.parse(tree.state) : null; } catch (e) { growth = null; }
+    if (!growth || !growth.growthEndAt || growth.growthEndAt > t) continue; // still a sapling, not "alive" to die yet
+    if (!tree.lifespan_seconds) continue;
+    if (t >= growth.growthEndAt + tree.lifespan_seconds) {
+      db.prepare('DELETE FROM farm_objects WHERE id = ?').run(tree.id);
+    }
+  }
+}
+
 // How many units a single harvest/collection yields — always at least 1,
 // with a shrinking chance at each additional piece (cascading: each roll
 // only happens if the previous one succeeded), so the max is rare but not
@@ -334,6 +396,7 @@ function isReservedName(name) {
 }
 module.exports = {
   nowSec, xpForLevel, levelForXp, xpProgress, initFarmTiles, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths,
+  resolveFruitTreeSpoilage, resolveFruitTreeDeaths,
   grantRewards, addInventory, notify, resolveEnergy, spendEnergy, addEnergy, MAX_ENERGY,
   isReservedName, startResting, stopResting, resolveEquippedOutfit, rollHarvestQuantity, rollAnimalQuantity,
   getTimerSetting, DEFAULT_TIMERS,
