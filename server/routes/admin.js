@@ -520,6 +520,22 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     res.json({ ok: true });
   });
 
+  // POST /api/admin/give-item-all { itemId, quantity } — same as give-item
+  // above, but to EVERY user in one go (a Best Farm contest bonus, a
+  // sitewide apology gift, etc.) instead of needing to repeat the
+  // single-player action once per person.
+  router.post('/give-item-all', (req, res) => {
+    const { itemId, quantity } = req.body || {};
+    const qty = parseInt(quantity, 10);
+    if (!itemId || !Number.isFinite(qty) || qty < 1) return res.status(400).json({ error: 'itemId and a positive quantity required' });
+    const userIds = db.prepare('SELECT id FROM users').all().map((u) => u.id);
+    const tx = db.transaction(() => {
+      for (const id of userIds) addInventory(db, id, itemId, qty);
+    });
+    tx();
+    res.json({ ok: true, itemId, quantity: qty, playersAffected: userIds.length });
+  });
+
   router.post('/players/:id/ban', (req, res) => {
     const { banned } = req.body || {};
     db.prepare('UPDATE users SET is_banned = ? WHERE id = ?').run(banned ? 1 : 0, req.params.id);

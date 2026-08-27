@@ -583,13 +583,30 @@
   // width/height come from the catalog via findDef. Records the doorstep
   // tile in state.lastDoorTile so exitHouse() can send the player back
   // out to that exact spot.
+  // Bumped every time walkToDoorAndEnter starts a fresh walk — lets an
+  // OLDER, still-in-flight call recognize it's been superseded by a
+  // NEWER one (a second building tapped before the first one finished
+  // walking there) and skip touching setTransitioning(false) in its own
+  // cleanup, which would otherwise prematurely re-enable free-roam
+  // movement while the NEWER call's own scripted walk is still going.
+  let walkGeneration = 0;
+
   async function walkToDoorAndEnter(obj, enterFn) {
+    const myGeneration = ++walkGeneration;
     const def = findDef('building', obj.item_id);
     const width = (def && def.width) || 2, height = (def && def.height) || 2;
     const doorTile = { x: obj.grid_x + Math.floor(width / 2), y: obj.grid_y + height };
     game.setTransitioning(true);
     try {
-      await game.walkToAndWait(doorTile.x, doorTile.y);
+      const arrived = await game.walkToAndWait(doorTile.x, doorTile.y);
+      // A LATER tap (a different building, tapped again before this walk
+      // finished) redirected the character somewhere else — this specific
+      // building's enter sequence shouldn't fire at all now; whichever
+      // later tap actually won gets to run its own walkToDoorAndEnter
+      // instead. Without this check, the FIRST building tapped still
+      // entered once the character eventually stopped moving ANYWHERE,
+      // even nowhere near its own door.
+      if (!arrived || myGeneration !== walkGeneration) return;
       state.lastDoorTile = doorTile;
       await fadeOut();
       try {
@@ -598,7 +615,7 @@
         await fadeIn();
       }
     } finally {
-      game.setTransitioning(false);
+      if (myGeneration === walkGeneration) game.setTransitioning(false);
     }
   }
 
@@ -1387,8 +1404,12 @@
           const centerX = obj.grid_x + ((def && def.width) || 1) / 2;
           const centerY = obj.grid_y + ((def && def.height) || 1) / 2;
           // Walk onto the furniture first — same "actually get there
-          // instead of teleporting" treatment as entering a building.
-          await game.walkToAndWait(obj.grid_x, obj.grid_y);
+          // instead of teleporting" treatment as entering a building. If
+          // a later tap (a different chair/bed) redirected the character
+          // elsewhere before this walk finished, don't sit down here —
+          // whichever later tap actually won handles its own sit-down.
+          const arrived = await game.walkToAndWait(obj.grid_x, obj.grid_y);
+          if (!arrived) return;
           const facingDir = ROTATION_TO_FACING[obj.rotation || 0] || 'down';
           setLocalRestPose(pose, centerX, centerY, facingDir);
           const res = await Api.startResting();
@@ -1879,7 +1900,8 @@
     game.setTransitioning(true);
     try {
       const doorTile = game.getCasinoDoorTile();
-      await game.walkToAndWait(doorTile.x, doorTile.y);
+      const arrived = await game.walkToAndWait(doorTile.x, doorTile.y);
+      if (!arrived) return; // redirected elsewhere before reaching the door
       await fadeOut();
       state.inCasino = true;
       state.casinoFloor = 1;
@@ -2042,7 +2064,8 @@
         setLocalRestPose(null);
         UI.toast('You got up.');
       } else {
-        await game.walkToAndWait(bench.x, bench.y);
+        const arrived = await game.walkToAndWait(bench.x, bench.y);
+        if (!arrived) return; // redirected to a different bench before reaching this one
         setLocalRestPose('sit', bench.x + 0.5, bench.y + 0.5);
         const res = await Api.startResting();
         state.me.isResting = res.resting;

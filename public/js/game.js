@@ -1003,8 +1003,24 @@ class FarmGame {
     this.walkTo(tileX, tileY, null);
     return new Promise((resolve) => {
       const check = () => {
-        if (!this._character.moving) resolve();
-        else requestAnimationFrame(check);
+        if (!this._character.moving) {
+          // Verify the character actually arrived at THIS specific tile
+          // — not just that movement stopped generically, which could
+          // also happen because a LATER, unrelated walkTo() call
+          // (tapping a different building mid-walk, say) redirected the
+          // character somewhere else entirely before this one finished.
+          // Without this check, whichever building was tapped FIRST
+          // still fired its enter sequence once the character eventually
+          // stopped moving ANYWHERE, even nowhere near that first
+          // building's door — the resolved value here tells the caller
+          // whether it actually reached ITS destination or got
+          // superseded, so it knows whether to go ahead or bail out.
+          const curTileX = Math.floor(this._character.x / TILE);
+          const curTileY = Math.floor(this._character.y / TILE);
+          resolve(curTileX === tileX && curTileY === tileY);
+        } else {
+          requestAnimationFrame(check);
+        }
       };
       requestAnimationFrame(check);
     });

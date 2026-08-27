@@ -75,12 +75,29 @@
   </div>
 
   <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">🗂️ Category Filter</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">One shared filter for Shop Item Prices, Timers, AND Shop Stock below — pick a category here once instead of hunting through three separate dropdowns. Starts on "Pick a category" (nothing shown) to keep things from all showing at once — pick one to actually see anything.</p>
+    <select id="admin-category-filter">
+      <option value="">— Pick a category —</option>
+      <option value="crop">🌾 Crops (Seeds)</option>
+      <option value="building">🏠 Buildings</option>
+      <option value="decoration">🌳 Decorations</option>
+      <option value="fruit_tree">🍎 Fruit Trees</option>
+      <option value="animal">🐄 Animals</option>
+      <option value="animal_product">🥚 Animal Product</option>
+      <option value="feed">🌾 Animal Feed</option>
+      <option value="food">🍲 Cooked Food</option>
+      <option value="material">🪵 Crafting Material</option>
+      <option value="fruit">🍎 Fruit</option>
+      <option value="interior">🛋️ Interior</option>
+      <option value="__all__">Show Everything (all categories at once)</option>
+    </select>
+  </div>
+
+  <div class="card">
     <p style="font-weight:700;margin-bottom:4px;">💰 Shop Item Prices</p>
     <p style="font-size:12px;color:#8a5a34;margin-top:0;">Change any item's buy cost or sell price live — no restart needed. Only affects future purchases/sales; players who already own an item keep it, this doesn't retroactively charge/refund anyone.</p>
     <input id="price-search-input" placeholder="Search item name...">
-    <select id="price-category-filter" style="margin-left:8px;">
-      <option value="">All Categories</option>
-    </select>
     <table id="prices-table">
       <thead><tr><th>Category</th><th>Item</th><th>Price Field</th><th>Current</th><th>New Price</th><th></th></tr></thead>
       <tbody></tbody>
@@ -90,13 +107,6 @@
   <div class="card">
     <p style="font-weight:700;margin-bottom:4px;">⏱️ Timers</p>
     <p style="font-size:12px;color:#8a5a34;margin-top:0;">Control how long things take, in hours — how long a crop takes to grow, how long an animal takes to give product, and the global rules for when a neglected crop/animal dies. Changes apply live, no restart needed.</p>
-    <select id="timer-category-filter">
-      <option value="">All Categories</option>
-      <option value="crop_types">🌾 Crops</option>
-      <option value="animal_types">🐄 Animals</option>
-      <option value="decoration_types">🌳 Decorations (Trees)</option>
-      <option value="decoration_types:fruit_tree">🍎 Fruit Trees</option>
-    </select>
     <table id="timers-table">
       <thead><tr><th>Category</th><th>Type</th><th>Name</th><th>Setting</th><th>Current</th><th>New (hours)</th><th></th></tr></thead>
       <tbody></tbody>
@@ -106,15 +116,6 @@
   <div class="card">
     <p style="font-weight:700;margin-bottom:4px;">📦 Shop Stock</p>
     <p style="font-size:12px;color:#8a5a34;margin-top:0;">Cap how many of an item are available to buy — a GLOBAL count shared by every player, not per-player. Leave an item unlimited (the default) unless you specifically want to ration it. "Set" defines the cap and tops it up to that number right now; "Renew" just restocks back up to the existing cap.</p>
-    <select id="stock-category-filter">
-      <option value="">All Categories</option>
-      <option value="crop">🌾 Seeds</option>
-      <option value="building">🏠 Buildings</option>
-      <option value="decoration">🌳 Decorations</option>
-      <option value="decoration:fruit_tree">🍎 Fruit Trees</option>
-      <option value="animal">🐄 Animals</option>
-      <option value="interior">🛋️ Interior</option>
-    </select>
     <input id="stock-search-input" placeholder="Search item name...">
     <table id="stock-table">
       <thead><tr><th>Category</th><th>Name</th><th>Cap</th><th>In Stock</th><th>New Cap</th><th></th></tr></thead>
@@ -146,6 +147,15 @@
       <thead><tr><th>Online</th><th>ID</th><th>Username</th><th>Name in Game</th><th>Lvl</th><th>Energy</th><th>Coins</th><th>Prem. Points</th><th>GM Points</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody></tbody>
     </table>
+  </div>
+
+  <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">📢 Send to All Players</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">Gives every registered player the same item at once — a Best Farm contest bonus, a sitewide apology gift, etc. — instead of repeating the single-player "Give Material" action once per person.</p>
+    <select id="send-all-item-select"></select>
+    <input type="number" id="send-all-qty-input" value="10" min="1" style="width:70px">
+    <button id="send-all-btn" style="background:var(--wood-dark, #5e3b1f); color:#fff;">Send to All</button>
+    <span id="send-all-status" style="margin-left:8px;font-size:13px;"></span>
   </div>
 </div>
 
@@ -239,17 +249,36 @@ const TABLE_LABELS = {
 };
 const FIELD_LABELS = { seed_cost: 'Seed Cost', sell_price: 'Sell Price', cost: 'Buy Cost', energy_restore: 'Energy Restored' };
 
+// One shared category filter (see #admin-category-filter) drives all
+// three sections below — each maps the SAME picked value to its own
+// internal category format, since Prices/Timers use one naming scheme
+// (crop_types, item_types:food, decoration_types:fruit_tree) and Stock
+// uses another (crop, decoration:fruit_tree) with no item_types
+// equivalent at all (animal products/feed/food/materials/fruit aren't
+// individually stock-capped) — picking one of THOSE in Stock correctly
+// shows nothing there, which is accurate, not a bug.
+const UNIFIED_TO_PRICES_TIMERS = {
+  crop: 'crop_types', building: 'building_types', decoration: 'decoration_types', fruit_tree: 'decoration_types:fruit_tree',
+  animal: 'animal_types', animal_product: 'item_types:animal_product', feed: 'item_types:feed', food: 'item_types:food',
+  material: 'item_types:material', fruit: 'item_types:fruit', interior: 'interior_types',
+};
+const UNIFIED_TO_STOCK = {
+  crop: 'crop', building: 'building', decoration: 'decoration', fruit_tree: 'decoration:fruit_tree',
+  animal: 'animal', interior: 'interior',
+};
+function sharedCategoryFilter() {
+  return document.getElementById('admin-category-filter').value;
+}
+// Starts on "" (Pick a category) — nothing shows until one's picked, per
+// se above, instead of every category dumping onto the screen at once.
+document.getElementById('admin-category-filter').addEventListener('change', () => {
+  renderPrices();
+  renderTimers();
+  renderShopStock();
+});
+
 async function loadPrices() {
   allPrices = await api('GET', '/api/admin/shop-prices');
-  const categorySelect = document.getElementById('price-category-filter');
-  if (categorySelect.options.length <= 1) {
-    for (const cat of Object.keys(TABLE_LABELS)) {
-      const opt = document.createElement('option');
-      opt.value = cat;
-      opt.textContent = TABLE_LABELS[cat];
-      categorySelect.appendChild(opt);
-    }
-  }
   renderPrices();
 }
 
@@ -265,9 +294,10 @@ let selectedFieldByRow = {};
 function renderPrices() {
   const tbody = document.querySelector('#prices-table tbody');
   const q = document.getElementById('price-search-input').value.trim().toLowerCase();
-  const categoryFilter = document.getElementById('price-category-filter').value;
+  const shared = sharedCategoryFilter();
   const items = allPrices.filter((item) => {
-    if (categoryFilter && item.displayCategory !== categoryFilter) return false;
+    if (shared === '') return false; // nothing picked yet — show nothing
+    if (shared !== '__all__' && item.displayCategory !== UNIFIED_TO_PRICES_TIMERS[shared]) return false;
     if (q && !item.name.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -327,7 +357,6 @@ function renderPrices() {
 }
 
 document.getElementById('price-search-input').addEventListener('input', () => renderPrices());
-document.getElementById('price-category-filter').addEventListener('change', () => renderPrices());
 
 // ---- Timers ----
 let allTimers = [];
@@ -358,8 +387,12 @@ function categoryLabelFor(r) {
 
 function renderTimers() {
   const tbody = document.querySelector('#timers-table tbody');
-  const categoryFilter = document.getElementById('timer-category-filter').value;
-  const rows = allTimers.filter((r) => !categoryFilter || r.displayCategory === categoryFilter);
+  const shared = sharedCategoryFilter();
+  const rows = allTimers.filter((r) => {
+    if (shared === '') return false;
+    if (shared === '__all__') return true;
+    return r.displayCategory === UNIFIED_TO_PRICES_TIMERS[shared];
+  });
 
   tbody.innerHTML = rows.map((r) => {
     const rowKey = `${r.kind}:${r.table}:${r.id}:${r.field}`;
@@ -396,8 +429,6 @@ function renderTimers() {
   });
 }
 
-document.getElementById('timer-category-filter').addEventListener('change', () => renderTimers());
-
 // ---- Shop Stock ----
 let allStock = [];
 const STOCK_CATEGORY_LABELS = { crop: '🌾 Seeds', building: '🏠 Buildings', decoration: '🌳 Decorations', 'decoration:fruit_tree': '🍎 Fruit Tree', animal: '🐄 Animals', interior: '🛋️ Interior' };
@@ -419,11 +450,14 @@ async function loadShopStock() {
 
 function renderShopStock() {
   const tbody = document.querySelector('#stock-table tbody');
-  const categoryFilter = document.getElementById('stock-category-filter').value;
+  const shared = sharedCategoryFilter();
   const q = document.getElementById('stock-search-input').value.trim().toLowerCase();
-  const rows = allStock.filter((r) =>
-    (!categoryFilter || r.displayCategory === categoryFilter) &&
-    (!q || r.name.toLowerCase().includes(q)));
+  const rows = allStock.filter((r) => {
+    if (shared === '') return false;
+    if (shared !== '__all__' && r.displayCategory !== UNIFIED_TO_STOCK[shared]) return false;
+    if (q && !r.name.toLowerCase().includes(q)) return false;
+    return true;
+  });
 
   tbody.innerHTML = rows.map((r) => {
     const rowKey = `${r.category}:${r.itemId}`;
@@ -478,7 +512,6 @@ function renderShopStock() {
   });
 }
 
-document.getElementById('stock-category-filter').addEventListener('change', () => renderShopStock());
 document.getElementById('stock-search-input').addEventListener('input', () => renderShopStock());
 
 // ---- Casino Odds ----
@@ -612,6 +645,18 @@ async function loadPlayers(q) {
     { id: 'strawberry', label: '🍓 Strawberry' },
     { id: 'pumpkin', label: '🎃 Pumpkin' },
   ];
+  // Seeds specifically (not the harvested produce above) — for gifts like
+  // "bonus seeds for everyone" ahead of a contest/event.
+  const SEED_OPTIONS = [
+    { id: 'seed_wheat', label: '🌾 Wheat Seed' },
+    { id: 'seed_corn', label: '🌽 Corn Seed' },
+    { id: 'seed_tomato', label: '🍅 Tomato Seed' },
+    { id: 'seed_carrot', label: '🥕 Carrot Seed' },
+    { id: 'seed_potato', label: '🥔 Potato Seed' },
+    { id: 'seed_strawberry', label: '🍓 Strawberry Seed' },
+    { id: 'seed_pumpkin', label: '🎃 Pumpkin Seed' },
+  ];
+  const GIFT_ALL_OPTIONS = [...SEED_OPTIONS, ...MATERIAL_OPTIONS];
 
   // A single "Actions" dropdown per player replaces what used to be six
   // separate always-visible input+button pairs crammed into the row (Set
@@ -629,7 +674,7 @@ async function loadPlayers(q) {
       'set-coins': `<input type="number" class="a-input" value="${u.coins}" min="0" style="width:80px"><button class="a-go">Set</button>`,
       'give-pp': `<input type="number" class="a-input" value="100" style="width:70px"><button class="a-go">Give</button>`,
       'give-gm': `<input type="number" class="a-input" value="1" min="1" style="width:60px"><button class="a-go">Give</button>`,
-      'give-item': `<select class="a-input2">${MATERIAL_OPTIONS.map(m => `<option value="${m.id}">${m.label}</option>`).join('')}</select>
+      'give-item': `<select class="a-input2">${GIFT_ALL_OPTIONS.map(m => `<option value="${m.id}">${m.label}</option>`).join('')}</select>
                     <input type="number" class="a-input" value="10" min="1" style="width:60px"><button class="a-go">Give</button>`,
       ban: `<button class="a-go" style="background:${u.is_banned ? 'var(--leaf)' : '#c0392b'}">${u.is_banned ? 'Unban' : 'Confirm Ban'}</button>`,
       suspend: `<input type="number" class="a-input" value="3" min="0.5" step="0.5" style="width:50px" title="Days"><button class="a-go">Suspend</button>${u.suspended_until ? '<button class="a-lift">Lift now</button>' : ''}`,
@@ -851,6 +896,39 @@ document.getElementById('export-players-btn').addEventListener('click', async ()
     URL.revokeObjectURL(url);
   } catch (err) {
     alert('Export failed: ' + err.message);
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+});
+
+// Populate the Send to All item dropdown once — same option list as the
+// per-player "Give Material" action's dropdown (see renderActionArea),
+// just applied to every player instead of one.
+document.getElementById('send-all-item-select').innerHTML =
+  GIFT_ALL_OPTIONS.map((m) => `<option value="${m.id}">${m.label}</option>`).join('');
+
+document.getElementById('send-all-btn').addEventListener('click', async () => {
+  const itemSelect = document.getElementById('send-all-item-select');
+  const qtyInput = document.getElementById('send-all-qty-input');
+  const statusEl = document.getElementById('send-all-status');
+  const itemId = itemSelect.value;
+  const quantity = parseInt(qtyInput.value, 10);
+  if (!Number.isFinite(quantity) || quantity < 1) return alert('Enter a valid quantity.');
+  const itemLabel = itemSelect.options[itemSelect.selectedIndex].textContent;
+  if (!confirm(`Send ${quantity} × ${itemLabel} to EVERY registered player? This can't be undone.`)) return;
+
+  const btn = document.getElementById('send-all-btn');
+  const original = btn.textContent;
+  btn.textContent = 'Sending...';
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    const res = await api('POST', '/api/admin/give-item-all', { itemId, quantity });
+    statusEl.textContent = `✅ Sent to ${res.playersAffected} player${res.playersAffected === 1 ? '' : 's'}.`;
+  } catch (err) {
+    statusEl.textContent = '';
+    alert('Send failed: ' + err.message);
   } finally {
     btn.textContent = original;
     btn.disabled = false;
