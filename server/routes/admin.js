@@ -286,11 +286,20 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     ];
     const rows = [];
     for (const { category, table } of categoryTables) {
-      const items = db.prepare(`SELECT id, name FROM ${table}`).all();
+      // decoration_types is the only one of these with fruit trees mixed
+      // in (Mango/Apple/Avocado) — same displayCategory split as
+      // /shop-prices and /timers, so Shop Stock can filter them into
+      // their own group too instead of burying them among fences/lamps/
+      // bonfires. The actual `category` stays the plain 'decoration'
+      // throughout (still what set/renew/remove-shop-stock act on) —
+      // this is purely an extra filtering hint.
+      const selectCols = table === 'decoration_types' ? 'id, name, produces_item_id' : 'id, name';
+      const items = db.prepare(`SELECT ${selectCols} FROM ${table}`).all();
       for (const item of items) {
         const s = stock.get(`${category}:${item.id}`);
+        const displayCategory = table === 'decoration_types' && item.produces_item_id ? 'decoration:fruit_tree' : category;
         rows.push({
-          category, itemId: item.id, name: item.name,
+          category, displayCategory, itemId: item.id, name: item.name,
           maxStock: s ? s.maxStock : null,
           currentStock: s ? s.currentStock : null,
           unlimited: !s,

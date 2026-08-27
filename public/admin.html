@@ -111,6 +111,7 @@
       <option value="crop">🌾 Seeds</option>
       <option value="building">🏠 Buildings</option>
       <option value="decoration">🌳 Decorations</option>
+      <option value="decoration:fruit_tree">🍎 Fruit Trees</option>
       <option value="animal">🐄 Animals</option>
       <option value="interior">🛋️ Interior</option>
     </select>
@@ -278,7 +279,7 @@ function renderPrices() {
     const firstValue = item.fields[fieldKeys[0]];
     return `
     <tr data-table="${item.table}" data-id="${item.id}" data-display-category="${item.displayCategory}">
-      <td>${TABLE_LABELS[item.displayCategory] || item.table}</td>
+      <td>${categoryLabelFor(item)}</td>
       <td>${escapeHtml(item.name)}</td>
       <td><select class="price-field-select">${fieldOptions}</select></td>
       <td class="price-current">${iconFor(fieldKeys[0])}${firstValue}</td>
@@ -327,6 +328,19 @@ function fmtHours(seconds) {
   return (Math.round(hrs * 100) / 100).toString();
 }
 
+// Fruit Trees is one category covering 3 different actual fruits — a
+// single shared "🍎 Fruit Tree" category label made every row (Mango,
+// Apple, Avocado alike) show an apple regardless of which tree it
+// actually was. Per-item lookup by id, falling back to the category's
+// generic label for anything else.
+const FRUIT_TREE_ICONS = { mango_tree: '🥭', apple_tree: '🍎', avocado_tree: '🥑' };
+function categoryLabelFor(r) {
+  if (r.displayCategory === 'decoration_types:fruit_tree' && FRUIT_TREE_ICONS[r.id]) {
+    return `${FRUIT_TREE_ICONS[r.id]} Fruit Tree`;
+  }
+  return TABLE_LABELS[r.displayCategory] || TABLE_LABELS[r.table] || r.table;
+}
+
 function renderTimers() {
   const tbody = document.querySelector('#timers-table tbody');
   const categoryFilter = document.getElementById('timer-category-filter').value;
@@ -338,7 +352,7 @@ function renderTimers() {
     const nameLabel = r.kind === 'item' ? escapeHtml(r.name) : '<em>applies to all</em>';
     return `
     <tr data-row-key="${rowKey}" data-kind="${r.kind}" data-table="${r.table}" data-id="${r.id}" data-field="${r.field}">
-      <td>${TABLE_LABELS[r.displayCategory] || TABLE_LABELS[r.table] || r.table}</td>
+      <td>${categoryLabelFor(r)}</td>
       <td>${typeLabel}</td>
       <td>${nameLabel}</td>
       <td>${escapeHtml(r.label)}</td>
@@ -371,7 +385,17 @@ document.getElementById('timer-category-filter').addEventListener('change', () =
 
 // ---- Shop Stock ----
 let allStock = [];
-const STOCK_CATEGORY_LABELS = { crop: '🌾 Seeds', building: '🏠 Buildings', decoration: '🌳 Decorations', animal: '🐄 Animals', interior: '🛋️ Interior' };
+const STOCK_CATEGORY_LABELS = { crop: '🌾 Seeds', building: '🏠 Buildings', decoration: '🌳 Decorations', 'decoration:fruit_tree': '🍎 Fruit Tree', animal: '🐄 Animals', interior: '🛋️ Interior' };
+// Same per-item split as categoryLabelFor above — Fruit Trees is one
+// category covering 3 different fruits, so the shared "🍎 Fruit Tree"
+// label alone made every row show an apple regardless of which tree it
+// actually was.
+function stockCategoryLabelFor(r) {
+  if (r.displayCategory === 'decoration:fruit_tree' && FRUIT_TREE_ICONS[r.itemId]) {
+    return `${FRUIT_TREE_ICONS[r.itemId]} Fruit Tree`;
+  }
+  return STOCK_CATEGORY_LABELS[r.displayCategory] || STOCK_CATEGORY_LABELS[r.category] || r.category;
+}
 
 async function loadShopStock() {
   allStock = await api('GET', '/api/admin/shop-stock');
@@ -383,7 +407,7 @@ function renderShopStock() {
   const categoryFilter = document.getElementById('stock-category-filter').value;
   const q = document.getElementById('stock-search-input').value.trim().toLowerCase();
   const rows = allStock.filter((r) =>
-    (!categoryFilter || r.category === categoryFilter) &&
+    (!categoryFilter || r.displayCategory === categoryFilter) &&
     (!q || r.name.toLowerCase().includes(q)));
 
   tbody.innerHTML = rows.map((r) => {
@@ -392,7 +416,7 @@ function renderShopStock() {
     const currentLabel = r.unlimited ? '—' : r.currentStock;
     return `
     <tr data-category="${r.category}" data-item-id="${r.itemId}">
-      <td>${STOCK_CATEGORY_LABELS[r.category] || r.category}</td>
+      <td>${stockCategoryLabelFor(r)}</td>
       <td>${escapeHtml(r.name)}</td>
       <td>${capLabel}</td>
       <td>${currentLabel}</td>
