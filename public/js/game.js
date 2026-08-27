@@ -1915,6 +1915,18 @@ class FarmGame {
     if (Math.round(rect.width * dpr) !== this.canvas.width || Math.round(rect.height * dpr) !== this.canvas.height) {
       this._resize();
     }
+    // Computed ONCE per frame (not per-object) — ctx.shadowBlur is
+    // genuinely expensive per draw call in Canvas2D, and a well-developed
+    // farm can easily have a dozen+ Lamp Posts/Fireplaces/Bonfires/Table
+    // Lamps/Wall Lights, each doing its own "breathing glow" blur every
+    // single frame. Zoomed OUT is exactly when the most of them are
+    // likely to be on screen simultaneously AND exactly when that blur
+    // is least visually noticeable (each glow renders at a fraction of
+    // its normal on-screen size) — so past a certain zoom-out threshold,
+    // every one of those effects skips its shadowBlur pass entirely
+    // (falling back to a flat, cheap fill with no blur) rather than
+    // paying that cost for a detail nobody can really see at that scale.
+    this._lowDetailGlow = this.camera.scale < 0.6;
     // If a previous frame threw mid-draw (after ctx.save()/translate() but
     // before the matching ctx.restore()), the canvas would be left with a
     // leaked transform — and since clearRect() is itself affected by the
@@ -3253,7 +3265,7 @@ class FarmGame {
       const pulse = 0.6 + 0.4 * Math.sin(t * 2.2 + phase);
       ctx.save();
       ctx.shadowColor = '#ff7a1a';
-      ctx.shadowBlur = 5 + pulse * 8;
+      ctx.shadowBlur = this._lowDetailGlow ? 0 : 5 + pulse * 8;
       ctx.globalAlpha = 0.8 + pulse * 0.2;
       ctx.fillStyle = '#ff9d3c';
       ctx.beginPath();
@@ -3273,7 +3285,7 @@ class FarmGame {
       // contained than a lamp post.
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      const emberCount = 3;
+      const emberCount = this._lowDetailGlow ? 0 : 3;
       for (let i = 0; i < emberCount; i++) {
         const cycle = (t * 0.55 + i / emberCount + phase * 0.1) % 1; // 0..1 rise-and-fade loop
         const ex = x + w * (0.42 + 0.16 * i / (emberCount - 1)) + Math.sin(t * 3 + i * 2) * w * 0.03;
@@ -3319,7 +3331,7 @@ class FarmGame {
       const pulse = 0.6 + 0.4 * Math.sin(t * 1.6 + phase);
       ctx.save();
       ctx.shadowColor = '#ffdd88';
-      ctx.shadowBlur = 5 + pulse * 8;
+      ctx.shadowBlur = this._lowDetailGlow ? 0 : 5 + pulse * 8;
       ctx.globalAlpha = 0.8 + pulse * 0.2;
       ctx.fillStyle = '#fff3b0';
       ctx.beginPath();
@@ -3343,7 +3355,7 @@ class FarmGame {
       const pulse = 0.6 + 0.4 * Math.sin(t * 1.5 + phase);
       ctx.save();
       ctx.shadowColor = '#ffe9a8';
-      ctx.shadowBlur = 5 + pulse * 7;
+      ctx.shadowBlur = this._lowDetailGlow ? 0 : 5 + pulse * 7;
       ctx.globalAlpha = 0.8 + pulse * 0.2;
       ctx.fillStyle = '#fff7d6';
       ctx.beginPath(); ctx.ellipse(cx, y + h * 0.16, w * 0.11, h * 0.08, 0, 0, Math.PI * 2); ctx.fill();
@@ -5137,7 +5149,7 @@ class FarmGame {
       const pulse = 0.6 + 0.4 * Math.sin(t * 1.6 + phase);
       ctx.save();
       ctx.shadowColor = style.glow;
-      ctx.shadowBlur = 6 + pulse * 10;
+      ctx.shadowBlur = this._lowDetailGlow ? 0 : 6 + pulse * 10;
       ctx.globalAlpha = 0.75 + pulse * 0.25;
       ctx.fillStyle = style.glass;
       ctx.beginPath();
@@ -5152,7 +5164,7 @@ class FarmGame {
       // this cheap even with several lamp posts on one farm.
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      const fireflyCount = 3;
+      const fireflyCount = this._lowDetailGlow ? 0 : 3;
       for (let i = 0; i < fireflyCount; i++) {
         const angle = t * (0.7 + i * 0.15) + phase + (i / fireflyCount) * Math.PI * 2;
         const orbitR = w * (0.32 + 0.15 * Math.sin(t * 0.9 + i * 2));
@@ -5194,7 +5206,7 @@ class FarmGame {
       const pulse = 0.6 + 0.4 * Math.sin(t * 2.2 + phase);
       ctx.save();
       ctx.shadowColor = style.glow;
-      ctx.shadowBlur = 6 + pulse * 10;
+      ctx.shadowBlur = this._lowDetailGlow ? 0 : 6 + pulse * 10;
       ctx.globalAlpha = 0.8 + pulse * 0.2;
       ctx.fillStyle = style.flame;
       ctx.beginPath();
@@ -5209,7 +5221,7 @@ class FarmGame {
 
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      const emberCount = 3;
+      const emberCount = this._lowDetailGlow ? 0 : 3;
       for (let i = 0; i < emberCount; i++) {
         const cycle = (t * 0.55 + i / emberCount + phase * 0.1) % 1;
         const ex = cx + w * (i - 1) * 0.14 + Math.sin(t * 3 + i * 2) * w * 0.04;

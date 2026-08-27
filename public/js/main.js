@@ -827,8 +827,15 @@
     // click multiple times instead of adding any real functionality.
     if (toolbarInitialized) return;
     toolbarInitialized = true;
+    const toolbarEl = document.getElementById('toolbar');
     document.querySelectorAll('.tool-btn').forEach((btn) => {
-      btn.addEventListener('click', () => onToolButton(btn.dataset.tool));
+      btn.addEventListener('click', (e) => {
+        // These buttons float directly over the canvas — without this,
+        // the tap could also reach whatever's underneath (the farm view
+        // itself), reading as "the touch passes through the button."
+        e.stopPropagation();
+        onToolButton(btn.dataset.tool);
+      });
     });
     // Toolbar tabs — only one group of tools shows at a time (Farming /
     // Build & Decorate / Shop & Places). Switching tabs never touches
@@ -837,9 +844,22 @@
     // were still visible; switching back to that tab shows it still
     // highlighted. This is purely which BUTTONS are visible, not a
     // change to what's currently selected.
+    //
+    // Tapping the tab that's ALREADY active collapses the whole toolbar
+    // down to just the 3 tab icons instead of re-showing the same group
+    // — a second tap on that same tab (or tapping a different one)
+    // expands it again. Lets the toolbar get out of the way entirely
+    // when no tool is actively being used right now.
     document.querySelectorAll('.toolbar-tab').forEach((tabBtn) => {
-      tabBtn.addEventListener('click', () => {
+      tabBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const target = tabBtn.dataset.toolbarTab;
+        const alreadyActiveAndOpen = tabBtn.classList.contains('active') && !toolbarEl.classList.contains('collapsed');
+        if (alreadyActiveAndOpen) {
+          toolbarEl.classList.add('collapsed');
+          return;
+        }
+        toolbarEl.classList.remove('collapsed');
         document.querySelectorAll('.toolbar-tab').forEach((b) => b.classList.toggle('active', b === tabBtn));
         document.querySelectorAll('.toolbar-group').forEach((g) => {
           g.classList.toggle('hidden', g.dataset.toolbarGroup !== target);

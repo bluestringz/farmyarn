@@ -373,6 +373,7 @@ button { font-family: inherit; cursor: pointer; }
   box-shadow: 0 4px 10px rgba(0,0,0,0.3);
   z-index: 40;
   cursor: pointer;
+  touch-action: manipulation;
 }
 .chat-header {
   display: flex;
@@ -580,17 +581,30 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
 .toolbar {
   position: absolute;
   right: 10px;
-  /* Anchored a bit above dead-center (not exactly 50%) so the stack's
-     bottom edge stays clear of the Chat button, which also lives on this
-     same right side now (bottom-right) — giving both real breathing
-     room instead of the two fighting over the same space. */
-  top: 42%;
-  transform: translateY(-50%);
+  /* Fixed top/bottom bounds instead of a vertical-center transform — a
+     percentage-based center meant the taller tab (6 buttons, Shop &
+     Places) could reach far enough down to overlap the Chat button
+     (also on this side, near the bottom), while the shorter tabs (5
+     buttons) sat somewhere else entirely — inconsistent AND overlapping.
+     Anchoring both edges keeps every tab's stack inside the exact same
+     safe zone, clear of the topbar above and the Chat button below,
+     scrolling internally (see .toolbar-group) if a tab's buttons don't
+     all fit in the given the room. */
+  top: 90px;
+  bottom: 130px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   z-index: 55;
+  justify-content: center;
+  /* Buttons here are absolutely-positioned OVER the canvas, whose parent
+     (.farm-wrap) sets touch-action:none for its own pan/zoom handling —
+     CSS touch-action is inherited by default, so without this override
+     these buttons silently inherited that none too, which could keep a
+     tap here from cleanly registering as a normal button tap instead of
+     being treated like a canvas gesture underneath. */
+  touch-action: manipulation;
 }
 /* Small strip of 3 tabs above the actual tool buttons — only ONE group of
    ~5-6 tools shows at a time (whichever tab is active) instead of all 16
@@ -614,6 +628,7 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  touch-action: manipulation;
 }
 .toolbar-tab.active {
   background: var(--sun);
@@ -623,11 +638,18 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 48vh;
+  max-height: 100%;
   overflow-y: auto;
   padding: 2px; /* room for the active button's box-shadow/scale so it doesn't get clipped by the scroll area */
+  touch-action: manipulation;
 }
 .toolbar-group.hidden { display: none; }
+/* Tapping the ALREADY-active tab again collapses the group entirely,
+   leaving just the 3 small tab icons — so the toolbar doesn't have to
+   permanently occupy screen space when the player isn't actively using
+   any tool right now. Tapping a tab again (or a different one) expands
+   it back. */
+.toolbar.collapsed .toolbar-group { display: none; }
 .tool-btn {
   flex-shrink: 0;
   display: flex;
@@ -640,6 +662,7 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   height: 50px;
   color: var(--wood-dark);
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  touch-action: manipulation;
 }
 .tool-btn.active {
   background: var(--sun);
