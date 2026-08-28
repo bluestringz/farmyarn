@@ -1565,6 +1565,7 @@
         game.walkTo(obj.grid_x, obj.grid_y, null);
         const res = await Api.waterDecoration(obj.id);
         state.me.coins = res.coins;
+        if (res.energy !== undefined) state.me.energy = res.energy;
         renderTopbar();
         UI.toast('Watered the sapling! 💧');
         game.playAction(ACTION_ICON.water);
