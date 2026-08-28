@@ -1036,20 +1036,51 @@
     });
     const seedsOwned = state.catalog.crops
       .filter((c) => (owned[c.id] || 0) > 0)
-      .map((c) => ({ ...c, _owned: owned[c.id] }));
+      .map((c) => ({ ...c, _cat: 'crop', _owned: owned[c.id] }));
 
-    if (!seedsOwned.length) {
+    // Trees and fruit trees join the seed list here too (see
+    // TREE_DECORATION_IDS above) — same "grow it over time" concept as a
+    // crop, tagged _cat:'decoration' so the onSelect callback below knows
+    // to build the right kind of buildSelection for each.
+    const treesOwned = [];
+    inv.forEach((row) => {
+      if (!row.item_id.startsWith('decoration_') || row.quantity <= 0) return;
+      const itemId = row.item_id.slice('decoration_'.length);
+      if (!TREE_DECORATION_IDS.has(itemId)) return;
+      const def = findDef('decoration', itemId);
+      if (def) treesOwned.push({ ...def, _cat: 'decoration', _owned: row.quantity });
+    });
+    const allOwned = [...seedsOwned, ...treesOwned];
+
+    if (!allOwned.length) {
       picker.classList.add('hidden');
-      UI.toast("You don't have any seeds yet — buy some from the Shop first!");
+      UI.toast("You don't have any seeds or trees yet — buy some from the Shop first!");
       return;
     }
-    UI.renderPicker(picker, seedsOwned, 'crops', state.me, (id) => {
-      state.buildSelection = { category: 'crop', itemId: id };
-      game.setPlacementSelectionActive(true);
-      updateAutoApplySelectionReady();
-      UI.toast(`Selected ${id}. Tap a plowed tile to plant.`);
+    UI.renderPicker(picker, allOwned, 'crops', state.me, (id) => {
+      const found = allOwned.find((x) => x.id === id);
+      if (found._cat === 'decoration') {
+        // Trees use the same preview/rotate/confirm placement flow as
+        // Build's other decorations — they just don't need a plowed tile
+        // first, unlike an actual crop seed.
+        state.buildSelection = { category: 'decoration', itemId: id, def: found };
+        game.setPlacementSelectionActive(true);
+        UI.toast(`Selected ${found.name}. Tap a spot on your farm to preview it.`);
+      } else {
+        state.buildSelection = { category: 'crop', itemId: id };
+        game.setPlacementSelectionActive(true);
+        updateAutoApplySelectionReady();
+        UI.toast(`Selected ${id}. Tap a plowed tile to plant.`);
+      }
     });
   }
+
+  // Regular trees and fruit trees moved to the Plant tool (see
+  // openSeedPicker) — they grow the same way crops do (plant it, water
+  // it, wait, then harvest/collect), so Plant is where they conceptually
+  // belong, not mixed in with fences/lamps/bonfires and actual buildings
+  // here under Build.
+  const TREE_DECORATION_IDS = new Set(['tree', 'mango_tree', 'apple_tree', 'avocado_tree']);
 
   async function openBuildPicker() {
     const picker = document.getElementById('build-picker');
@@ -1059,6 +1090,7 @@
       for (const cat of ['building', 'decoration']) {
         if (row.item_id.startsWith(`${cat}_`) && row.quantity > 0) {
           const itemId = row.item_id.slice(cat.length + 1);
+          if (cat === 'decoration' && TREE_DECORATION_IDS.has(itemId)) continue;
           const def = findDef(cat, itemId);
           if (def) owned.push({ ...def, _cat: cat, _owned: row.quantity });
         }

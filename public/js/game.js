@@ -3987,6 +3987,21 @@ class FarmGame {
     const b = this._visibleBounds;
     const minX = b.minX, minY = b.minY, maxX = b.maxX, maxY = b.maxY;
 
+    // Mirrors _lowDetailGlow's reasoning but for the tile grid itself —
+    // THIS is the real cost center for zoom-out lag, not the furniture
+    // glow effects: every visible plowed/grass tile does a gradient
+    // creation plus up to a dozen individual stroke()/ellipse() calls for
+    // furrow lines, dirt clumps, grass tufts, and wildflower speckles.
+    // Tile count grows roughly with the SQUARE of how far zoomed out the
+    // camera is (more tiles both horizontally and vertically at once),
+    // so this cost compounds fast — hundreds of visible tiles zoomed out
+    // easily means thousands of draw calls per frame for texture detail
+    // nobody can actually make out at that scale, on ANY hardware, not
+    // just underpowered phones. A more generous threshold than the glow
+    // effects' own — the fine tile texture disappears into "just a
+    // color" well before individual furniture pieces do.
+    const lowDetailTiles = this.camera.scale < 0.75;
+
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const t = tilesByPos[`${x},${y}`] || { state: 'grass' };
@@ -3997,6 +4012,18 @@ class FarmGame {
         if (t.state === 'plowed') {
           const shades = isWet ? wetSoilShades : soilShades;
           const base = shades[Math.floor(rnd * shades.length)];
+          if (lowDetailTiles) {
+            // Flat fill only — skips the gradient AND every decorative
+            // detail below (furrows, dirt clumps, wet gloss), but still
+            // falls through to the tile border + placement-highlight
+            // code at the end of the loop body, unlike an early
+            // `continue` would (that broke valid/invalid placement
+            // preview highlighting while zoomed out past this
+            // threshold — a real functional loss, not just a cosmetic
+            // one).
+            ctx.fillStyle = base;
+            ctx.fillRect(px, py, TILE, TILE);
+          } else {
           const grad = ctx.createLinearGradient(px, py, px, py + TILE);
           grad.addColorStop(0, base);
           grad.addColorStop(1, isWet ? '#3f2812' : '#6b4423');
@@ -4039,8 +4066,17 @@ class FarmGame {
             ctx.ellipse(cx, cy, 3, 2, 0, 0, Math.PI * 2);
             ctx.fill();
           }
+          } // end of the non-low-detail plowed-tile decoration branch
         } else {
           const base = grassShades[Math.floor(rnd * grassShades.length)];
+          if (lowDetailTiles) {
+            // Same flat-fill shortcut as the plowed branch above — falls
+            // through to the border/highlight code below instead of
+            // using `continue`, which would skip placement-preview
+            // highlighting for this tile.
+            ctx.fillStyle = base;
+            ctx.fillRect(px, py, TILE, TILE);
+          } else {
           const grad = ctx.createLinearGradient(px, py, px, py + TILE);
           grad.addColorStop(0, base);
           grad.addColorStop(1, shade(base, -8));
@@ -4080,6 +4116,7 @@ class FarmGame {
             ctx.arc(fx, fy, 1.3, 0, Math.PI * 2);
             ctx.fill();
           }
+          } // end of the non-low-detail grass-tile decoration branch
         }
 
         ctx.strokeStyle = 'rgba(0,0,0,0.05)';

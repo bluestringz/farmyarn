@@ -162,6 +162,50 @@
 <script>
 let TOKEN = localStorage.getItem('fy_admin_token');
 
+// Top-level (not nested in any function) — used by BOTH the per-player
+// "Give Material" action dropdown (inside loadPlayers/renderActionArea)
+// AND the "Send to All Players" dropdown at the bottom of this script.
+// This used to live inside loadPlayers() specifically, so anything
+// OUTSIDE that function (the Send to All wiring) couldn't see it at
+// all — a ReferenceError there would have silently broken every bit of
+// top-level script code that came after it too, including the periodic
+// refresh interval and the auto-login check.
+const MATERIAL_OPTIONS = [
+  { id: 'log', label: '🪵 Wood (log)' },
+  { id: 'egg', label: '🥚 Egg' },
+  { id: 'milk', label: '🥛 Milk' },
+  { id: 'wool', label: '🧶 Wool' },
+  { id: 'truffle', label: '🍄 Truffle' },
+  { id: 'wheat', label: '🌾 Wheat' },
+  { id: 'corn', label: '🌽 Corn' },
+  { id: 'tomato', label: '🍅 Tomato' },
+  { id: 'carrot', label: '🥕 Carrot' },
+  { id: 'potato', label: '🥔 Potato' },
+  { id: 'strawberry', label: '🍓 Strawberry' },
+  { id: 'pumpkin', label: '🎃 Pumpkin' },
+];
+// Seeds specifically (not the harvested produce above) — for gifts like
+// "bonus seeds for everyone" ahead of a contest/event.
+const SEED_OPTIONS = [
+  { id: 'seed_wheat', label: '🌾 Wheat Seed' },
+  { id: 'seed_corn', label: '🌽 Corn Seed' },
+  { id: 'seed_tomato', label: '🍅 Tomato Seed' },
+  { id: 'seed_carrot', label: '🥕 Carrot Seed' },
+  { id: 'seed_potato', label: '🥔 Potato Seed' },
+  { id: 'seed_strawberry', label: '🍓 Strawberry Seed' },
+  { id: 'seed_pumpkin', label: '🎃 Pumpkin Seed' },
+];
+// Fruit trees are DECORATIONS (buildable/placeable), not simple stackable
+// materials — their inventory item id is prefixed accordingly (matches
+// how the Shop/Build tool store them: decoration_<id>), unlike the plain
+// material ids above.
+const FRUIT_TREE_OPTIONS = [
+  { id: 'decoration_mango_tree', label: '🥭 Mango Tree' },
+  { id: 'decoration_apple_tree', label: '🍎 Apple Tree' },
+  { id: 'decoration_avocado_tree', label: '🥑 Avocado Tree' },
+];
+const GIFT_ALL_OPTIONS = [...SEED_OPTIONS, ...FRUIT_TREE_OPTIONS, ...MATERIAL_OPTIONS];
+
 async function api(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
@@ -631,32 +675,6 @@ function statusLabel(u) {
 async function loadPlayers(q) {
   const rows = await api('GET', '/api/admin/players' + (q ? '?q=' + encodeURIComponent(q) : ''));
   const tbody = document.querySelector('#players-table tbody');
-  const MATERIAL_OPTIONS = [
-    { id: 'log', label: '🪵 Wood (log)' },
-    { id: 'egg', label: '🥚 Egg' },
-    { id: 'milk', label: '🥛 Milk' },
-    { id: 'wool', label: '🧶 Wool' },
-    { id: 'truffle', label: '🍄 Truffle' },
-    { id: 'wheat', label: '🌾 Wheat' },
-    { id: 'corn', label: '🌽 Corn' },
-    { id: 'tomato', label: '🍅 Tomato' },
-    { id: 'carrot', label: '🥕 Carrot' },
-    { id: 'potato', label: '🥔 Potato' },
-    { id: 'strawberry', label: '🍓 Strawberry' },
-    { id: 'pumpkin', label: '🎃 Pumpkin' },
-  ];
-  // Seeds specifically (not the harvested produce above) — for gifts like
-  // "bonus seeds for everyone" ahead of a contest/event.
-  const SEED_OPTIONS = [
-    { id: 'seed_wheat', label: '🌾 Wheat Seed' },
-    { id: 'seed_corn', label: '🌽 Corn Seed' },
-    { id: 'seed_tomato', label: '🍅 Tomato Seed' },
-    { id: 'seed_carrot', label: '🥕 Carrot Seed' },
-    { id: 'seed_potato', label: '🥔 Potato Seed' },
-    { id: 'seed_strawberry', label: '🍓 Strawberry Seed' },
-    { id: 'seed_pumpkin', label: '🎃 Pumpkin Seed' },
-  ];
-  const GIFT_ALL_OPTIONS = [...SEED_OPTIONS, ...MATERIAL_OPTIONS];
 
   // A single "Actions" dropdown per player replaces what used to be six
   // separate always-visible input+button pairs crammed into the row (Set
