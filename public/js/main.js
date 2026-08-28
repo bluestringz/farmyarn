@@ -1321,7 +1321,19 @@
         await refreshCurrentFarm();
       } else if (state.tool === 'plant') {
         if (state.viewingUserId || state.inHouse) return;
-        if (!state.buildSelection || state.buildSelection.category !== 'crop') { UI.toast('Pick a seed first'); return; }
+        if (!state.buildSelection) { UI.toast('Pick a seed or tree first'); return; }
+        // Trees/fruit trees (category 'decoration', moved here from
+        // Build — see openSeedPicker) use the SAME preview/rotate/
+        // confirm placement flow as Build's other decorations, not the
+        // immediate "tap a plowed tile, done" flow actual crop seeds
+        // use — they don't need plowed ground, and placement itself
+        // still needs a confirm step (rotation, exact spot) the way any
+        // other decoration does.
+        if (state.buildSelection.category === 'decoration') {
+          showPendingPlacement(x, y);
+          return;
+        }
+        if (state.buildSelection.category !== 'crop') { UI.toast('Pick a seed first'); return; }
         game.walkTo(x, y, null);
         const res = await Api.plant(x, y, state.buildSelection.itemId);
         if (res.energy !== undefined) state.me.energy = res.energy;
