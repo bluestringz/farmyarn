@@ -3485,7 +3485,21 @@ class FarmGame {
     ctx.save();
     ctx.globalAlpha = 0.55;
     if (g.category === 'building') this._drawBuilding(px, py, w, h, g.itemId, rotation);
-    else if (g.category === 'decoration') this._drawDecoration(px, py, w, h, g.itemId, rotation);
+    else if (g.category === 'decoration') {
+      // Trees (regular + fruit) need a growthState object to render at
+      // all — see _drawGrowingTree/_drawFruitTree, both of which read
+      // growthEndAt/plantedAt/watered directly off it with no fallback
+      // for it being missing. Without one, _drawDecoration falls through
+      // to the generic shape drawer, which has no case for a tree-shaped
+      // style at all — so the ghost silently rendered NOTHING for a
+      // tree specifically, while every other decoration previewed fine.
+      // A fake "just planted this instant" growthState (0% progress, not
+      // watered) gives exactly the freshly-planted sapling look that's
+      // actually correct for a placement preview.
+      const isTreeItem = g.itemId === 'tree' || FarmGame.FRUIT_TREE_IDS.has(g.itemId);
+      const fakeGrowthState = isTreeItem ? { plantedAt: this._estimatedServerTime(), growthEndAt: this._estimatedServerTime() + 1, watered: false } : undefined;
+      this._drawDecoration(px, py, w, h, g.itemId, rotation, g.x, g.y, this.farm ? this.farm.objects : null, fakeGrowthState, false);
+    }
     else if (g.category === 'animal') this._drawAnimal(px, py, w, h, g.itemId, false, rotation);
     else if (g.category === 'interior') this._drawFurniture(px, py, w, h, g.itemId, rotation);
 

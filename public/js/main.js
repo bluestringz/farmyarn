@@ -1268,12 +1268,25 @@
       const savedColor = state.pendingBuildColors && state.pendingBuildColors[p.itemId];
       await Api.placeObject(p.category, p.itemId, p.x, p.y, p.rotation, location, savedColor);
       UI.toast('Placed!');
-      game.playAction(ACTION_ICON.build);
+      // Matches whichever tool was actually used to place this — a tree
+      // confirmed via Plant showed the 🏗️ Build icon above the character
+      // regardless before, one more "this still says Build" mismatch on
+      // top of the wrong picker reopening afterward (see below).
+      game.playAction(state.tool === 'plant' ? ACTION_ICON.plant : ACTION_ICON.build);
       clearPendingPlacement();
       if (state.inHouse) { await refreshInterior(); await openDecoratePicker(); }
       else {
         await refreshCurrentFarm();
+        // Reopen whichever picker actually matches the CURRENT tool —
+        // this used to always reopen the Build picker regardless, so
+        // confirming a tree (placed via Plant, moved there from Build)
+        // popped the Build panel back up right after, showing buildings/
+        // decorations instead of the seed & tree list the player was
+        // actually just looking at. Jarring and confusing on its own —
+        // "why is Build showing, I was using Plant" — even though the
+        // tree itself really did get placed correctly underneath it.
         if (state.tool === 'place-animal') await openAnimalPicker();
+        else if (state.tool === 'plant') await openSeedPicker();
         else await openBuildPicker();
       }
     } catch (err) {
