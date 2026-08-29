@@ -313,7 +313,7 @@ module.exports = function shopRoutes(db) {
       const blocking = findOverlap(db, farm.id, loc, x, y, w, h);
       if (blocking) {
         return res.status(400).json({
-          error: `That spot already has a ${blocking.def ? blocking.def.name : blocking.object.item_id} on it (at ${blocking.object.grid_x},${blocking.object.grid_y}) — remove it first or pick a different spot.`,
+          error: `[FIX-v2-DEPLOYED] That spot already has a ${blocking.def ? blocking.def.name : blocking.object.item_id} on it (at ${blocking.object.grid_x},${blocking.object.grid_y}) — remove it first or pick a different spot.`,
         });
       }
     }
@@ -415,7 +415,7 @@ module.exports = function shopRoutes(db) {
       const blocking = findOverlap(db, farm.id, obj.location, x, y, w, h, objectId);
       if (blocking) {
         return res.status(400).json({
-          error: `That spot already has a ${blocking.def ? blocking.def.name : blocking.object.item_id} on it (at ${blocking.object.grid_x},${blocking.object.grid_y}) — remove it first or pick a different spot.`,
+          error: `[FIX-v2-DEPLOYED] That spot already has a ${blocking.def ? blocking.def.name : blocking.object.item_id} on it (at ${blocking.object.grid_x},${blocking.object.grid_y}) — remove it first or pick a different spot.`,
         });
       }
     }
