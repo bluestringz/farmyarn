@@ -754,6 +754,16 @@ const UI = (() => {
   function renderPicker(el, items, kind, player, onPick, selectedId) {
     if (!items.length) { el.classList.add('hidden'); return; }
     const GLYPH_BY_CATEGORY = { crops: '🌱', building: '🏗️', animal: '🐾', decoration: '🌷', interior: '🛋️' };
+    // Per-item icon showing what each seed/tree actually PRODUCES (its
+    // real fruit/crop) rather than one generic sprout/flower glyph for
+    // the whole list — much easier to spot the one you want at a glance
+    // instead of reading every name. Checked first, before the
+    // category-wide fallback below.
+    const PRODUCE_ICONS = {
+      wheat: '🌾', corn: '🌽', carrot: '🥕', potato: '🥔', tomato: '🍅',
+      strawberry: '🍓', pumpkin: '🎃',
+      tree: '🪵', mango_tree: '🥭', apple_tree: '🍎', avocado_tree: '🥑',
+    };
     el.innerHTML = items.map((item) => {
       const cost = item.seed_cost ?? item.cost;
       const locked = player.level < item.required_level;
@@ -762,7 +772,7 @@ const UI = (() => {
       // via openBuildPicker) — glyph per actual item category (item._cat),
       // not one fixed icon for the whole list, so an animal doesn't show
       // up looking like a building/decoration.
-      const glyph = GLYPH_BY_CATEGORY[item._cat] || GLYPH_BY_CATEGORY[kind] || '❔';
+      const glyph = PRODUCE_ICONS[item.id] || GLYPH_BY_CATEGORY[item._cat] || GLYPH_BY_CATEGORY[kind] || '❔';
       const owned = item._owned;
       const selected = item.id === selectedId;
       return `<button class="picker-item ${locked ? 'disabled' : ''} ${selected ? 'selected' : ''}" data-id="${item.id}" ${locked ? 'disabled' : ''}>

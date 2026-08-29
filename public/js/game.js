@@ -3485,7 +3485,21 @@ class FarmGame {
     ctx.save();
     ctx.globalAlpha = 0.55;
     if (g.category === 'building') this._drawBuilding(px, py, w, h, g.itemId, rotation);
-    else if (g.category === 'decoration') this._drawDecoration(px, py, w, h, g.itemId, rotation);
+    else if (g.category === 'decoration') {
+      // Trees (regular + fruit) need a growthState object to render at
+      // all — see _drawGrowingTree/_drawFruitTree, both of which read
+      // growthEndAt/plantedAt/watered directly off it with no fallback
+      // for it being missing. Without one, _drawDecoration falls through
+      // to the generic shape drawer, which has no case for a tree-shaped
+      // style at all — so the ghost silently rendered NOTHING for a
+      // tree specifically, while every other decoration previewed fine.
+      // A fake "just planted this instant" growthState (0% progress, not
+      // watered) gives exactly the freshly-planted sapling look that's
+      // actually correct for a placement preview.
+      const isTreeItem = g.itemId === 'tree' || FarmGame.FRUIT_TREE_IDS.has(g.itemId);
+      const fakeGrowthState = isTreeItem ? { plantedAt: this._estimatedServerTime(), growthEndAt: this._estimatedServerTime() + 1, watered: false } : undefined;
+      this._drawDecoration(px, py, w, h, g.itemId, rotation, g.x, g.y, this.farm ? this.farm.objects : null, fakeGrowthState, false);
+    }
     else if (g.category === 'animal') this._drawAnimal(px, py, w, h, g.itemId, false, rotation);
     else if (g.category === 'interior') this._drawFurniture(px, py, w, h, g.itemId, rotation);
 
@@ -4966,21 +4980,48 @@ class FarmGame {
       return;
     }
 
+    // Multi-cluster canopy (same puffy, layered look as the plain Tree,
+    // via _drawDecorationShape's shape:'tree' case) instead of one plain
+    // circle — reads as a fuller, richer tree at a glance, not just "a
+    // Tree with tiny dots on it."
     ctx.fillStyle = style.trunk;
     ctx.fillRect(x + w * 0.44, y + h * 0.5, w * 0.12, h * 0.42);
-    ctx.fillStyle = style.leaf;
-    ctx.beginPath();
-    ctx.arc(x + w * 0.5, y + h * 0.4, w * 0.32, 0, Math.PI * 2);
-    ctx.fill();
+    const clusters = [
+      { dx: 0.5, dy: 0.34, r: 0.28 }, { dx: 0.32, dy: 0.46, r: 0.2 },
+      { dx: 0.68, dy: 0.46, r: 0.2 }, { dx: 0.5, dy: 0.5, r: 0.24 },
+    ];
+    clusters.forEach((c, i) => {
+      ctx.fillStyle = i % 2 === 0 ? style.leaf : style.leafDark;
+      ctx.beginPath();
+      ctx.arc(x + w * c.dx, y + h * c.dy, w * c.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
     ctx.strokeStyle = shade(style.leafDark, -10);
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1;
     ctx.stroke();
 
-    const fruitSpots = [[0.36, 0.32], [0.58, 0.28], [0.68, 0.46], [0.44, 0.5], [0.3, 0.48]];
-    ctx.fillStyle = style.fruit;
+    // Fruit — bigger, more of them, and with a small glossy highlight so
+    // they read clearly as fruit hanging in the foliage rather than
+    // just texture speckles, spread across all four clusters instead of
+    // clumped in the old single small canopy.
+    const fruitSpots = [
+      [0.38, 0.24], [0.58, 0.22], [0.5, 0.3],
+      [0.24, 0.4], [0.4, 0.44], [0.6, 0.44], [0.76, 0.4],
+      [0.32, 0.56], [0.5, 0.58], [0.68, 0.56],
+    ];
     for (const [fx, fy] of fruitSpots) {
+      const cx = x + w * fx, cy = y + h * fy;
+      ctx.fillStyle = style.fruit;
       ctx.beginPath();
-      ctx.arc(x + w * fx, y + h * fy, w * 0.045, 0, Math.PI * 2);
+      ctx.arc(cx, cy, w * 0.065, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = shade(style.fruit, -20);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // small glossy highlight — sells "round ripe fruit" over "flat dot"
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath();
+      ctx.arc(cx - w * 0.02, cy - w * 0.02, w * 0.02, 0, Math.PI * 2);
       ctx.fill();
     }
 

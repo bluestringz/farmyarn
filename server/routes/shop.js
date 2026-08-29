@@ -1,5 +1,5 @@
 const express = require('express');
-const { grantRewards, addInventory, nowSec, rollAnimalQuantity } = require('../lib/gameLogic');
+const { grantRewards, addInventory, nowSec, rollAnimalQuantity, spendEnergy, resolveEnergy } = require('../lib/gameLogic');
 const { getAllStock, consumeStock } = require('../lib/shopStock');
 const {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
@@ -660,12 +660,17 @@ module.exports = function shopRoutes(db) {
     const readyAt = last + decoType.production_seconds;
     if (t < readyAt) return res.status(400).json({ error: 'No fruit ready yet' });
 
+    // Costs more energy than a regular crop harvest (1) — picking fruit
+    // off a full-grown tree is a bigger job than pulling up one plant.
+    if (!spendEnergy(db, req.userId, 2)) return res.status(400).json({ error: 'Not enough energy' });
+
     const qty = decoType.yield_min + Math.floor(Math.random() * (decoType.yield_max - decoType.yield_min + 1));
     db.prepare('UPDATE farm_objects SET last_collected_at = ? WHERE id = ?').run(t, obj.id);
     addInventory(db, req.userId, decoType.produces_item_id, qty);
     const reward = grantRewards(db, req.userId, { coins: 0, xp: 2 });
+    const energy = resolveEnergy(db, req.userId);
 
-    res.json({ ok: true, product: decoType.produces_item_id, productQuantity: qty, reward });
+    res.json({ ok: true, product: decoType.produces_item_id, productQuantity: qty, reward, energy });
   });
 
   // POST /api/shop/fridge-deposit { itemId, quantity } — moves items from
@@ -733,6 +738,13 @@ function findOverlap(db, farmId, location, x, y, w, h, excludeId) {
     'SELECT * FROM farm_objects WHERE farm_id = ? AND location = ?' + (excludeId ? ' AND id != ?' : '')
   ).all(...(excludeId ? [farmId, location, excludeId] : [farmId, location]));
   for (const o of objects) {
+    // Path tiles are just colored/paved ground, not an occupying object
+    // — anything else can still be placed right on top of one, the same
+    // as bare grass would allow. Skipped here (rather than making every
+    // CALLER of findOverlap special-case it) so this holds everywhere
+    // this function is used, both placing something new and moving an
+    // existing object onto a path tile.
+    if (o.object_type === 'decoration' && o.item_id === 'path') continue;
     const def = lookupDefSync(db, o.object_type, o.item_id);
     const ow = def ? def.width || 1 : 1;
     const oh = def ? def.height || 1 : 1;
@@ -772,3 +784,5 @@ function lookupDefSync(db, type, itemId) {
 
 module.exports.INTERIOR_WIDTH = INTERIOR_WIDTH;
 module.exports.INTERIOR_HEIGHT = INTERIOR_HEIGHT;
+
+
