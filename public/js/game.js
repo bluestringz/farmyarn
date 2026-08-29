@@ -1843,13 +1843,29 @@ class FarmGame {
   _objectAt(x, y) {
     const objects = this.mode === 'indoor' ? (this.interior && this.interior.objects) : (this.farm && this.farm.objects);
     if (!objects) return null;
+    // Path tiles are just colored/paved ground — anything else placed on
+    // top of one should take priority for ANY tile interaction (remove,
+    // tap-to-open, feed, harvest, etc.), matching how it visually reads:
+    // the flower/bench/whatever sitting ON the path is what's actually
+    // "there" to interact with, not the path underneath it. Two passes:
+    // first for anything that ISN'T path, falling back to path itself
+    // only if nothing else occupies that tile — without this, whichever
+    // object happened to be placed FIRST (almost always the path, laid
+    // down before building on top of it) won every tile query, so
+    // Remove kept deleting the path instead of whatever was stacked on
+    // it, no matter which one the player actually meant to remove.
+    let pathFallback = null;
     for (const obj of objects) {
       const def = this._defFor(obj);
       const w = (def && def.width) || 1;
       const h = (def && def.height) || 1;
-      if (x >= obj.grid_x && x < obj.grid_x + w && y >= obj.grid_y && y < obj.grid_y + h) return obj;
+      if (x >= obj.grid_x && x < obj.grid_x + w && y >= obj.grid_y && y < obj.grid_y + h) {
+        const isPath = obj.object_type === 'decoration' && obj.item_id === 'path';
+        if (!isPath) return obj;
+        if (!pathFallback) pathFallback = obj;
+      }
     }
-    return null;
+    return pathFallback;
   }
 
   _defFor(obj) {
