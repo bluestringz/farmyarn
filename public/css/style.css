@@ -1324,14 +1324,7 @@ body:has(.visiting-banner:not(.hidden)) .leaderboard-popup {
   max-width: 260px;
   height: 45%;
   max-height: 240px;
-  /* Deliberately LOW — below every other floating UI layer (side panel,
-     toolbar, popovers, chat, modals), so any of those showing on top of
-     this corner of the screen always wins the tap. This used to be the
-     highest z-index in the corner (60), which meant a Buy button or any
-     other UI content that happened to land over the joystick's zone
-     could get silently intercepted by it instead of actually being
-     tappable. */
-  z-index: 8;
+  z-index: 60;
   touch-action: none;
 }
 .joystick-base {

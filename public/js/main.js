@@ -1268,25 +1268,12 @@
       const savedColor = state.pendingBuildColors && state.pendingBuildColors[p.itemId];
       await Api.placeObject(p.category, p.itemId, p.x, p.y, p.rotation, location, savedColor);
       UI.toast('Placed!');
-      // Matches whichever tool was actually used to place this — a tree
-      // confirmed via Plant showed the 🏗️ Build icon above the character
-      // regardless before, one more "this still says Build" mismatch on
-      // top of the wrong picker reopening afterward (see below).
-      game.playAction(state.tool === 'plant' ? ACTION_ICON.plant : ACTION_ICON.build);
+      game.playAction(ACTION_ICON.build);
       clearPendingPlacement();
       if (state.inHouse) { await refreshInterior(); await openDecoratePicker(); }
       else {
         await refreshCurrentFarm();
-        // Reopen whichever picker actually matches the CURRENT tool —
-        // this used to always reopen the Build picker regardless, so
-        // confirming a tree (placed via Plant, moved there from Build)
-        // popped the Build panel back up right after, showing buildings/
-        // decorations instead of the seed & tree list the player was
-        // actually just looking at. Jarring and confusing on its own —
-        // "why is Build showing, I was using Plant" — even though the
-        // tree itself really did get placed correctly underneath it.
         if (state.tool === 'place-animal') await openAnimalPicker();
-        else if (state.tool === 'plant') await openSeedPicker();
         else await openBuildPicker();
       }
     } catch (err) {
@@ -1334,19 +1321,7 @@
         await refreshCurrentFarm();
       } else if (state.tool === 'plant') {
         if (state.viewingUserId || state.inHouse) return;
-        if (!state.buildSelection) { UI.toast('Pick a seed or tree first'); return; }
-        // Trees/fruit trees (category 'decoration', moved here from
-        // Build — see openSeedPicker) use the SAME preview/rotate/
-        // confirm placement flow as Build's other decorations, not the
-        // immediate "tap a plowed tile, done" flow actual crop seeds
-        // use — they don't need plowed ground, and placement itself
-        // still needs a confirm step (rotation, exact spot) the way any
-        // other decoration does.
-        if (state.buildSelection.category === 'decoration') {
-          showPendingPlacement(x, y);
-          return;
-        }
-        if (state.buildSelection.category !== 'crop') { UI.toast('Pick a seed first'); return; }
+        if (!state.buildSelection || state.buildSelection.category !== 'crop') { UI.toast('Pick a seed first'); return; }
         game.walkTo(x, y, null);
         const res = await Api.plant(x, y, state.buildSelection.itemId);
         if (res.energy !== undefined) state.me.energy = res.energy;
@@ -1565,7 +1540,6 @@
         game.walkTo(obj.grid_x, obj.grid_y, null);
         const res = await Api.waterDecoration(obj.id);
         state.me.coins = res.coins;
-        if (res.energy !== undefined) state.me.energy = res.energy;
         renderTopbar();
         UI.toast('Watered the sapling! 💧');
         game.playAction(ACTION_ICON.water);

@@ -379,10 +379,6 @@ module.exports = function farmRoutes(db, io) {
 
     const user = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
     if (user.coins < WATER_COST) return res.status(400).json({ error: `Watering costs ${WATER_COST} coin(s) — not enough coins` });
-    // Same energy cost as watering a crop — this route covers both the
-    // plain Tree and fruit trees alike (anything with growth state), so
-    // both get it for consistency rather than singling out fruit trees.
-    if (!spendEnergy(db, req.userId, 1)) return res.status(400).json({ error: 'Not enough energy' });
 
     const remaining = Math.max(0, growth.growthEndAt - t);
     growth.growthEndAt = growth.growthEndAt - Math.floor(remaining * 0.10);
@@ -392,8 +388,7 @@ module.exports = function farmRoutes(db, io) {
     db.prepare('UPDATE farm_objects SET state = ? WHERE id = ?').run(JSON.stringify(growth), obj.id);
 
     const updatedUser = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
-    const energy = resolveEnergy(db, req.userId);
-    res.json({ ok: true, objectId: obj.id, growthEndAt: growth.growthEndAt, coins: updatedUser.coins, energy });
+    res.json({ ok: true, objectId: obj.id, growthEndAt: growth.growthEndAt, coins: updatedUser.coins });
   });
 
   // ---- HARVEST A MATURE TREE (chops it down for logs) ----
