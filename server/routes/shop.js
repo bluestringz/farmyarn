@@ -738,6 +738,13 @@ function findOverlap(db, farmId, location, x, y, w, h, excludeId) {
     'SELECT * FROM farm_objects WHERE farm_id = ? AND location = ?' + (excludeId ? ' AND id != ?' : '')
   ).all(...(excludeId ? [farmId, location, excludeId] : [farmId, location]));
   for (const o of objects) {
+    // Path tiles are just colored/paved ground, not an occupying object
+    // — anything else can still be placed right on top of one, the same
+    // as bare grass would allow. Skipped here (rather than making every
+    // CALLER of findOverlap special-case it) so this holds everywhere
+    // this function is used, both placing something new and moving an
+    // existing object onto a path tile.
+    if (o.object_type === 'decoration' && o.item_id === 'path') continue;
     const def = lookupDefSync(db, o.object_type, o.item_id);
     const ow = def ? def.width || 1 : 1;
     const oh = def ? def.height || 1 : 1;
