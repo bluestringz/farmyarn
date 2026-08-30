@@ -623,13 +623,13 @@ module.exports = function shopRoutes(db) {
   });
 
   // POST /api/shop/collect-fruit { objectId } — Mango/Apple/Avocado trees
-  // only. Same "ready every production_seconds" shape as collecting from
-  // an animal, but ALSO has to still be within fruit_spoil_seconds of
-  // becoming ready — resolveFruitTreeSpoilage (called via serializeFarm
-  // on every /api/farm/me fetch) already fast-forwards past any fully-
-  // spoiled cycle before this ever runs, so if this route sees the tree
-  // as "ready", that batch is guaranteed to still genuinely be
-  // collectible right now, not a rotted-and-forgotten one.
+  // only. Once ready, a batch just waits there until actually collected
+  // — there's no upper time limit/spoilage here, and last_collected_at
+  // (which the NEXT cycle's readyAt is computed from, below) only moves
+  // forward at the moment of an actual collection, never on its own —
+  // so a tree that's gone uncollected for a while simply stays "ready"
+  // the whole time, and the next cycle doesn't start counting until
+  // whenever the player actually gets around to harvesting this one.
   router.post('/collect-fruit', (req, res) => {
     const { objectId } = req.body || {};
     const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);

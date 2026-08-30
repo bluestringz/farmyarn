@@ -1,6 +1,6 @@
 const express = require('express');
 const {
-  nowSec, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths, resolveFruitTreeSpoilage, resolveFruitTreeDeaths,
+  nowSec, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths, resolveFruitTreeDeaths,
   grantRewards, addInventory, notify,
   resolveEnergy, spendEnergy, addEnergy, xpProgress, rollHarvestQuantity,
 } = require('../lib/gameLogic');
@@ -23,7 +23,10 @@ module.exports = function farmRoutes(db, io) {
     resolveCropStates(db, farm.id);
     resolveAnimalDeaths(db, farm.id);
     resolveAnimalColdDeaths(db, farm.id);
-    resolveFruitTreeSpoilage(db, farm.id);
+    // No spoilage step anymore — ripe fruit just waits on the tree
+    // indefinitely until actually collected, instead of being fast-
+    // forwarded past uncollected cycles. resolveFruitTreeDeaths (old age,
+    // a separate lifespan-based mechanic) stays — see below.
     resolveFruitTreeDeaths(db, farm.id);
     const tiles = db.prepare('SELECT x, y, state FROM farm_tiles WHERE farm_id = ?').all(farm.id);
     const crops = db.prepare('SELECT * FROM crops WHERE farm_id = ?').all(farm.id);
@@ -63,8 +66,7 @@ module.exports = function farmRoutes(db, io) {
         // last_collected_at can genuinely be null pre-first-collection).
         const last = Math.max(obj.last_collected_at, growth.growthEndAt);
         const readyAt = last + decoType.production_seconds;
-        const spoilAt = readyAt + decoType.fruit_spoil_seconds;
-        return { ...obj, readyAt, ready: nowSec() >= readyAt, fruitSpoilsAt: spoilAt };
+        return { ...obj, readyAt, ready: nowSec() >= readyAt };
       }
       return obj;
     }

@@ -79,9 +79,9 @@ const UI = (() => {
     // decorations
     fence: 'Blocks walking — fences auto-connect to neighboring fence tiles, and you can route your farm paths around them.',
     tree: 'Plant it and water it — takes 2 days to grow into a full tree you can chop for logs.',
-    mango_tree: 'Plant it and water it — takes 1 day to mature, then produces Mangoes every 6 hours for 5 days. Collect within 1 hour of ripening or that batch rots.',
-    apple_tree: 'Plant it and water it — takes 1 day to mature, then produces Apples every 6 hours for 5 days. Collect within 1 hour of ripening or that batch rots.',
-    avocado_tree: 'Plant it and water it — takes 1 day to mature, then produces Avocados every 6 hours for 5 days. Collect within 1 hour of ripening or that batch rots.',
+    mango_tree: 'Plant it and water it — takes 1 day to mature, then produces Mangoes every 6 hours for 5 days before the tree dies of old age. Ripe fruit just waits on the tree until you collect it — the next batch starts counting once you do.',
+    apple_tree: 'Plant it and water it — takes 1 day to mature, then produces Apples every 6 hours for 5 days before the tree dies of old age. Ripe fruit just waits on the tree until you collect it — the next batch starts counting once you do.',
+    avocado_tree: 'Plant it and water it — takes 1 day to mature, then produces Avocados every 6 hours for 5 days before the tree dies of old age. Ripe fruit just waits on the tree until you collect it — the next batch starts counting once you do.',
     flower: 'Purely decorative flower bed to brighten up your farm.',
     bush: 'Purely decorative shrub for landscaping your farm.',
     hay_bale: 'Purely decorative — classic farm scenery.',

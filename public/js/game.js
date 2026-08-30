@@ -5051,6 +5051,32 @@ class FarmGame {
       ctx.ellipse(x + w / 2, y + h * 0.86, w * 0.34, h * 0.12, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
+
+      // Small falling-fruit particles — a clearer "there's ripe fruit
+      // here, go collect it" cue than the glow alone, especially at a
+      // glance while scanning a busy farm. Each particle loops on its
+      // own staggered cycle (t % cycleSeconds), drifting down from the
+      // canopy toward the ground and fading out near the bottom, using
+      // the tree's own fruit color so it still reads as "this tree's
+      // fruit" rather than a generic effect.
+      const fallCycle = 2.2; // seconds per particle's full fall-and-reset loop
+      const fallDrops = [
+        { startX: 0.4, offset: 0 },
+        { startX: 0.58, offset: 0.7 },
+        { startX: 0.48, offset: 1.4 },
+      ];
+      for (const drop of fallDrops) {
+        const localT = ((tt + drop.offset) % fallCycle) / fallCycle; // 0..1 progress through this particle's fall
+        const dropY = y + h * (0.42 + localT * 0.5);
+        const dropAlpha = localT < 0.85 ? 1 : 1 - (localT - 0.85) / 0.15; // fade out right at the end of the fall
+        ctx.save();
+        ctx.globalAlpha = dropAlpha * 0.9;
+        ctx.fillStyle = style.fruit;
+        ctx.beginPath();
+        ctx.arc(x + w * drop.startX, dropY, w * 0.035, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     }
   }
 

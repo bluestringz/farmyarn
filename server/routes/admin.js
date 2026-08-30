@@ -147,11 +147,15 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     // lifespan — 0 for every non-fruit-tree decoration, so those rows
     // just won't show meaningful values for those extra fields, same as
     // any other per-item field that doesn't apply to a given row).
-    decoration_types: ['growth_seconds', 'production_seconds', 'fruit_spoil_seconds', 'lifespan_seconds'],
+    // fruit_spoil_seconds is no longer surfaced here — ripe fruit
+    // doesn't spoil anymore (see /api/shop/collect-fruit), so the field
+    // still exists on the row but doesn't do anything an admin could
+    // meaningfully tune.
+    decoration_types: ['growth_seconds', 'production_seconds', 'lifespan_seconds'],
   };
   const TIMER_FIELD_LABELS = {
     growth_seconds: 'Growth Time', production_seconds: 'Production Time',
-    fruit_spoil_seconds: 'Fruit Spoil Time (uncollected)', lifespan_seconds: 'Lifespan (dies after)',
+    lifespan_seconds: 'Lifespan (dies after)',
   };
 
   // key -> { label, category } — category groups these in the admin UI
