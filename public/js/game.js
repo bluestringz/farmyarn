@@ -1871,11 +1871,31 @@ class FarmGame {
   _defFor(obj) {
     const catalog = window.GameCatalog;
     if (!catalog) return null;
-    const list = obj.object_type === 'building' ? catalog.buildings
-      : obj.object_type === 'decoration' ? catalog.decorations
-      : obj.object_type === 'interior' ? catalog.interiors
-      : catalog.animals;
-    return (list || []).find((d) => d.id === obj.item_id);
+    // Cached as a flat Map (object_type:item_id -> def) instead of a
+    // linear .find() scan through the relevant category array on every
+    // single call. This runs for EVERY visible object — often several
+    // times per object per frame (once for its depth-sort height, again
+    // to actually draw it, again for collision checks) — so on a
+    // well-developed farm with hundreds of placed objects, a linear
+    // scan through dozens of catalog entries per lookup adds up to real,
+    // general per-frame cost that scales with total object count,
+    // regardless of how powerful the hardware is — this wasn't
+    // something the zoom-based "low detail" optimizations touched at
+    // all, since it's not a decorative detail, it's baseline object
+    // lookup that happens no matter what. Rebuilt only when the catalog
+    // reference itself changes (effectively once, when it first loads).
+    if (this._defCacheCatalogRef !== catalog) {
+      this._defCacheCatalogRef = catalog;
+      this._defCache = new Map();
+      const categories = [
+        ['building', catalog.buildings], ['decoration', catalog.decorations],
+        ['interior', catalog.interiors], ['animal', catalog.animals],
+      ];
+      for (const [type, list] of categories) {
+        for (const d of (list || [])) this._defCache.set(`${type}:${d.id}`, d);
+      }
+    }
+    return this._defCache.get(`${obj.object_type}:${obj.item_id}`) || null;
   }
 
   _loop() {
