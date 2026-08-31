@@ -90,6 +90,7 @@
       <option value="material">🪵 Crafting Material</option>
       <option value="fruit">🍎 Fruit</option>
       <option value="interior">🛋️ Interior</option>
+      <option value="player_energy">⚡ Player Energy</option>
       <option value="__all__">Show Everything (all categories at once)</option>
     </select>
   </div>
@@ -290,6 +291,7 @@ const TABLE_LABELS = {
   // alongside fences/lamps/bonfires (see displayCategory in both
   // /shop-prices and /timers).
   'decoration_types:fruit_tree': '🍎 Fruit Tree',
+  player_energy: '⚡ Player Energy',
 };
 const FIELD_LABELS = { seed_cost: 'Seed Cost', sell_price: 'Sell Price', cost: 'Buy Cost', energy_restore: 'Energy Restored' };
 
@@ -305,6 +307,12 @@ const UNIFIED_TO_PRICES_TIMERS = {
   crop: 'crop_types', building: 'building_types', decoration: 'decoration_types', fruit_tree: 'decoration_types:fruit_tree',
   animal: 'animal_types', animal_product: 'item_types:animal_product', feed: 'item_types:feed', food: 'item_types:food',
   material: 'item_types:material', fruit: 'item_types:fruit', interior: 'interior_types',
+  // Global player-wide timers (not per-item) — energy regen rate is the
+  // only one of these so far, unlike everything else above which maps
+  // to a real database table's naming scheme. Only meaningful for
+  // Timers (Prices/Stock have no player-energy-related rows at all, so
+  // picking this in the shared filter correctly shows nothing there).
+  player_energy: 'player_energy',
 };
 const UNIFIED_TO_STOCK = {
   crop: 'crop', building: 'building', decoration: 'decoration', fruit_tree: 'decoration:fruit_tree',

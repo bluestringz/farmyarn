@@ -165,6 +165,8 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     crop_wither_unharvested_seconds: { label: 'Crop withers if left un-harvested', category: 'crop_types' },
     animal_starve_seconds: { label: 'Animal dies if not fed', category: 'animal_types' },
     animal_cold_death_seconds: { label: 'Animal dies if left cold (no Fireplace/Bonfire nearby at night)', category: 'animal_types' },
+    energy_regen_seconds: { label: 'Energy regen rate (normal)', category: 'player_energy' },
+    energy_regen_seconds_resting: { label: 'Energy regen rate (while resting on a chair/bed/bench)', category: 'player_energy' },
   };
 
   // GET /api/admin/timers — every tunable timer, per-item AND global,

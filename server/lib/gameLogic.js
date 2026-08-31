@@ -45,6 +45,8 @@ const DEFAULT_TIMERS = {
   crop_wither_unharvested_seconds: 12 * 3600,
   animal_starve_seconds: 24 * 3600,
   animal_cold_death_seconds: 4 * 3600,
+  energy_regen_seconds: 3 * 60,
+  energy_regen_seconds_resting: 2 * 60,
 };
 
 // Reads one tunable global timer (in seconds) from game_settings, falling
@@ -274,13 +276,10 @@ function notify(db, userId, type, message) {
 // long it's been since energy_updated_at, the same pattern crops use for
 // growth — no background job needed, it just settles on read.
 const MAX_ENERGY = 1000;
-const ENERGY_REGEN_SECONDS = 3 * 60; // 1 point per 3 minutes, normal
-const ENERGY_REGEN_SECONDS_RESTING = 2 * 60; // 1 point per 2 minutes, while resting
-
 function resolveEnergy(db, userId) {
   const user = db.prepare('SELECT energy, energy_updated_at, is_resting FROM users WHERE id = ?').get(userId);
   if (!user) return null;
-  const regenSeconds = user.is_resting ? ENERGY_REGEN_SECONDS_RESTING : ENERGY_REGEN_SECONDS;
+  const regenSeconds = getTimerSetting(db, user.is_resting ? 'energy_regen_seconds_resting' : 'energy_regen_seconds');
   const elapsed = nowSec() - (user.energy_updated_at || nowSec());
   const regen = Math.floor(elapsed / regenSeconds);
   if (regen <= 0 || user.energy >= MAX_ENERGY) return user.energy;
