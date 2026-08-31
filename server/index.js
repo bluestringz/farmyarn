@@ -176,7 +176,15 @@ io.on('connection', (socket) => {
     socket.join(space);
     socket.currentSpace = space;
     if (!spaceOccupants.has(space)) spaceOccupants.set(space, new Map());
-    const info = { userId: uid, username: socket.username, x: x || 0, y: y || 0, appearance: appearance || null };
+    // Freshly fetched from the DB (not the JWT, which only has the raw
+    // username baked in at login and can go stale if the player changes
+    // their display name mid-session) — this is what actually gets
+    // shown above another player's head in-game (see the username tag
+    // in game.js), so it should reflect whatever they've currently set
+    // it to, not their account username.
+    const userRow = db.prepare('SELECT display_name FROM users WHERE id = ?').get(uid);
+    const displayName = (userRow && userRow.display_name) || socket.username;
+    const info = { userId: uid, username: socket.username, displayName, x: x || 0, y: y || 0, appearance: appearance || null };
     spaceOccupants.get(space).set(uid, info);
 
     // tell the newly-joined player who's already here, and tell everyone else about them

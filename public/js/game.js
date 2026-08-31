@@ -427,6 +427,7 @@ class FarmGame {
     const wx = (data.x || 0) * TILE + TILE / 2, wy = (data.y || 0) * TILE + TILE / 2;
     if (existing) {
       existing.username = data.username;
+      existing.displayName = data.displayName;
       if (data.appearance) Object.assign(existing, data.appearance);
       return;
     }
@@ -434,6 +435,7 @@ class FarmGame {
       x: wx, y: wy, targetX: wx, targetY: wy, facing: 1, facingDir: 'down',
       walkFrame: 0, walkFrameTimer: 0, moving: false, bob: 0,
       username: data.username,
+      displayName: data.displayName,
       gender: (data.appearance && data.appearance.gender) || 'male',
       shirtColor: (data.appearance && data.appearance.shirtColor) || '#5a8fc9',
       pantsColor: (data.appearance && data.appearance.pantsColor) || '#3f6a9c',
@@ -3673,16 +3675,21 @@ class FarmGame {
       ctx.restore();
     }
 
-    // username tag
+    // username tag — shows the player's chosen "Name in Game" (display
+    // name) instead of their raw account username, matching how the
+    // local player's own topbar already shows displayName over username
+    // — falls back to username only if this remote player's socket
+    // presence data somehow didn't include one.
+    const label = c.displayName || c.username;
     ctx.font = 'bold 10px Nunito, sans-serif';
     ctx.textAlign = 'center';
     const tagY = groundY - 100;
-    const tw = ctx.measureText(c.username).width;
+    const tw = ctx.measureText(label).width;
     ctx.fillStyle = 'rgba(94,59,31,0.8)';
     this._roundRect(cx - tw / 2 - 5, tagY - 11, tw + 10, 15, 7);
     ctx.fill();
     ctx.fillStyle = '#fff6e3';
-    ctx.fillText(c.username, cx, tagY - 3);
+    ctx.fillText(label, cx, tagY - 3);
 
     if (c.chatText && c.chatTimer > 0) {
       this._drawSpeechBubble(cx, tagY - 20, c.chatText);
