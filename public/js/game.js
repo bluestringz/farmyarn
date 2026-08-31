@@ -4851,6 +4851,43 @@ class FarmGame {
     ctx.restore();
   }
 
+  // Offscreen sprite cache for objects whose appearance never changes
+  // once drawn (a mature Tree, for instance) — re-executing dozens of
+  // individual canvas draw calls (arcs, fills, strokes) for every one of
+  // potentially hundreds of identical trees, every single frame, was
+  // real, measurable cost that scaled directly with how developed a farm
+  // was — exactly the kind of thing browser performance tools flag as
+  // slow frame time even on fast hardware, regardless of zoom level
+  // (unlike the tile-rendering low-detail mode, this isn't about how
+  // much is on screen, it's about redoing identical work for every
+  // instance of the same-looking object every frame). Rendered ONCE per
+  // distinct look (whatever cacheKey the caller picks) to an offscreen
+  // canvas at a fixed reference resolution, then every later draw is a
+  // single cheap drawImage() blit instead of re-walking the whole vector
+  // path again. drawFn runs with `this.ctx` TEMPORARILY redirected to
+  // the offscreen context, so it can reuse the exact same drawing
+  // methods (_groundShadow, _drawDecorationShape, etc.) unmodified —
+  // always restored in a finally, even if drawFn throws.
+  _getCachedSprite(cacheKey, refSize, drawFn) {
+    if (!this._spriteCache) this._spriteCache = new Map();
+    let cached = this._spriteCache.get(cacheKey);
+    if (!cached) {
+      const off = document.createElement('canvas');
+      off.width = refSize;
+      off.height = refSize;
+      const realCtx = this.ctx;
+      this.ctx = off.getContext('2d');
+      try {
+        drawFn(refSize);
+      } finally {
+        this.ctx = realCtx;
+      }
+      cached = off;
+      this._spriteCache.set(cacheKey, cached);
+    }
+    return cached;
+  }
+
   _groundShadow(px, py, pw, ph) {
     const ctx = this.ctx;
     ctx.fillStyle = 'rgba(30,40,10,0.22)';
@@ -4939,7 +4976,17 @@ class FarmGame {
     const matured = progress >= 1 && !!growthState.watered;
 
     if (matured) {
-      this._drawDecorationShape(ctx, style, x, y, w, h);
+      // Cache key is just 'tree_mature' — this function only ever
+      // handles the plain regular Tree (fruit trees have their own
+      // _drawFruitTree, which keeps its own separate caching concern
+      // since it needs an animated ready-glow/falling-fruit overlay on
+      // top), so there's only ever this one distinct static look to cache.
+      const REF = 192;
+      const sprite = this._getCachedSprite('tree_mature', REF, () => {
+        this._groundShadow(0, 0, REF, REF);
+        this._drawDecorationShape(this.ctx, style, 0, 0, REF, REF);
+      });
+      ctx.drawImage(sprite, x, y, w, h);
       return;
     }
 
