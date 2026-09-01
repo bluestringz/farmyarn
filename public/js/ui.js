@@ -3,6 +3,52 @@
 // and wires these render functions to data + event handlers.
 
 const UI = (() => {
+  // Shared per-item icon lookup — every item's OWN icon (what it actually
+  // is / produces) instead of a single generic icon per broad category
+  // (a sprout for every seed, an egg for every non-crop good, a plate
+  // for every dish, a box for every placeable). Used everywhere an item
+  // shows up: the Bag, the Plant/Build pickers, Storage/Refrigerator,
+  // the Marketplace stall editor, etc. — one map, kept consistent
+  // instead of each panel inventing its own (partial, inconsistent)
+  // icon logic.
+  const ITEM_ICONS = {
+    // Crops (produce) — the same icon covers that crop's SEED too
+    // (a "wheat seed" reasonably shows the same 🌾 as harvested wheat).
+    wheat: '🌾', rice: '🍚', corn: '🌽', carrot: '🥕', potato: '🥔',
+    tomato: '🍅', strawberry: '🍓', pumpkin: '🎃',
+    // Animal products
+    egg: '🥚', milk: '🥛', wool: '🧶', truffle: '🍄',
+    // Feed — the animal it's FOR, not a generic feed-bag icon
+    chicken_feed: '🐔', sheep_feed: '🐑', pig_feed: '🐷', cow_feed: '🐄',
+    // Materials
+    log: '🪵',
+    // Fruit (harvested) and fruit trees (placeable) share an icon
+    mango: '🥭', apple: '🍎', avocado: '🥑',
+    mango_tree: '🥭', apple_tree: '🍎', avocado_tree: '🥑', tree: '🪵',
+    // Cooked food
+    bread: '🍞', rice_bowl: '🍚', corn_soup: '🌽', carrot_stew: '🥕',
+    mashed_potato: '🥔', tomato_soup: '🍅', strawberry_cake: '🍰',
+    pumpkin_pie: '🥧', fried_egg: '🍳', milkshake: '🥤',
+    truffle_dish: '🍄', ice_cream: '🍦', hotdog: '🌭',
+    // Buildings
+    farmhouse: '🏠', chicken_coop: '🐔', cow_barn: '🐄', barn: '🐄',
+    mansion: '🏰', silo: '🌾', workshop: '🔨', storage_shed: '📦',
+    market_stall: '🏪', well: '💧',
+    // Decorations
+    fence: '🚧', lamp: '💡', bench: '🪑', pond: '🌊', sign: '🪧',
+    flower: '🌷', path: '🟫', bush: '🌳', bonfire: '🔥', hay_bale: '🌾',
+    potted_plant: '🪴', painting: '🖼️', fireplace: '🔥', stove: '🍳',
+    bookshelf: '📚', wall: '🧱', staircase: '🪜',
+    // Interior furniture (including the Workshop-crafted versions)
+    bed: '🛏️', crafted_bed: '🛏️', chair: '🪑', crafted_chair: '🪑',
+    table: '🍽️', side_table: '🪑', cabinet: '🗄️', crafted_cabinet: '🗄️',
+    closet: '🚪', refrigerator: '🧊', rug: '🟫', tv: '📺',
+    table_lamp: '💡', wall_light: '💡', aircon: '❄️',
+    crafted_bench: '🪑', crafted_bookshelf: '📚',
+    // Animals (placeable)
+    chicken: '🐔', cow: '🐄', pig: '🐷', sheep: '🐑',
+  };
+
   function toast(message) {
     const stack = document.getElementById('toast-stack');
     const el = document.createElement('div');
@@ -406,9 +452,9 @@ const UI = (() => {
 
     const nameFor = (id) => {
       const crop = catalog.crops.find((c) => c.id === id);
-      if (crop) return { name: crop.name, price: crop.sell_price, icon: '🌾' };
+      if (crop) return { name: crop.name, price: crop.sell_price, icon: ITEM_ICONS[id] || '🌾' };
       const item = (catalog.items || []).find((i) => i.id === id);
-      return { name: item ? item.name : id, price: item ? item.sell_price : 0, icon: '🥚' };
+      return { name: item ? item.name : id, price: item ? item.sell_price : 0, icon: ITEM_ICONS[id] || '❔' };
     };
     const placeableNameFor = (invId) => {
       for (const prefix of placeablePrefixes) {
@@ -416,11 +462,12 @@ const UI = (() => {
           const cat = prefix.slice(0, -1);
           const list = cat === 'building' ? catalog.buildings : cat === 'decoration' ? catalog.decorations
             : cat === 'animal' ? catalog.animals : catalog.interiors;
-          const def = (list || []).find((d) => d.id === invId.slice(prefix.length));
-          return { name: def ? def.name : invId, tool: cat === 'interior' ? 'Decorate' : 'Build' };
+          const rawId = invId.slice(prefix.length);
+          const def = (list || []).find((d) => d.id === rawId);
+          return { name: def ? def.name : invId, tool: cat === 'interior' ? 'Decorate' : 'Build', icon: ITEM_ICONS[rawId] || '📦' };
         }
       }
-      return { name: invId, tool: 'Build' };
+      return { name: invId, tool: 'Build', icon: '📦' };
     };
 
     let html = '';
@@ -431,7 +478,7 @@ const UI = (() => {
         const meta = nameFor(cropId);
         return `
           <div class="list-row">
-            <div class="row-icon">🌱</div>
+            <div class="row-icon">${meta.icon}</div>
             <div class="row-main">
               <div class="row-title">${meta.name} seeds × ${row.quantity}</div>
               <div class="row-sub">Plant tool to sow • sell these at a Marketplace stall, set your own price</div>
@@ -445,7 +492,7 @@ const UI = (() => {
         const meta = placeableNameFor(row.item_id);
         return `
           <div class="list-row">
-            <div class="row-icon">📦</div>
+            <div class="row-icon">${meta.icon}</div>
             <div class="row-main">
               <div class="row-title">${meta.name} × ${row.quantity}</div>
               <div class="row-sub">Use the ${meta.tool} tool to place ${row.quantity > 1 ? 'one' : 'it'}</div>
@@ -477,7 +524,7 @@ const UI = (() => {
         const meta = nameFor(row.item_id);
         return `
           <div class="list-row">
-            <div class="row-icon">🍽️</div>
+            <div class="row-icon">${ITEM_ICONS[row.item_id] || '🍽️'}</div>
             <div class="row-main">
               <div class="row-title">${meta.name} × ${row.quantity}</div>
               <div class="row-sub">Eat for ⚡+${FOOD_ITEMS[row.item_id]} energy</div>
@@ -764,20 +811,6 @@ const UI = (() => {
   function renderPicker(el, items, kind, player, onPick, selectedId) {
     if (!items.length) { el.classList.add('hidden'); return; }
     const GLYPH_BY_CATEGORY = { crops: '🌱', building: '🏗️', animal: '🐾', decoration: '🌷', interior: '🛋️' };
-    // Per-item icon showing what each seed/tree actually PRODUCES (its
-    // real fruit/crop) rather than one generic sprout/flower glyph for
-    // the whole list — much easier to spot the one you want at a glance
-    // instead of reading every name. Checked first, before the
-    // category-wide fallback below.
-    const PRODUCE_ICONS = {
-      wheat: '🌾', corn: '🌽', carrot: '🥕', potato: '🥔', tomato: '🍅',
-      strawberry: '🍓', pumpkin: '🎃',
-      tree: '🪵', mango_tree: '🥭', apple_tree: '🍎', avocado_tree: '🥑',
-      // Feed types too — the animal it's FOR, not a generic feed-bag icon,
-      // so it's obvious at a glance which feed matches which animal
-      // instead of having to read each name.
-      chicken_feed: '🐔', sheep_feed: '🐑', pig_feed: '🐷', cow_feed: '🐄',
-    };
     el.innerHTML = items.map((item) => {
       const cost = item.seed_cost ?? item.cost;
       const locked = player.level < item.required_level;
@@ -786,7 +819,7 @@ const UI = (() => {
       // via openBuildPicker) — glyph per actual item category (item._cat),
       // not one fixed icon for the whole list, so an animal doesn't show
       // up looking like a building/decoration.
-      const glyph = PRODUCE_ICONS[item.id] || GLYPH_BY_CATEGORY[item._cat] || GLYPH_BY_CATEGORY[kind] || '❔';
+      const glyph = ITEM_ICONS[item.id] || GLYPH_BY_CATEGORY[item._cat] || GLYPH_BY_CATEGORY[kind] || '❔';
       const owned = item._owned;
       const selected = item.id === selectedId;
       return `<button class="picker-item ${locked ? 'disabled' : ''} ${selected ? 'selected' : ''}" data-id="${item.id}" ${locked ? 'disabled' : ''}>
