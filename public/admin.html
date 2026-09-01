@@ -928,17 +928,26 @@ document.getElementById('export-players-btn').addEventListener('click', async ()
   }
 });
 
-// Populate the Send to All item dropdown once — same option list as the
+// Populate the Send to All dropdown once — currencies first (own
+// optgroup, prefixed "currency:" so the click handler below can tell
+// them apart from a regular item id), then the same item list as the
 // per-player "Give Material" action's dropdown (see renderActionArea),
 // just applied to every player instead of one.
+const SEND_ALL_CURRENCY_OPTIONS = [
+  { id: 'currency:coins', label: '🪙 Coins' },
+  { id: 'currency:energy', label: '⚡ Energy' },
+  { id: 'currency:premium', label: '💎 Premium Points' },
+  { id: 'currency:gm_points', label: '🔶 GM Points' },
+];
 document.getElementById('send-all-item-select').innerHTML =
-  GIFT_ALL_OPTIONS.map((m) => `<option value="${m.id}">${m.label}</option>`).join('');
+  `<optgroup label="Currencies">${SEND_ALL_CURRENCY_OPTIONS.map((m) => `<option value="${m.id}">${m.label}</option>`).join('')}</optgroup>` +
+  `<optgroup label="Items">${GIFT_ALL_OPTIONS.map((m) => `<option value="${m.id}">${m.label}</option>`).join('')}</optgroup>`;
 
 document.getElementById('send-all-btn').addEventListener('click', async () => {
   const itemSelect = document.getElementById('send-all-item-select');
   const qtyInput = document.getElementById('send-all-qty-input');
   const statusEl = document.getElementById('send-all-status');
-  const itemId = itemSelect.value;
+  const selectedValue = itemSelect.value;
   const quantity = parseInt(qtyInput.value, 10);
   if (!Number.isFinite(quantity) || quantity < 1) return alert('Enter a valid quantity.');
   const itemLabel = itemSelect.options[itemSelect.selectedIndex].textContent;
@@ -950,7 +959,12 @@ document.getElementById('send-all-btn').addEventListener('click', async () => {
   btn.disabled = true;
   statusEl.textContent = '';
   try {
-    const res = await api('POST', '/api/admin/give-item-all', { itemId, quantity });
+    // "currency:coins" etc. -> give-currency-all; anything else is a
+    // plain inventory item id -> give-item-all, same as before.
+    const isCurrency = selectedValue.startsWith('currency:');
+    const res = isCurrency
+      ? await api('POST', '/api/admin/give-currency-all', { currencyType: selectedValue.slice('currency:'.length), amount: quantity })
+      : await api('POST', '/api/admin/give-item-all', { itemId: selectedValue, quantity });
     statusEl.textContent = `✅ Sent to ${res.playersAffected} player${res.playersAffected === 1 ? '' : 's'}.`;
   } catch (err) {
     statusEl.textContent = '';

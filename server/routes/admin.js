@@ -542,6 +542,44 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     res.json({ ok: true, itemId, quantity: qty, playersAffected: userIds.length });
   });
 
+  // POST /api/admin/give-currency-all { currencyType, amount } — same
+  // sitewide-broadcast idea as give-item-all, but for Coins/Energy/
+  // Premium Points/GM Points instead of an inventory item, reusing the
+  // exact same per-player logic as the single-player give-premium/
+  // give-gm-points routes and set-energy's MAX_ENERGY cap (Coins has no
+  // cap; Energy is topped-up-and-capped since "add energy past the cap"
+  // doesn't mean anything, PP/GM are additive with a floor of 0 like
+  // their single-player routes).
+  router.post('/give-currency-all', (req, res) => {
+    const { currencyType, amount } = req.body || {};
+    const amt = parseInt(amount, 10);
+    if (!Number.isFinite(amt) || amt === 0) return res.status(400).json({ error: 'amount must be a non-zero number' });
+    if (currencyType === 'energy') {
+      if (amt < 0) return res.status(400).json({ error: 'Energy can only be topped up, not reduced, from here' });
+      const users = db.prepare('SELECT id, energy FROM users').all();
+      const tx = db.transaction(() => {
+        for (const u of users) {
+          const capped = Math.min(MAX_ENERGY, (u.energy || 0) + amt);
+          db.prepare('UPDATE users SET energy = ?, energy_updated_at = ? WHERE id = ?').run(capped, nowSec(), u.id);
+        }
+      });
+      tx();
+      return res.json({ ok: true, currencyType, amount: amt, playersAffected: users.length });
+    }
+    const CURRENCY_COLUMNS = { coins: 'coins', premium: 'premium_currency', gm_points: 'gm_points' };
+    const column = CURRENCY_COLUMNS[currencyType];
+    if (!column) return res.status(400).json({ error: 'Unknown currency type' });
+    const users = db.prepare(`SELECT id, ${column} AS bal FROM users`).all();
+    const tx = db.transaction(() => {
+      for (const u of users) {
+        const newBalance = Math.max(0, (u.bal || 0) + amt);
+        db.prepare(`UPDATE users SET ${column} = ? WHERE id = ?`).run(newBalance, u.id);
+      }
+    });
+    tx();
+    res.json({ ok: true, currencyType, amount: amt, playersAffected: users.length });
+  });
+
   router.post('/players/:id/ban', (req, res) => {
     const { banned } = req.body || {};
     db.prepare('UPDATE users SET is_banned = ? WHERE id = ?').run(banned ? 1 : 0, req.params.id);
