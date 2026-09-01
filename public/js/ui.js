@@ -23,9 +23,19 @@ const UI = (() => {
   function openPanel(title) {
     document.getElementById('side-panel-title').textContent = title;
     document.getElementById('side-panel').classList.remove('hidden');
+    // The floating toolbar/joystick sit on top of the canvas — with a
+    // side panel like Bag/Shop open, they used to just stay there,
+    // right in the middle of the panel's own content, blocking it
+    // instead of stepping out of the way like any other overlay should.
+    document.getElementById('toolbar').classList.add('panel-open-hide');
+    const joystickZone = document.getElementById('joystick-zone');
+    if (joystickZone) joystickZone.classList.add('panel-open-hide');
   }
   function closePanel() {
     document.getElementById('side-panel').classList.add('hidden');
+    document.getElementById('toolbar').classList.remove('panel-open-hide');
+    const joystickZone = document.getElementById('joystick-zone');
+    if (joystickZone) joystickZone.classList.remove('panel-open-hide');
   }
   function panelBody() {
     return document.getElementById('side-panel-body');

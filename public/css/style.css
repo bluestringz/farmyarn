@@ -608,6 +608,17 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
      tap here from cleanly registering as a normal button tap instead of
      being treated like a canvas gesture underneath. */
   touch-action: manipulation;
+  /* Slides fully off-screen (not just faded/hidden) whenever a side
+     panel like Bag/Shop is open — see openPanel/closePanel in ui.js —
+     instead of sitting there overlapping the panel's own content.
+     transform, not display:none, so this can transition smoothly and
+     the toolbar's own internal state (which tab/tool is active) isn't
+     disturbed by being removed from the layout. */
+  transition: transform 0.18s ease;
+}
+.toolbar.panel-open-hide {
+  transform: translateX(120%);
+  pointer-events: none;
 }
 /* Small strip of 3 tabs above the actual tool buttons — only ONE group of
    ~5-6 tools shows at a time (whichever tab is active) instead of all 16
@@ -1333,6 +1344,12 @@ body:has(.visiting-banner:not(.hidden)) .leaderboard-popup {
      tappable. */
   z-index: 8;
   touch-action: none;
+}
+.joystick-zone.panel-open-hide {
+  /* Not visually moved (it's invisible until touched anyway) — just
+     disabled so it can't intercept a touch meant for the panel now
+     covering this corner of the screen while Bag/Shop/etc. is open. */
+  pointer-events: none;
 }
 .joystick-base {
   position: absolute;
