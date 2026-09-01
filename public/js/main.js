@@ -193,7 +193,7 @@
     // doesn't accidentally walk in.
     game.onReachBuildingEntry = (obj) => {
       if (state.inHouse) return;
-      if (state.tool === 'build' || state.tool === 'plow' || state.tool === 'plant' || state.tool === 'harvest'
+      if (state.tool === 'build' || state.tool === 'plow' || state.tool === 'unplow' || state.tool === 'plant' || state.tool === 'harvest'
           || state.tool === 'move' || state.tool === 'remove') return;
       if (obj.item_id === 'farmhouse') {
         walkToDoorAndEnter(obj, enterHouse);
@@ -949,7 +949,7 @@
     // walks over a tile (WASD/joystick), not just on a tap — see
     // _updateFreeRoamMovement in game.js. Tapping a specific tile still
     // works exactly as it always did regardless of this.
-    const AUTO_APPLY_TOOLS = new Set(['plow', 'water', 'plant', 'harvest', 'feed']);
+    const AUTO_APPLY_TOOLS = new Set(['plow', 'unplow', 'water', 'plant', 'harvest', 'feed']);
     game.setAutoApplyToolActive(AUTO_APPLY_TOOLS.has(tool));
     updateAutoApplySelectionReady(); // buildSelection/selectedFeedId were both just cleared above, so this correctly reads as "not ready yet" for Plant/Feed until something's actually picked
     document.querySelectorAll('.tool-btn').forEach((btn) => {
@@ -958,8 +958,8 @@
     // Swap the canvas cursor to match, so the pointer itself shows what
     // you're about to do to a tile — same tiny icon set as ACTION_ICON.
     const canvas = document.getElementById('farm-canvas');
-    canvas.classList.remove('tool-plow', 'tool-plant', 'tool-water', 'tool-harvest', 'tool-build', 'tool-feed');
-    const CURSOR_TOOLS = new Set(['plow', 'plant', 'water', 'harvest', 'build', 'feed']);
+    canvas.classList.remove('tool-plow', 'tool-unplow', 'tool-plant', 'tool-water', 'tool-harvest', 'tool-build', 'tool-feed');
+    const CURSOR_TOOLS = new Set(['plow', 'unplow', 'plant', 'water', 'harvest', 'build', 'feed']);
     if (tool && CURSOR_TOOLS.has(tool)) canvas.classList.add(`tool-${tool}`);
     // Watering supports hold-and-drag across a whole plot instead of one
     // tap per tile — every other tool keeps the normal single-tap
@@ -1325,12 +1325,20 @@
       if (state.tool === 'plow') {
         if (state.viewingUserId || state.inHouse) return;
         game.walkTo(x, y, null);
-        const res = await Api.plow(x, y);
+        const res = await Api.plow(x, y, 'plow');
+        if (res.noop) return; // already plowed — walked over it, nothing to do, no toast spam
         if (res.energy !== undefined) state.me.energy = res.energy;
         renderTopbar();
-        const wasPlowed = res.tile.state === 'plowed';
-        UI.toast(wasPlowed ? 'Plowed!' : 'Un-plowed');
-        game.playAction(wasPlowed ? ACTION_ICON.plow : ACTION_ICON.unplow);
+        UI.toast('Plowed!');
+        game.playAction(ACTION_ICON.plow);
+        await refreshCurrentFarm();
+      } else if (state.tool === 'unplow') {
+        if (state.viewingUserId || state.inHouse) return;
+        game.walkTo(x, y, null);
+        const res = await Api.plow(x, y, 'unplow');
+        if (res.noop) return; // already grass — nothing to do
+        UI.toast('Un-plowed');
+        game.playAction(ACTION_ICON.unplow);
         await refreshCurrentFarm();
       } else if (state.tool === 'plant') {
         if (state.viewingUserId || state.inHouse) return;
@@ -1659,7 +1667,7 @@
       }
       return;
     }
-    if (state.tool === 'plow' || state.tool === 'plant' || state.tool === 'harvest') {
+    if (state.tool === 'plow' || state.tool === 'unplow' || state.tool === 'plant' || state.tool === 'harvest') {
       UI.toast('There is something built here.');
       return;
     }

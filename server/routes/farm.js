@@ -216,7 +216,7 @@ module.exports = function farmRoutes(db, io) {
   // ---- PLOW (also doubles as UNDO PLOW: tapping an already-plowed, empty
   // tile reverts it to grass, in case a plow was placed by mistake) ----
   router.post('/plow', (req, res) => {
-    const { x, y } = req.body || {};
+    const { x, y, action } = req.body || {}; // action: 'plow' | 'unplow' — which direction this specific tap/tool actually intends
     const farm = getOwnFarm(req.userId);
     if (!farm || !inBounds(farm, x, y)) return res.status(400).json({ error: 'Invalid tile' });
 
@@ -224,15 +224,29 @@ module.exports = function farmRoutes(db, io) {
     if (!tile) return res.status(400).json({ error: 'Invalid tile' });
 
     if (tile.state === 'grass') {
+      // Plow and Unplow are now two SEPARATE tools/buttons (Unplow moved
+      // to the Remove group) instead of one Plow button that silently
+      // toggled direction depending on the tile's current state — that
+      // used to mean walking over an ALREADY-plowed tile with Plow still
+      // selected (auto-apply-while-walking) would undo it right back to
+      // grass, which read as accidentally wasting the work already put
+      // into it. Each tool now only ever does its OWN direction — this
+      // is a quiet, silent no-op (not an error toast) when called from
+      // the "wrong" direction so walking around with either selected
+      // doesn't spam a toast on every tile that's already in the state
+      // it's checking for.
+      if (action === 'unplow') return res.json({ ok: true, noop: true, tile: { x, y, state: 'grass' } });
       if (!spendEnergy(db, req.userId, 1)) return res.status(400).json({ error: 'Not enough energy' });
       db.prepare('UPDATE farm_tiles SET state = ? WHERE id = ?').run('plowed', tile.id);
       return res.json({ ok: true, tile: { x, y, state: 'plowed' }, energy: resolveEnergy(db, req.userId) });
     }
 
     if (tile.state === 'plowed') {
+      if (action === 'plow') return res.json({ ok: true, noop: true, tile: { x, y, state: 'plowed' } });
       const crop = db.prepare('SELECT * FROM crops WHERE farm_id = ? AND tile_x = ? AND tile_y = ?').get(farm.id, x, y);
       if (crop) return res.status(400).json({ error: 'Cannot un-plow a tile with a crop on it' });
-      // Undoing a plow is free (no energy cost) — it's just correcting a misclick.
+      // Un-plowing is free (no energy cost) — it's just correcting a
+      // misclick / clearing ground you've decided not to plant on.
       db.prepare('UPDATE farm_tiles SET state = ? WHERE id = ?').run('grass', tile.id);
       return res.json({ ok: true, tile: { x, y, state: 'grass' } });
     }

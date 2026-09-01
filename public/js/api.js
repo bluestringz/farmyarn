@@ -113,7 +113,7 @@ const Api = (() => {
       const base = opts && opts.ownerId ? `/api/farm/${opts.ownerId}/interior` : '/api/farm/me/interior';
       return request('GET', `${base}${qs ? `?${qs}` : ''}`);
     },
-    plow: (x, y) => request('POST', '/api/farm/plow', { x, y }),
+    plow: (x, y, action) => request('POST', '/api/farm/plow', { x, y, action }),
     plant: (x, y, cropType) => request('POST', '/api/farm/plant', { x, y, cropType }),
     water: (x, y, ownerId) => request('POST', '/api/farm/water', { x, y, ownerId }),
     waterDecoration: (objectId) => request('POST', '/api/farm/water-decoration', { objectId }),
