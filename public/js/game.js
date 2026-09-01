@@ -4964,6 +4964,33 @@ class FarmGame {
     // A real 90°-step spin — decorations are 1×1 (except pond at 2×2,
     // which is symmetric anyway), so there's no footprint-swap concern
     // like there was for non-square furniture.
+    // Same idea as the mature-Tree cache — any OTHER decoration shape
+    // that's purely static (no growth animation, no per-instance dynamic
+    // content) gets rendered once to an offscreen sprite and blitted from
+    // then on, instead of re-walking its vector path every frame for
+    // every instance. Skips 'sign' (each one can carry different custom
+    // text) and crafted variants (still needs its own uncached wood-grain
+    // overlay layered on after, so caching just the base shape wouldn't
+    // save much there). Rotation is applied to the CANVAS around the
+    // cached (always unrotated) sprite, not baked into the cache itself,
+    // so one cached image covers every rotation of that item.
+    if (!isCrafted && itemId !== 'sign') {
+      const REF = 192;
+      const sprite = this._getCachedSprite(`decoration_${itemId}`, REF, () => {
+        this._drawDecorationShape(this.ctx, style, 0, 0, REF, REF);
+      });
+      if (rotation) {
+        ctx.save();
+        ctx.translate(x + w / 2, y + h / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
+        ctx.restore();
+      } else {
+        ctx.drawImage(sprite, x, y, w, h);
+      }
+      return;
+    }
+
     if (rotation) {
       ctx.save();
       ctx.translate(x + w / 2, y + h / 2);
