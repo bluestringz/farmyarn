@@ -4966,15 +4966,23 @@ class FarmGame {
     // like there was for non-square furniture.
     // Same idea as the mature-Tree cache — any OTHER decoration shape
     // that's purely static (no growth animation, no per-instance dynamic
-    // content) gets rendered once to an offscreen sprite and blitted from
-    // then on, instead of re-walking its vector path every frame for
-    // every instance. Skips 'sign' (each one can carry different custom
-    // text) and crafted variants (still needs its own uncached wood-grain
-    // overlay layered on after, so caching just the base shape wouldn't
-    // save much there). Rotation is applied to the CANVAS around the
-    // cached (always unrotated) sprite, not baked into the cache itself,
-    // so one cached image covers every rotation of that item.
-    if (!isCrafted && itemId !== 'sign') {
+    // content, no ongoing time-based animation of its own) gets rendered
+    // once to an offscreen sprite and blitted from then on, instead of
+    // re-walking its vector path every frame for every instance. Skips:
+    //  - 'sign' (each one can carry different custom text)
+    //  - crafted variants (still needs its own uncached wood-grain
+    //    overlay layered on after, so caching just the base shape
+    //    underneath wouldn't save much there)
+    //  - 'lamp'/'bonfire' (both have their own continuously-animated
+    //    firefly/ember particles drawn via performance.now() — caching
+    //    would freeze that animation at whatever it looked like the
+    //    first time it was drawn, since every later draw would just
+    //    reuse that same frozen snapshot forever instead of animating)
+    // Rotation is applied to the CANVAS around the cached (always
+    // unrotated) sprite, not baked into the cache itself, so one cached
+    // image covers every rotation of that item.
+    const STATIC_SHAPE_EXCLUSIONS = new Set(['sign', 'lamp', 'bonfire']);
+    if (!isCrafted && !STATIC_SHAPE_EXCLUSIONS.has(itemId)) {
       const REF = 192;
       const sprite = this._getCachedSprite(`decoration_${itemId}`, REF, () => {
         this._drawDecorationShape(this.ctx, style, 0, 0, REF, REF);
@@ -5373,18 +5381,30 @@ class FarmGame {
       const spots = [[0.34, 0.55], [0.5, 0.42], [0.66, 0.55], [0.42, 0.68], [0.58, 0.68]];
       spots.forEach(([dx, dy], i) => {
         const fx = x + w * dx, fy = y + h * dy;
+        // Proportional to w/h (roughly matching the old fixed-pixel sizes
+        // at a normal 64px tile) instead of hardcoded absolute pixels —
+        // this shape gets rendered ONCE into an offscreen sprite cache at
+        // a fixed 192px reference size (see _drawDecoration/
+        // _getCachedSprite) and then scaled to whatever the actual tile
+        // size is, so anything sized in fixed pixels here rendered
+        // correctly at 64px but came out proportionally tiny/misplaced
+        // at 192px — exactly the "flowers look wrong now" bug this fixes.
+        const stemLen = h * 0.094;
+        const petalDist = w * 0.05;
+        const petalRx = w * 0.041, petalRy = h * 0.034;
+        const centerR = w * 0.025;
         ctx.strokeStyle = '#5aa32e';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(fx, fy + 6); ctx.lineTo(fx, fy); ctx.stroke();
+        ctx.lineWidth = Math.max(1, w * 0.023);
+        ctx.beginPath(); ctx.moveTo(fx, fy + stemLen); ctx.lineTo(fx, fy); ctx.stroke();
         ctx.fillStyle = style.colors[i % style.colors.length];
         for (let p = 0; p < 5; p++) {
           const ang = (Math.PI * 2 * p) / 5;
           ctx.beginPath();
-          ctx.ellipse(fx + Math.cos(ang) * 3.2, fy + Math.sin(ang) * 3.2, 2.6, 2.2, ang, 0, Math.PI * 2);
+          ctx.ellipse(fx + Math.cos(ang) * petalDist, fy + Math.sin(ang) * petalDist, petalRx, petalRy, ang, 0, Math.PI * 2);
           ctx.fill();
         }
         ctx.fillStyle = '#e8a527';
-        ctx.beginPath(); ctx.arc(fx, fy, 1.6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(fx, fy, centerR, 0, Math.PI * 2); ctx.fill();
       });
     } else if (style.shape === 'hay') {
       const cx = x + w / 2, cy = y + h * 0.58, r = Math.min(w, h) * 0.28;
