@@ -763,6 +763,10 @@ const UI = (() => {
       wheat: '🌾', corn: '🌽', carrot: '🥕', potato: '🥔', tomato: '🍅',
       strawberry: '🍓', pumpkin: '🎃',
       tree: '🪵', mango_tree: '🥭', apple_tree: '🍎', avocado_tree: '🥑',
+      // Feed types too — the animal it's FOR, not a generic feed-bag icon,
+      // so it's obvious at a glance which feed matches which animal
+      // instead of having to read each name.
+      chicken_feed: '🐔', sheep_feed: '🐑', pig_feed: '🐷', cow_feed: '🐄',
     };
     el.innerHTML = items.map((item) => {
       const cost = item.seed_cost ?? item.cost;

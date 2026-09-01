@@ -786,6 +786,16 @@ class FarmGame {
       nx = Math.max(0, Math.min(this.farm.width * TILE - 1, nx));
       ny = Math.max(0, Math.min(this.farm.height * TILE - 1, ny));
     } else if (this.mode === 'indoor' && this.interior) {
+      // Wall (interior furniture) actually blocks movement — everything
+      // else placeable indoors still doesn't (a rug, a small plant, etc.
+      // are fine to walk near/over), but a Wall specifically read as
+      // "you can just walk straight through it," which doesn't make
+      // sense for something that's supposed to be a solid partition.
+      const curTileX = Math.floor(c.x / TILE), curTileY = Math.floor(c.y / TILE);
+      const tryTileX = Math.floor(nx / TILE), tryTileY = Math.floor(ny / TILE);
+      const isWallAt = (tx, ty) => this.interior.objects.some((o) => o.object_type === 'interior' && o.item_id === 'wall' && o.grid_x === tx && o.grid_y === ty);
+      if (isWallAt(tryTileX, curTileY)) nx = c.x;
+      if (isWallAt(curTileX, tryTileY)) ny = c.y;
       nx = Math.max(0, Math.min(this.interior.width * TILE - 1, nx));
       ny = Math.max(0, Math.min(this.interior.height * TILE - 1, ny));
     } else if (this.mode === 'market') {
