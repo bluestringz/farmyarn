@@ -720,14 +720,45 @@
 
   async function openStovePanel() {
     const inv = await Api.inventory();
+    // Fetch the CURRENT interior fresh (not just cached game state) so
+    // the Stove's lit/cold status shown is always accurate, including
+    // right after adding logs or after time has passed since it was
+    // last checked.
+    const opts = state.interiorSpace.buildingId ? { buildingId: state.interiorSpace.buildingId } : { space: 'house' };
+    if (state.viewingUserId) opts.ownerId = state.viewingUserId;
+    const interior = await Api.myInterior(opts);
+    const stoveObj = (interior.objects || []).find((o) => o.item_id === 'stove');
+    let stoveState = {};
+    try { stoveState = stoveObj && stoveObj.state ? JSON.parse(stoveObj.state) : {}; } catch (e) { stoveState = {}; }
+    const litUntil = stoveState.litUntil || 0;
+    const serverNow = interior.serverTime || Math.floor(Date.now() / 1000);
+
     UI.openPanel('Stove — Cook Food');
-    UI.renderStovePanel(inv, async (cropType, qty) => {
+    UI.renderStovePanel(inv, litUntil, serverNow, async (cropType, qty) => {
       try {
         const res = await Api.cook(cropType, qty);
         UI.toast(res.failed > 0
           ? `Cooked ${res.quantity} ${res.foodItemId.replace(/_/g, ' ')} — ${res.failed} came out burnt! (used ${res.cropSpent} ${cropType})`
           : `Cooked ${res.quantity} ${res.foodItemId.replace(/_/g, ' ')} (used ${res.cropSpent} ${cropType})`);
         await openStovePanel(); // refresh crop counts shown
+      } catch (err) {
+        UI.toast(err.message);
+      }
+    }, async () => {
+      try {
+        const res = await Api.cookEnergyPotion();
+        UI.toast(res.succeeded
+          ? '✨ Success! You brewed an Energy Potion!'
+          : 'The brew fizzled out — all those ingredients, wasted. Try again?');
+        await openStovePanel(); // refresh ingredient counts shown
+      } catch (err) {
+        UI.toast(err.message);
+      }
+    }, async () => {
+      try {
+        await Api.stoveAddLogs();
+        UI.toast('🔥 Stove lit! Burning for the next 3 hours.');
+        await openStovePanel(); // refresh lit status shown
       } catch (err) {
         UI.toast(err.message);
       }
@@ -1752,6 +1783,15 @@
           await renderShopPanel('crops');
           return;
         }
+        if (cat === 'tool') {
+          const quantity = qty || 1;
+          const res = await Api.buyTool(itemId, quantity);
+          state.me.coins = res.coins;
+          renderTopbar();
+          UI.toast(`Bought ${quantity} ${itemId}${quantity > 1 ? 's' : ''}! Check your Bag, or open Chat's 📢 Shout tab to use ${quantity > 1 ? 'one' : 'it'}.`);
+          await renderShopPanel('tools');
+          return;
+        }
         if (cat === 'outfits' || cat === 'special_outfits') {
           const outfits = await Api.outfits();
           const target = outfits.find((o) => o.id === itemId);
@@ -2463,12 +2503,38 @@
       appendChatMessage(msg, 'whisper');
       if (msg.fromUserId !== state.me.id) UI.toast(`💬 ${msg.fromUsername} whispered to you`);
     });
+    // A Shout is deliberately NOT just another chat-log line — it shows
+    // as a banner across the top of EVERY connected player's screen
+    // (see showShoutBanner), regardless of which space they're in or
+    // what panel they have open, since the whole point of spending a
+    // Megaphone on one is being hard to miss.
+    socket.on('chat:shout', (msg) => {
+      showShoutBanner(msg.fromUsername, msg.message);
+    });
   }
 
   // ---------------- Chat (global + whisper) ----------------
 
   let chatMode = 'global'; // 'global' | 'whisper'
   let whisperTargetId = null;
+  let shoutBannerTimer = null;
+
+  // Shows a Shout across the top of the screen for 7 seconds. If ANOTHER
+  // Shout comes in while one's still showing, it immediately replaces
+  // the text/sender and restarts the 7-second countdown — always
+  // displays whichever one is most current rather than queuing them up.
+  function showShoutBanner(fromUsername, message) {
+    const banner = document.getElementById('shout-banner');
+    document.getElementById('shout-banner-from').textContent = `${fromUsername}:`;
+    document.getElementById('shout-banner-text').textContent = message;
+    banner.classList.remove('hidden');
+    if (shoutBannerTimer) clearTimeout(shoutBannerTimer);
+    shoutBannerTimer = setTimeout(() => {
+      banner.classList.add('hidden');
+      shoutBannerTimer = null;
+    }, 7000);
+  }
+
 
   async function initChat() {
     document.querySelectorAll('.chat-tab').forEach((btn) => {
@@ -2479,6 +2545,10 @@
         const targetSelect = document.getElementById('chat-whisper-target');
         targetSelect.classList.toggle('hidden', chatMode !== 'whisper');
         if (chatMode === 'whisper') await populateWhisperTargets();
+        const input = document.getElementById('chat-input');
+        input.placeholder = chatMode === 'shout' ? 'Shout to everyone... (costs 1 Megaphone)'
+          : chatMode === 'whisper' ? 'Whisper to a friend...'
+          : 'Say something... (🪙1)';
       });
     });
 
@@ -2533,6 +2603,9 @@
         const res = await Api.sendGlobalChat(text);
         state.me.coins = res.coins;
         renderTopbar();
+      } else if (chatMode === 'shout') {
+        const res = await Api.sendShout(text);
+        UI.toast(`📢 Shouted! (${res.megaphonesRemaining} Megaphone${res.megaphonesRemaining === 1 ? '' : 's'} left)`);
       } else {
         if (!whisperTargetId) { UI.toast('Pick a friend to whisper to'); return; }
         await Api.sendWhisper(whisperTargetId, text);

@@ -593,6 +593,44 @@ module.exports = function farmRoutes(db, io) {
     res.json({ ok: true, itemId, coins: updated.coins });
   });
 
+  // A Stove has to actually be LIT to cook anything — 4 Logs keeps it
+  // burning for 3 hours, then it goes cold again and needs relighting.
+  // Not required to just OWN a Stove; a cold one can't cook at all.
+  const STOVE_LOG_COST = 4;
+  const STOVE_LIT_DURATION_SECONDS = 3 * 3600;
+
+  function getStoveState(stove) {
+    try { return stove.state ? JSON.parse(stove.state) : {}; } catch (e) { return {}; }
+  }
+
+  // POST /api/farm/stove-add-logs { atFarmId } — spends 4 Logs from your
+  // Bag to light a COLD Stove for the next 3 hours. Only works once it's
+  // actually gone out — while it's still burning, logs can't be added
+  // early to stack up extra time; you just wait out the current 3 hours
+  // first.
+  router.post('/stove-add-logs', (req, res) => {
+    const { atFarmId } = req.body || {};
+    const targetFarmId = atFarmId || getOwnFarm(req.userId).id;
+    const stove = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND item_id = 'stove' AND location = 'indoor'").get(targetFarmId);
+    if (!stove) return res.status(400).json({ error: 'No Stove there' });
+
+    const t = nowSec();
+    const state = getStoveState(stove);
+    if ((state.litUntil || 0) > t) {
+      return res.status(400).json({ error: 'The Stove is still burning — wait for it to go out first.' });
+    }
+
+    const logRow = db.prepare("SELECT * FROM inventory WHERE user_id = ? AND item_id = 'log'").get(req.userId);
+    if (!logRow || logRow.quantity < STOVE_LOG_COST) {
+      return res.status(400).json({ error: `Not enough Logs — need ${STOVE_LOG_COST}, have ${logRow ? logRow.quantity : 0}` });
+    }
+
+    const litUntil = t + STOVE_LIT_DURATION_SECONDS;
+    db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(STOVE_LOG_COST, logRow.id);
+    db.prepare('UPDATE farm_objects SET state = ? WHERE id = ?').run(JSON.stringify({ litUntil }), stove.id);
+    res.json({ ok: true, litUntil });
+  });
+
   // POST /api/farm/cook { cropType, quantity, atFarmId } — requires a Stove
   // somewhere indoors on the target farm (your own house by default, or a
   // friend's if you're visiting — cooking together is allowed, unlike most
@@ -607,6 +645,10 @@ module.exports = function farmRoutes(db, io) {
     const targetFarmId = atFarmId || getOwnFarm(req.userId).id;
     const stove = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND item_id = 'stove' AND location = 'indoor'").get(targetFarmId);
     if (!stove) return res.status(400).json({ error: 'No Stove there to cook with' });
+    const stoveState = getStoveState(stove);
+    if ((stoveState.litUntil || 0) <= nowSec()) {
+      return res.status(400).json({ error: "The Stove isn't lit — add 4 Logs to it first." });
+    }
 
     const cropNeeded = recipe.cropCost * qty;
     const cropRow = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, cropType);
@@ -625,6 +667,59 @@ module.exports = function farmRoutes(db, io) {
     for (let i = 0; i < qty; i++) if (Math.random() >= COOK_FAIL_CHANCE) succeeded++;
     if (succeeded > 0) addInventory(db, req.userId, recipe.foodItemId, succeeded);
     res.json({ ok: true, foodItemId: recipe.foodItemId, quantity: succeeded, attempted: qty, failed: qty - succeeded, cropSpent: cropNeeded });
+  });
+
+  // A rare, high-value brew — completely separate from COOK_RECIPES above
+  // (which are all "1 ingredient type -> 1 dish, near-guaranteed to
+  // work"). This needs ALL 10 ingredients at once, and only has a 5%
+  // chance of actually succeeding per attempt — the ingredients are
+  // spent regardless of the outcome, same "that's the risk of cooking"
+  // idea as a normal recipe's small fail chance, just with the odds
+  // flipped hard the other way specifically so this stays rare and
+  // expensive rather than something to churn out casually.
+  const ENERGY_POTION_RECIPE = {
+    wheat: 10, rice: 5, corn: 5, potato: 2, tomato: 2,
+    apple: 5, mango: 5, avocado: 5, pumpkin: 1, strawberry: 1,
+  };
+  const ENERGY_POTION_SUCCESS_CHANCE = 0.15;
+
+  // POST /api/farm/cook-energy-potion { atFarmId } — one attempt per
+  // call (unlike /cook's batch quantity) given how many ingredients and
+  // how much luck a single attempt already needs.
+  router.post('/cook-energy-potion', (req, res) => {
+    const { atFarmId } = req.body || {};
+    const targetFarmId = atFarmId || getOwnFarm(req.userId).id;
+    const stove = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND item_id = 'stove' AND location = 'indoor'").get(targetFarmId);
+    if (!stove) return res.status(400).json({ error: 'No Stove there to cook with' });
+    const stoveState = getStoveState(stove);
+    if ((stoveState.litUntil || 0) <= nowSec()) {
+      return res.status(400).json({ error: "The Stove isn't lit — add 4 Logs to it first." });
+    }
+
+    // Check every ingredient is on hand BEFORE deducting any of them —
+    // an all-or-nothing check, not "spend what we can and then fail
+    // partway through."
+    const rows = {};
+    for (const itemId of Object.keys(ENERGY_POTION_RECIPE)) {
+      const needed = ENERGY_POTION_RECIPE[itemId];
+      const row = db.prepare('SELECT * FROM inventory WHERE user_id = ? AND item_id = ?').get(req.userId, itemId);
+      if (!row || row.quantity < needed) {
+        return res.status(400).json({ error: `Not enough ${itemId} — need ${needed}, have ${row ? row.quantity : 0}` });
+      }
+      rows[itemId] = row;
+    }
+
+    const tx = db.transaction(() => {
+      for (const itemId of Object.keys(ENERGY_POTION_RECIPE)) {
+        db.prepare('UPDATE inventory SET quantity = quantity - ? WHERE id = ?').run(ENERGY_POTION_RECIPE[itemId], rows[itemId].id);
+      }
+      const succeeded = Math.random() < ENERGY_POTION_SUCCESS_CHANCE;
+      if (succeeded) addInventory(db, req.userId, 'energy_potion', 1);
+      return succeeded;
+    });
+    const succeeded = tx();
+
+    res.json({ ok: true, succeeded });
   });
 
   // POST /api/farm/eat { foodItemId } — consumes 1 food item, restores energy.

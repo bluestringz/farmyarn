@@ -142,6 +142,19 @@
     <button class="btn btn-small" id="casino-exit-btn">Leave Casino</button>
   </div>
 
+  <!-- SHOUT BANNER — appears across the top of the screen for EVERY
+       connected player when someone Shouts (costs a Megaphone — see
+       chat.js's /api/chat/shout), regardless of what they're doing or
+       which space they're in. Deliberately much more prominent than a
+       normal chat line, since the whole point of a Megaphone is being
+       hard to miss. Auto-dismisses itself after a few seconds — see
+       showShoutBanner() in main.js. -->
+  <div id="shout-banner" class="shout-banner hidden">
+    <span class="shout-banner-icon">📢</span>
+    <span class="shout-banner-from" id="shout-banner-from"></span>
+    <span class="shout-banner-text" id="shout-banner-text"></span>
+  </div>
+
   <!-- LEADERBOARD (Most Rich) — a popup, not a persistent panel: hidden
        until the 🏆 trophy button next to the Level display is tapped,
        instead of always sitting on screen (which used to fight for the
@@ -271,6 +284,7 @@
       <div class="chat-tabs">
         <button class="chat-tab active" data-mode="global">🌐 Global</button>
         <button class="chat-tab" data-mode="whisper">🤫 Whisper</button>
+        <button class="chat-tab" data-mode="shout">📢 Shout</button>
       </div>
       <button class="chat-collapse-btn" id="chat-toggle">✕</button>
     </div>

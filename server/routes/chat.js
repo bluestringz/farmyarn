@@ -72,6 +72,36 @@ module.exports = function chatRoutes(db, io) {
     res.json({ ok: true, message: payload, coins: updated.coins });
   });
 
+  // POST /api/chat/shout { message } — costs 1 Megaphone from the Bag
+  // (bought at the Shop, see /api/shop/buy-tool) instead of coins like
+  // Global does, and broadcasts to EVERY connected player at once
+  // regardless of which space they're currently in — the client renders
+  // this as a prominent banner across the top of the screen, not just
+  // another line in the chat log, so it's actually hard to miss.
+  router.post('/shout', (req, res) => {
+    const { message } = req.body || {};
+    if (typeof message !== 'string' || !message.trim()) return res.status(400).json({ error: 'Message required' });
+    const trimmed = message.trim().slice(0, MAX_MESSAGE_LENGTH);
+
+    const megaphoneRow = db.prepare("SELECT * FROM inventory WHERE user_id = ? AND item_id = 'megaphone'").get(req.userId);
+    if (!megaphoneRow || megaphoneRow.quantity < 1) {
+      return res.status(400).json({ error: 'You need a Megaphone to Shout — buy one from the Shop.' });
+    }
+    db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(megaphoneRow.id);
+
+    const user = db.prepare('SELECT username, display_name FROM users WHERE id = ?').get(req.userId);
+    const payload = {
+      fromUserId: req.userId,
+      fromUsername: user.display_name || user.username,
+      message: trimmed,
+      created_at: Math.floor(Date.now() / 1000),
+    };
+    if (io) io.emit('chat:shout', payload);
+
+    const remaining = megaphoneRow.quantity - 1;
+    res.json({ ok: true, message: payload, megaphonesRemaining: remaining });
+  });
+
   // POST /api/chat/whisper { toUserId, message } — free, but only between friends
   router.post('/whisper', (req, res) => {
     const { toUserId, message } = req.body || {};

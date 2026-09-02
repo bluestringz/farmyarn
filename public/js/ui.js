@@ -29,7 +29,7 @@ const UI = (() => {
     bread: '🍞', rice_bowl: '🍚', corn_soup: '🌽', carrot_stew: '🥕',
     mashed_potato: '🥔', tomato_soup: '🍅', strawberry_cake: '🍰',
     pumpkin_pie: '🥧', fried_egg: '🍳', milkshake: '🥤',
-    truffle_dish: '🍄', ice_cream: '🍦', hotdog: '🌭',
+    truffle_dish: '🍄', ice_cream: '🍦', hotdog: '🌭', energy_potion: '🧪',
     // Buildings
     farmhouse: '🏠', chicken_coop: '🐔', cow_barn: '🐄', barn: '🐄',
     mansion: '🏰', silo: '🌾', workshop: '🔨', storage_shed: '📦',
@@ -113,6 +113,7 @@ const UI = (() => {
   const MANSION_COLOR_OPTIONS = ['orange', 'green', 'teal', 'blue', 'purple', 'pink', 'red', 'white'];
 
   const ITEM_DESCRIPTIONS = {
+    megaphone: 'A Shout every other player sees as a banner across their screen for 7 seconds, no matter where they are. Spends 1 Megaphone per use.',
     // crops (seeds)
     wheat: 'Fast, cheap starter crop — good for quick coins while you level up.',
     rice: 'A step up from wheat, takes a bit longer but pays more.',
@@ -196,6 +197,7 @@ const UI = (() => {
       { key: 'decorations', label: 'Decor' },
       { key: 'fruit_trees', label: '🍎 Fruit Trees' },
       { key: 'interiors', label: 'Interior' },
+      { key: 'tools', label: '📢 Tools' },
       { key: 'outfits', label: 'Outfits' },
       { key: 'special_outfits', label: '⭐ Special' },
     ];
@@ -309,12 +311,14 @@ const UI = (() => {
 
     const catalogKey = activeCategory === 'interiors' ? 'interiors'
       : activeCategory === 'fruit_trees' ? 'decorations'
+      : activeCategory === 'tools' ? 'items'
       : activeCategory;
     const buyCategory = activeCategory === 'interiors' ? 'interior'
       : activeCategory === 'buildings' ? 'building'
       : activeCategory === 'animals' ? 'animal'
       : activeCategory === 'decorations' ? 'decoration'
       : activeCategory === 'fruit_trees' ? 'decoration'
+      : activeCategory === 'tools' ? 'tool'
       : 'crops';
     const items = (catalog[catalogKey] || []).filter((item) => {
       // Workshop-crafted furniture (crafted_bench, crafted_bed, etc.) is
@@ -331,6 +335,13 @@ const UI = (() => {
       const isFruitTree = !!item.produces_item_id;
       if (activeCategory === 'fruit_trees') return isFruitTree;
       if (activeCategory === 'decorations') return !isFruitTree;
+      // catalog.items is a mix of everything in item_types (crops'
+      // harvested produce, animal products, cooked food, the Energy
+      // Potion, AND buyable Tools like the Megaphone) — the Tools tab
+      // shows ONLY the ones actually meant to be bought here (category
+      // 'tool' with a real cost), not, say, Eggs or Bread which live in
+      // this same table but aren't purchasable at all.
+      if (activeCategory === 'tools') return item.category === 'tool' && item.cost > 0;
       return true;
     });
     const isCrops = activeCategory === 'crops';
@@ -346,13 +357,14 @@ const UI = (() => {
       const stockLine = hasStockCap
         ? `<div class="shop-level" style="${outOfStock ? 'color:#c0392b;font-weight:700;' : ''}">${outOfStock ? 'Out of stock' : `${item.currentStock} left in stock`}</div>`
         : '';
-      const glyphMap = { crops: '🌱', buildings: '🏗️', animals: '🐾', decorations: '🌷', fruit_trees: '🍎', interiors: '🛋️' };
+      const glyphMap = { crops: '🌱', buildings: '🏗️', animals: '🐾', decorations: '🌷', fruit_trees: '🍎', interiors: '🛋️', tools: '📢' };
       // Fruit Trees is one category with 3 different actual fruits — a
       // single shared glyph made every card show an apple regardless of
       // which tree it actually was. Per-item lookup, falling back to the
       // category's generic glyph for anything not in this list.
       const FRUIT_TREE_ICONS = { mango_tree: '🥭', apple_tree: '🍎', avocado_tree: '🥑' };
-      const iconFor = (it) => FRUIT_TREE_ICONS[it.id] || glyphMap[activeCategory];
+      const TOOL_ICONS = { megaphone: '📢' };
+      const iconFor = (it) => FRUIT_TREE_ICONS[it.id] || TOOL_ICONS[it.id] || glyphMap[activeCategory];
       const durationLine = isCrops || activeCategory === 'fruit_trees' ? `<div class="shop-level">⏱ ${formatDuration(item.growth_seconds)} to grow</div>` : '';
       // Seeds are the one thing people buy in bulk (to plant a whole field
       // at once) — give them a quantity field instead of one-click-at-a-time,
@@ -362,10 +374,13 @@ const UI = (() => {
       // treatment (planting several at once is normal too), just capped at
       // 20 per purchase instead of 99 — a whole field's worth of trees in
       // one buy would be a LOT to place one at a time afterward anyway.
+      // Tools (Megaphone) get it too, plain 99 cap — stocking up on a few
+      // at once is normal, they're consumed one per Shout.
       const isFruitTreeTab = activeCategory === 'fruit_trees';
+      const isToolsTab = activeCategory === 'tools';
       const qtyCap = isFruitTreeTab ? 20 : 99;
       const maxAffordable = Math.max(1, Math.min(qtyCap, Math.floor(player.coins / cost), hasStockCap ? Math.max(1, item.currentStock) : qtyCap));
-      const qtyRow = (isCrops || isFruitTreeTab) && !locked && !outOfStock
+      const qtyRow = (isCrops || isFruitTreeTab || isToolsTab) && !locked && !outOfStock
         ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="${hasStockCap ? Math.min(qtyCap, Math.max(1, item.currentStock)) : qtyCap}" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
         : '';
       const colorOptions = BUILDING_COLOR_OPTIONS[item.id];
@@ -401,6 +416,8 @@ const UI = (() => {
       ? '<p class="panel-hint">Buy here, then use the 🏗️ Build tool to plant it — water it to speed up growth, then collect fruit every few hours once it matures.</p>'
       : activeCategory === 'interiors'
       ? '<p class="panel-hint">Buy furniture here, then use the Decorate tool inside your house to place it.</p>'
+      : activeCategory === 'tools'
+      ? '<p class="panel-hint">Buy a Megaphone here, then use the 📢 Shout tab in Chat — every player, everywhere, sees it as a banner across the top of their screen for 7 seconds. Costs 1 Megaphone per Shout.</p>'
       : '<p class="panel-hint">Buy here, then use the 🏗️ Build tool to place it — you can preview and rotate before confirming.</p>';
 
     body.innerHTML = `<div class="shop-tabs">${tabs}</div>${hint}<div class="shop-grid">${cards}</div>`;
@@ -909,7 +926,7 @@ const UI = (() => {
     });
   }
 
-  function renderStovePanel(inventory, onCook) {
+  function renderStovePanel(inventory, litUntil, serverNow, onCook, onCookEnergyPotion, onAddLogs) {
     const body = panelBody();
     const recipes = [
       { cropType: 'wheat',      foodName: 'Bread',           cropCost: 2, energy: 5,  icon: '🌾' },
@@ -925,12 +942,74 @@ const UI = (() => {
       { cropType: 'truffle',    foodName: 'Truffle Dish',    cropCost: 2, energy: 18, icon: '🍄' },
     ];
     const ownedOf = (cropType) => (inventory.find((r) => r.item_id === cropType) || {}).quantity || 0;
+
+    // The Stove has to actually be lit to cook anything — 4 Logs keeps it
+    // burning for 3 hours, then it goes cold and needs relighting. Shown
+    // prominently at the top since it gates every recipe below (both the
+    // regular grid and the Energy Potion).
+    const isLit = litUntil > serverNow;
+    const secondsLeft = Math.max(0, litUntil - serverNow);
+    const hoursLeft = Math.floor(secondsLeft / 3600);
+    const minutesLeft = Math.floor((secondsLeft % 3600) / 60);
+    const logsOwned = ownedOf('log');
+    // Grayed out (disabled) the whole time it's still burning — logs
+    // can only go in once it's actually gone cold again, not stacked up
+    // early for extra time.
+    const canAddLogs = !isLit && logsOwned >= 4;
+    const fuelSection = `
+      <div class="shop-card" style="max-width:100%;border-color:${isLit ? '#5a9e35' : '#c4552e'};">
+        <div class="shop-icon">${isLit ? '🔥' : '🪵'}</div>
+        <div class="shop-name">${isLit ? 'Stove is lit' : 'Stove is cold'}</div>
+        <div class="shop-level" style="color:${isLit ? '#3f7a26' : '#a13d1c'};font-weight:700;">
+          ${isLit ? `Burning for ${hoursLeft}h ${minutesLeft}m more` : 'Add 4 Logs to start cooking'}
+        </div>
+        <div class="shop-level">You have: ${logsOwned} 🪵 Log${logsOwned === 1 ? '' : 's'}</div>
+        <button id="add-logs-btn" ${canAddLogs ? '' : 'disabled'}>${isLit ? 'Still burning...' : 'Light the Stove (4 Logs)'}</button>
+      </div>
+    `;
+
+    // Energy Potion — a rare, expensive brew needing ALL 10 ingredients
+    // at once, with only a 15% chance of actually working per attempt
+    // (the ingredients are spent either way — see /api/farm/cook-energy-
+    // potion). Shown as its own section, not mixed into the regular
+    // recipe grid above/below, since it's a fundamentally different kind
+    // of recipe (multi-ingredient, one attempt at a time, real risk of
+    // coming away with nothing).
+    const ENERGY_POTION_INGREDIENTS = [
+      { id: 'wheat', need: 10, icon: '🌾' }, { id: 'rice', need: 5, icon: '🍚' },
+      { id: 'corn', need: 5, icon: '🌽' }, { id: 'potato', need: 2, icon: '🥔' },
+      { id: 'tomato', need: 2, icon: '🍅' }, { id: 'apple', need: 5, icon: '🍎' },
+      { id: 'mango', need: 5, icon: '🥭' }, { id: 'avocado', need: 5, icon: '🥑' },
+      { id: 'pumpkin', need: 1, icon: '🎃' }, { id: 'strawberry', need: 1, icon: '🍓' },
+    ];
+    const canBrewPotion = isLit && ENERGY_POTION_INGREDIENTS.every((i) => ownedOf(i.id) >= i.need);
+    const potionSection = `
+      <div class="panel-section-title">⚗️ Energy Potion (rare)</div>
+      <div class="shop-card" style="max-width:100%;">
+        <div class="shop-icon">🧪</div>
+        <div class="shop-name">Energy Potion — restores ⚡+600</div>
+        <div class="shop-level" style="color:#c4552e;font-weight:700;">Only a 15% chance to succeed per attempt — ALL ingredients below are spent either way, even if it fails.</div>
+        <div class="ingredient-checklist">
+          ${ENERGY_POTION_INGREDIENTS.map((i) => {
+            const have = ownedOf(i.id);
+            const ok = have >= i.need;
+            return `<span class="ingredient-chip ${ok ? '' : 'insufficient'}">${i.icon} ${i.need} (have ${have})</span>`;
+          }).join('')}
+        </div>
+        <button id="brew-energy-potion-btn" ${canBrewPotion ? '' : 'disabled'}>${!isLit ? 'Stove is cold' : canBrewPotion ? 'Attempt Brew (15% chance)' : 'Missing ingredients'}</button>
+      </div>
+    `;
+
     body.innerHTML = `
       <p class="panel-hint">Cook harvested crops or animal products into food — eating food restores ⚡ Energy, which you need to plow/plant/water.</p>
+      ${fuelSection}
+      ${potionSection}
+      <div class="panel-section-title">Everyday recipes</div>
       <div class="shop-grid">
         ${recipes.map((r) => {
           const owned = ownedOf(r.cropType);
           const maxAffordable = Math.max(1, Math.min(99, Math.floor(owned / r.cropCost)));
+          const disabled = !isLit || owned < r.cropCost;
           return `
           <div class="shop-card">
             <div class="shop-icon">${r.icon}</div>
@@ -938,11 +1017,15 @@ const UI = (() => {
             <div class="shop-price">${r.cropCost} ${r.cropType} → ⚡+${r.energy}</div>
             <div class="shop-level">You have: ${owned}</div>
             <div class="qty-row"><input type="number" class="qty-input" min="1" max="99" value="1" data-qty-for="${r.cropType}"><button type="button" class="qty-max-btn" data-max-for="${r.cropType}" data-max-value="${maxAffordable}">MAX</button></div>
-            <button data-crop="${r.cropType}" ${owned < r.cropCost ? 'disabled' : ''}>Cook</button>
+            <button data-crop="${r.cropType}" ${disabled ? 'disabled' : ''}>${!isLit ? 'Stove is cold' : 'Cook'}</button>
           </div>`;
         }).join('')}
       </div>
     `;
+    const addLogsBtn = document.getElementById('add-logs-btn');
+    if (addLogsBtn) addLogsBtn.addEventListener('click', () => onAddLogs());
+    const brewBtn = document.getElementById('brew-energy-potion-btn');
+    if (brewBtn) brewBtn.addEventListener('click', () => onCookEnergyPotion());
     body.querySelectorAll('.qty-max-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const input = body.querySelector(`input[data-qty-for="${btn.dataset.maxFor}"]`);

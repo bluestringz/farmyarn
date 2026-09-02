@@ -763,6 +763,27 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
 }
 .shop-tab.active { background: var(--sun); }
 .shop-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.ingredient-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin: 8px 0;
+}
+.ingredient-chip {
+  background: var(--cream-dark, #f0e2c0);
+  border: 1.5px solid var(--wood, #a8763e);
+  border-radius: 10px;
+  padding: 3px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ingredient-chip.insufficient {
+  background: rgba(196,85,46,0.15);
+  border-color: #c4552e;
+  color: #a13d1c;
+  font-weight: 700;
+}
 .shop-card {
   background: #fff;
   border: 2px solid var(--cream-dark);
@@ -1209,6 +1230,42 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   flex-shrink: 0;
   margin-left: 4px;
 }
+/* Shout banner — spans the top of the screen, above everything else
+   except the scene-fade transition, so a Megaphone shout is genuinely
+   hard to miss regardless of what's currently open. Slides down into
+   view and back out — see showShoutBanner() in main.js for the timing. */
+.shout-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 300;
+  background: linear-gradient(180deg, #ffb84a, #e8901f);
+  border-bottom: 4px solid #a8620f;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  transform: translateY(-100%);
+  transition: transform 0.35s ease;
+}
+.shout-banner:not(.hidden) { transform: translateY(0); }
+.shout-banner-icon { font-size: 22px; flex-shrink: 0; }
+.shout-banner-from {
+  font-family: 'Baloo 2', cursive;
+  font-weight: 800;
+  color: #5e3b1f;
+  flex-shrink: 0;
+}
+.shout-banner-text {
+  color: #4a2e13;
+  font-weight: 600;
+  word-break: break-word;
+}
+
 .leaderboard-popup {
   position: fixed;
   top: 60px;

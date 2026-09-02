@@ -126,6 +126,7 @@ const Api = (() => {
     // Shop
     catalog: () => request('GET', '/api/shop/catalog'),
     buySeed: (cropType, quantity) => request('POST', '/api/shop/buy-seed', { cropType, quantity }),
+    buyTool: (itemId, quantity) => request('POST', '/api/shop/buy-tool', { itemId, quantity }),
     buyOutfit: (outfitId) => request('POST', '/api/shop/buy-outfit', { outfitId }),
     dye: (color) => request('POST', '/api/shop/dye', { color }),
     buyPlaceable: (category, itemId, quantity) => request('POST', '/api/shop/buy-placeable', { category, itemId, quantity }),
@@ -139,6 +140,8 @@ const Api = (() => {
     craftFurniture: (furnitureType, quantity) => request('POST', '/api/shop/craft-furniture', { furnitureType, quantity }),
     feedAnimal: (objectId) => request('POST', '/api/shop/feed-animal', { objectId }),
     cook: (cropType, quantity, atFarmId) => request('POST', '/api/farm/cook', { cropType, quantity, atFarmId }),
+    cookEnergyPotion: (atFarmId) => request('POST', '/api/farm/cook-energy-potion', { atFarmId }),
+    stoveAddLogs: (atFarmId) => request('POST', '/api/farm/stove-add-logs', { atFarmId }),
     eat: (foodItemId) => request('POST', '/api/farm/eat', { foodItemId }),
     buyParkSnack: (itemId) => request('POST', '/api/farm/park-buy-snack', { itemId }),
     casinoConfig: () => request('GET', '/api/casino/config'),
@@ -169,6 +172,7 @@ const Api = (() => {
     // Chat
     globalChatHistory: () => request('GET', '/api/chat/global'),
     sendGlobalChat: (message) => request('POST', '/api/chat/global', { message }),
+    sendShout: (message) => request('POST', '/api/chat/shout', { message }),
     sendWhisper: (toUserId, message) => request('POST', '/api/chat/whisper', { toUserId, message }),
   };
 })();

@@ -88,6 +88,28 @@ module.exports = function shopRoutes(db) {
     res.json({ crops, buildings, decorations, animals, items, outfits, interiors, dyePalette: DYE_PALETTE, dyeCost: DYE_COST });
   });
 
+  // POST /api/shop/buy-tool { itemId, quantity } — for buyable consumable
+  // Tools (the Megaphone so far) that live in item_types but aren't food
+  // and don't fit crops/buildings/decorations/animals/interiors' own
+  // separate cost-bearing tables. Lands straight in the Bag, same as
+  // buying a seed.
+  router.post('/buy-tool', (req, res) => {
+    const { itemId, quantity } = req.body || {};
+    const qty = parseInt(quantity, 10) || 1;
+    if (qty < 1) return res.status(400).json({ error: 'Invalid quantity' });
+    const item = db.prepare("SELECT * FROM item_types WHERE id = ? AND category = 'tool'").get(itemId);
+    if (!item || !item.cost) return res.status(400).json({ error: 'Unknown item' });
+
+    const totalCost = item.cost * qty;
+    const user = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+    if (user.coins < totalCost) return res.status(400).json({ error: `Not enough coins — need ${totalCost}` });
+
+    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(totalCost, req.userId);
+    addInventory(db, req.userId, itemId, qty);
+    const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+    res.json({ ok: true, itemId, quantity: qty, coins: updated.coins });
+  });
+
   // POST /api/shop/buy-seed  { cropType, quantity } — seeds must be bought here first;
   // they land in the player's inventory (as `seed_<cropType>`) and are consumed one at a
   // time when planting.

@@ -121,7 +121,13 @@ function migrate(db) {
     -- else. Admin-editable via Shop Prices (PRICE_TABLES) alongside
     -- sell_price, even though it isn't itself a price — see
     -- /api/farm/eat, which reads this instead of a hardcoded value.
-    energy_restore INTEGER NOT NULL DEFAULT 0
+    energy_restore INTEGER NOT NULL DEFAULT 0,
+    -- Only meaningful for a small set of BUYABLE consumable tools (the
+    -- Megaphone so far) — 0 for everything else, which is never directly
+    -- purchasable here (crops/decorations/etc. all have their own cost
+    -- column on their own tables; this is specifically for stackable
+    -- Bag items that don't fit any of those). See /api/shop/buy-tool.
+    cost INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS outfit_types (
@@ -446,6 +452,9 @@ function addColumnsIfMissing(db) {
   if (!itemTypeCols.includes('energy_restore')) {
     db.exec('ALTER TABLE item_types ADD COLUMN energy_restore INTEGER NOT NULL DEFAULT 0');
   }
+  if (!itemTypeCols.includes('cost')) {
+    db.exec('ALTER TABLE item_types ADD COLUMN cost INTEGER NOT NULL DEFAULT 0');
+  }
   if (!existingCols.includes('equipped_outfit')) {
     db.exec('ALTER TABLE users ADD COLUMN equipped_outfit TEXT');
   }
@@ -669,8 +678,8 @@ function seedContent(db) {
   txAnimals(animals);
 
   const upsertItem = db.prepare(`
-    INSERT INTO item_types (id, name, sell_price, sprite, category, energy_restore)
-    VALUES (@id, @name, @sell_price, @sprite, @category, @energy_restore)
+    INSERT INTO item_types (id, name, sell_price, sprite, category, energy_restore, cost)
+    VALUES (@id, @name, @sell_price, @sprite, @category, @energy_restore, @cost)
     ON CONFLICT(id) DO NOTHING
   `);
   const items = [
@@ -701,7 +710,16 @@ function seedContent(db) {
     { id: 'fried_egg',        name: 'Fried Egg',        sell_price: 20,  sprite: 'food', category: 'food', energy_restore: 6 },
     { id: 'milkshake',        name: 'Milkshake',        sell_price: 55,  sprite: 'food', category: 'food', energy_restore: 10 },
     { id: 'truffle_dish',     name: 'Truffle Dish',     sell_price: 140, sprite: 'food', category: 'food', energy_restore: 18 },
-  ].map((it) => ({ energy_restore: 0, ...it }));
+    // A rare, expensive multi-ingredient brew — see /api/farm/cook-energy-
+    // potion (a dedicated route, not the single-ingredient COOK_RECIPES
+    // system every other dish here uses) for the recipe and its
+    // deliberately low success chance.
+    { id: 'energy_potion',    name: 'Energy Potion',    sell_price: 1500, sprite: 'food', category: 'food', energy_restore: 600 },
+    // A buyable consumable Tool, not food — see /api/shop/buy-tool and
+    // /api/chat/shout. Not sellable back (sell_price 0), doesn't restore
+    // energy — its whole purpose is being spent on a single Shout.
+    { id: 'megaphone',        name: 'Megaphone',        sell_price: 0,   sprite: 'megaphone', category: 'tool', cost: 25000 },
+  ].map((it) => ({ energy_restore: 0, cost: 0, ...it }));
   const txItems = db.transaction((rows) => rows.forEach((r) => upsertItem.run(r)));
   txItems(items);
 
