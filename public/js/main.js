@@ -1630,12 +1630,17 @@
       return;
     }
 
-    // Fruit trees — tap with no tool active to collect ripe fruit, same
-    // "just walk up and tap it" interaction as collecting from an animal.
-    // Unlike the plain Tree, this never removes/chops the tree down —
-    // it just keeps producing until it dies of old age on its own.
-    if (!state.tool && obj.object_type === 'decoration' && GROWABLE_TREE_IDS.has(obj.item_id) && !state.viewingUserId) {
+    // Fruit trees — collect ripe fruit either by tapping with NO tool
+    // active (same "just walk up and tap it" interaction as an animal),
+    // OR with the Harvest tool selected/auto-applying while walking —
+    // same as how the Harvest tool already works for regular crops,
+    // instead of fruit trees being the one thing that ONLY worked via a
+    // plain tap. Unlike the plain Tree, this never removes/chops the
+    // tree down — it just keeps producing until it dies of old age on
+    // its own.
+    if ((!state.tool || state.tool === 'harvest') && obj.object_type === 'decoration' && GROWABLE_TREE_IDS.has(obj.item_id) && !state.viewingUserId) {
       if (!obj.ready) {
+        if (state.tool === 'harvest') return; // walking/auto-apply past an unready tree — quietly skip, no toast spam
         UI.toast(obj.readyAt ? 'No fruit ready yet — check back later.' : 'Still growing.');
         return;
       }
