@@ -5069,6 +5069,20 @@ class FarmGame {
     ctx.fillRect(x + 8, y + h - 10, barW, 5);
     ctx.fillStyle = growthState.watered ? '#5ab0ff' : '#ffc84a';
     ctx.fillRect(x + 8, y + h - 10, barW * progress, 5);
+
+    if (!growthState.watered) {
+      // Same pulsing water-drop reminder a plain un-watered crop shows —
+      // the progress bar alone just changing color (blue vs orange) was
+      // too subtle a difference for players to actually notice a
+      // sapling needed watering; this is impossible to miss.
+      ctx.save();
+      ctx.font = `${Math.floor(TILE * 0.28)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = 0.75 + Math.sin(t * 2) * 0.2;
+      ctx.fillText('💧', x + w - 12, y + 12);
+      ctx.restore();
+    }
   }
 
   // Mango/Apple/Avocado trees — same sapling→mature growth arc as the
@@ -5112,6 +5126,20 @@ class FarmGame {
       ctx.fillRect(x + 8, y + h - 10, barW, 5);
       ctx.fillStyle = growthState.watered ? '#5ab0ff' : '#ffc84a';
       ctx.fillRect(x + 8, y + h - 10, barW * progress, 5);
+
+      if (!growthState.watered) {
+        // Same pulsing water-drop reminder a plain un-watered crop (and
+        // a plain un-watered Tree sapling) shows — the progress bar
+        // alone changing color was too subtle for players to actually
+        // notice a fruit-tree sapling needed watering.
+        ctx.save();
+        ctx.font = `${Math.floor(TILE * 0.28)}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.globalAlpha = 0.75 + Math.sin(t * 2) * 0.2;
+        ctx.fillText('💧', x + w - 12, y + 12);
+        ctx.restore();
+      }
       return;
     }
 
