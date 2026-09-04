@@ -277,6 +277,15 @@ class FarmGame {
     // capable laptops/2-in-1s would false-positive), so this also
     // requires a phone-sized viewport.
     this._isMobileDevice = (navigator.maxTouchPoints > 0 || 'ontouchstart' in window) && Math.min(window.innerWidth, window.innerHeight) < 500;
+    // Manual player override for graphics detail (Settings → Graphics
+    // Quality) — 'middle' keeps the automatic zoom/device-based heuristic
+    // this already had; 'high'/'low'/'superlow' force a fixed level
+    // regardless of zoom, for players who know their own device better
+    // than any heuristic could guess. Saved in THIS browser only (see
+    // main.js's settings wiring), not synced anywhere server-side — a
+    // purely local rendering preference, same as it would be in any
+    // other game's graphics settings.
+    this.graphicsQuality = localStorage.getItem('fy_graphics_quality') || 'middle';
     // Once the player manually pinch/scroll-zooms, their chosen zoom level
     // should stick across entering/exiting the house, market, park, etc.
     // instead of snapping back to the auto-fit default every time. Only
@@ -1498,16 +1507,70 @@ class FarmGame {
     this.camera.y = rect.height / 2 - cy * this.camera.scale;
   }
 
+  // Sets the manual Graphics Quality override (Settings → Graphics
+  // Quality) — see graphicsQuality's comment in the constructor.
+  setGraphicsQuality(quality) {
+    this.graphicsQuality = quality;
+    this._resize(); // DPR cap depends on quality — re-apply it immediately instead of waiting for the next natural resize event
+  }
+
+  // Shared by BOTH _resize() (which applies it) and _draw()'s per-frame
+  // self-correcting size check (which compares against it) — these MUST
+  // always agree, or the size check would never match what _resize()
+  // actually set, triggering a pointless resize (and the DPR-mismatch
+  // "canvas keeps flickering" bug this exact pattern fixed once before)
+  // every single frame instead of only when the canvas's actual size
+  // changes.
+  _dprCap() {
+    // A phone's TRUE devicePixelRatio can be 3x or higher, which makes
+    // the canvas's actual pixel buffer (and therefore the raw fill-rate
+    // cost of every single draw call, every frame) far more work than
+    // necessary for a sharpness difference most players wouldn't even
+    // notice on a small screen — Middle (2x) is already a meaningful cut
+    // from an uncapped 3x+; Low and Super Low cut further still.
+    const capByQuality = { high: 3, middle: 2, low: 1.5, superlow: 1 };
+    return capByQuality[this.graphicsQuality] || 2;
+  }
+
+  // Sets _lowDetailGlow and _lowDetailTiles for THIS frame — computed
+  // once here (not per-object, not per-draw-call), since ctx.shadowBlur
+  // and per-tile gradients/furrows are genuinely expensive in Canvas2D,
+  // and a well-developed farm can easily have a dozen+ glow-effect
+  // objects and hundreds of visible tiles.
+  //
+  // 'high'/'low'/'superlow' (Settings → Graphics Quality) force full or
+  // reduced detail regardless of zoom; 'middle' (the default) keeps the
+  // automatic behavior this always had — low detail only kicks in once
+  // zoomed out far enough that the difference is barely visible anyway
+  // (mobile gets a more generous threshold there, since that's exactly
+  // where this cost is felt most). Super Low goes further still,
+  // dropping the falling-fruit particles on ripe fruit trees too (see
+  // _drawFruitTree) — the one other per-object animated effect that
+  // scales with how many fruit trees are on screen.
+  _updateDetailFlags() {
+    if (this.graphicsQuality === 'high') {
+      this._lowDetailGlow = false;
+      this._lowDetailTiles = false;
+      this._superLow = false;
+      return;
+    }
+    if (this.graphicsQuality === 'low' || this.graphicsQuality === 'superlow') {
+      this._lowDetailGlow = true;
+      this._lowDetailTiles = true;
+      this._superLow = this.graphicsQuality === 'superlow';
+      return;
+    }
+    // 'middle' — automatic, zoom/device-based (the original heuristic)
+    const glowThreshold = this._isMobileDevice ? 0.85 : 0.6;
+    this._lowDetailGlow = this.camera.scale < glowThreshold;
+    this._lowDetailTiles = this.camera.scale < 0.75;
+    this._superLow = false;
+  }
+
+
   _resize() {
     const rect = this.canvas.getBoundingClientRect();
-    // Capped at 2x — a phone's TRUE devicePixelRatio can be 3x or higher,
-    // which makes the canvas's actual pixel buffer (and therefore the raw
-    // fill-rate cost of every single draw call, every frame) up to ~2.25x
-    // more work than necessary for a sharpness difference most players
-    // wouldn't even notice on a small phone screen. This is a direct,
-    // meaningful performance win specifically where it matters most —
-    // mobile.
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(this._dprCap(), window.devicePixelRatio || 1);
     this._dpr = dpr;
     this.canvas.width = rect.width * dpr;
     this.canvas.height = rect.height * dpr;
@@ -2008,30 +2071,16 @@ class FarmGame {
     // resizing the canvas on EVERY such fluctuation (re-clearing and
     // redrawing at a new size each time) is exactly what reads as the
     // screen visibly flickering/blinking during that transition.
-    const dpr = Math.min(2, window.devicePixelRatio || 1); // must match the same cap _resize() applies, or this check would never agree and re-resize every single frame for nothing
+    const dpr = Math.min(this._dprCap(), window.devicePixelRatio || 1); // must match the same cap _resize() applies, or this check would never agree and re-resize every single frame for nothing
     const now = performance.now();
     if ((Math.round(rect.width * dpr) !== this.canvas.width || Math.round(rect.height * dpr) !== this.canvas.height)
         && (!this._lastResizeCheckTime || now - this._lastResizeCheckTime > 250)) {
       this._lastResizeCheckTime = now;
       this._resize();
     }
-    // Computed ONCE per frame (not per-object) — ctx.shadowBlur is
-    // genuinely expensive per draw call in Canvas2D, and a well-developed
-    // farm can easily have a dozen+ Lamp Posts/Fireplaces/Bonfires/Table
-    // Lamps/Wall Lights, each doing its own "breathing glow" blur every
-    // single frame. Zoomed OUT is exactly when the most of them are
-    // likely to be on screen simultaneously AND exactly when that blur
-    // is least visually noticeable (each glow renders at a fraction of
-    // its normal on-screen size) — so past a certain zoom-out threshold,
-    // every one of those effects skips its shadowBlur pass entirely
-    // (falling back to a flat, cheap fill with no blur) rather than
-    // paying that cost for a detail nobody can really see at that scale.
-    // Mobile gets a MORE generous threshold (triggers low-detail even
-    // when less zoomed-out) — phones are exactly where this kind of
-    // rendering cost is felt the most, so it's worth trading a bit more
-    // of that glow detail away, more often, specifically there.
-    const glowThreshold = this._isMobileDevice ? 0.85 : 0.6;
-    this._lowDetailGlow = this.camera.scale < glowThreshold;
+    // Computed ONCE per frame (not per-object, not per-draw-call) — see
+    // _updateDetailFlags for what each level actually controls and why.
+    this._updateDetailFlags();
     // If a previous frame threw mid-draw (after ctx.save()/translate() but
     // before the matching ctx.restore()), the canvas would be left with a
     // leaked transform — and since clearRect() is itself affected by the
@@ -4064,10 +4113,12 @@ class FarmGame {
     // so this cost compounds fast — hundreds of visible tiles zoomed out
     // easily means thousands of draw calls per frame for texture detail
     // nobody can actually make out at that scale, on ANY hardware, not
-    // just underpowered phones. A more generous threshold than the glow
-    // effects' own — the fine tile texture disappears into "just a
-    // color" well before individual furniture pieces do.
-    const lowDetailTiles = this.camera.scale < 0.75;
+    // just underpowered phones. Computed once per frame in
+    // _updateDetailFlags (Settings → Graphics Quality can force this on/
+    // off regardless of zoom) — a more generous automatic threshold than
+    // the glow effects' own, since the fine tile texture disappears into
+    // "just a color" well before individual furniture pieces do.
+    const lowDetailTiles = this._lowDetailTiles;
 
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
@@ -5205,7 +5256,10 @@ class FarmGame {
       // own staggered cycle (t % cycleSeconds), drifting down from the
       // canopy toward the ground and fading out near the bottom, using
       // the tree's own fruit color so it still reads as "this tree's
-      // fruit" rather than a generic effect.
+      // fruit" rather than a generic effect. Skipped entirely at Super
+      // Low (_superLow) — the pulsing glow alone still shows a tree is
+      // ready, this is just the extra flourish on top.
+      if (!this._superLow) {
       const fallCycle = 2.2; // seconds per particle's full fall-and-reset loop
       const fallDrops = [
         { startX: 0.4, offset: 0 },
@@ -5223,6 +5277,7 @@ class FarmGame {
         ctx.arc(x + w * drop.startX, dropY, w * 0.035, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
+      }
       }
     }
   }

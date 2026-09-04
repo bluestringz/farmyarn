@@ -2283,7 +2283,13 @@
       document.getElementById('settings-current-password').value = '';
       document.getElementById('settings-new-password').value = '';
       document.getElementById('account-settings-error').textContent = '';
+      document.getElementById('graphics-quality-select').value = game.graphicsQuality || 'middle';
       document.getElementById('account-settings-modal').classList.remove('hidden');
+    });
+    document.getElementById('graphics-quality-select').addEventListener('change', (e) => {
+      game.setGraphicsQuality(e.target.value);
+      localStorage.setItem('fy_graphics_quality', e.target.value);
+      UI.toast(`Graphics set to ${e.target.value.toUpperCase()}`);
     });
     document.getElementById('account-settings-cancel').addEventListener('click', () => {
       document.getElementById('account-settings-modal').classList.add('hidden');

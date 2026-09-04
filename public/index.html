@@ -311,16 +311,27 @@
     </div>
   </div>
 
-  <!-- ACCOUNT SETTINGS MODAL — change password while logged in. -->
+  <!-- ACCOUNT SETTINGS MODAL — change password while logged in, plus
+       Graphics Quality (a purely client-side preference, saved in this
+       browser only — see initGraphicsSettings() in main.js). -->
   <div id="account-settings-modal" class="modal-overlay hidden">
     <div class="modal-card">
-      <h2>Change Password</h2>
+      <h2>Settings</h2>
+      <h3 style="margin-bottom:4px;">🖥️ Graphics Quality</h3>
+      <p style="font-size:12px;color:#8a5a34;margin-top:0;">Lower settings trade fine detail (tile texture, glow effects, screen sharpness) for smoother performance — pick whichever feels best on your device. Takes effect immediately.</p>
+      <select id="graphics-quality-select" style="width:100%;margin-bottom:14px;">
+        <option value="high">High — full detail, best for a strong PC</option>
+        <option value="middle">Middle — balanced, adapts automatically to zoom (default)</option>
+        <option value="low">Low — smoother on older phones/laptops</option>
+        <option value="superlow">Super Low — maximum smoothness, least detail</option>
+      </select>
+      <h3 style="margin-bottom:4px;">Change Password</h3>
       <input type="password" id="settings-current-password" placeholder="Current password" autocomplete="current-password">
       <input type="password" id="settings-new-password" placeholder="New password (min 6 characters)" autocomplete="new-password">
       <div class="modal-error" id="account-settings-error"></div>
       <div style="display:flex; gap:8px;">
-        <button class="btn" id="account-settings-cancel" style="flex:1">Cancel</button>
-        <button class="btn btn-primary" id="account-settings-submit" style="flex:1">Save</button>
+        <button class="btn" id="account-settings-cancel" style="flex:1">Close</button>
+        <button class="btn btn-primary" id="account-settings-submit" style="flex:1">Save Password</button>
       </div>
     </div>
   </div>

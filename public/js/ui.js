@@ -529,8 +529,8 @@ const UI = (() => {
               <div class="row-sub">Sells for 🪙 ${meta.price} each</div>
             </div>
             <div class="row-actions">
-              <button data-item="${row.item_id}" data-qty="1">Sell 1</button>
-              ${row.quantity > 1 ? `<button data-item="${row.item_id}" data-qty="${row.quantity}">Sell All (${row.quantity})</button>` : ''}
+              <div class="qty-row"><input type="number" class="qty-input" min="1" max="${row.quantity}" value="1" data-qty-for="${row.item_id}"><button type="button" class="qty-max-btn" data-max-for="${row.item_id}" data-max-value="${row.quantity}">MAX</button></div>
+              <button data-item="${row.item_id}">Sell</button>
             </div>
           </div>`;
       }).join('');
@@ -553,8 +553,19 @@ const UI = (() => {
       }).join('');
     }
     body.innerHTML = html;
+    body.querySelectorAll('.qty-max-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const input = body.querySelector(`input[data-qty-for="${btn.dataset.maxFor}"]`);
+        if (input) input.value = btn.dataset.maxValue;
+      });
+    });
     body.querySelectorAll('button[data-item]').forEach((btn) => {
-      btn.addEventListener('click', () => onSell(btn.dataset.item, parseInt(btn.dataset.qty, 10) || 1));
+      btn.addEventListener('click', () => {
+        const qtyInput = body.querySelector(`input[data-qty-for="${btn.dataset.item}"]`);
+        const max = qtyInput ? parseInt(qtyInput.max, 10) || 1 : 1;
+        const qty = qtyInput ? Math.max(1, Math.min(max, parseInt(qtyInput.value, 10) || 1)) : 1;
+        onSell(btn.dataset.item, qty);
+      });
     });
     body.querySelectorAll('button[data-eat]').forEach((btn) => {
       btn.addEventListener('click', () => onEat(btn.dataset.eat));
