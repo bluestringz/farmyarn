@@ -444,6 +444,18 @@ function addColumnsIfMissing(db) {
     produces_item_id: 'TEXT', production_seconds: 'INTEGER NOT NULL DEFAULT 0',
     fruit_spoil_seconds: 'INTEGER NOT NULL DEFAULT 0', lifespan_seconds: 'INTEGER NOT NULL DEFAULT 0',
     yield_min: 'INTEGER NOT NULL DEFAULT 0', yield_max: 'INTEGER NOT NULL DEFAULT 0',
+    // NULL for every regular (non-seasonal) decoration. For a seasonal
+    // one (Christmas/Halloween/Valentine's/New Year — see server/lib/
+    // seasons.js), this is the season key it belongs to: only buyable
+    // while that season's window is open, and swept off every farm (and
+    // out of every Bag) the moment the window closes — see
+    // resolveSeasonalExpiry.
+    season: 'TEXT',
+    // Fixed display text for a seasonal Banner (e.g. "Merry Christmas!")
+    // — unlike a regular Sign, a Banner's message isn't something the
+    // player types in themselves, so this is baked into the catalog
+    // entry instead of stored per-placed-object state.
+    banner_text: 'TEXT',
   };
   for (const [col, type] of Object.entries(decorationNewCols)) {
     if (!decorationTypeCols.includes(col)) db.exec(`ALTER TABLE decoration_types ADD COLUMN ${col} ${type}`);
@@ -454,6 +466,12 @@ function addColumnsIfMissing(db) {
   }
   if (!itemTypeCols.includes('cost')) {
     db.exec('ALTER TABLE item_types ADD COLUMN cost INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!itemTypeCols.includes('season')) {
+    db.exec('ALTER TABLE item_types ADD COLUMN season TEXT');
+  }
+  if (!itemTypeCols.includes('giftable')) {
+    db.exec('ALTER TABLE item_types ADD COLUMN giftable INTEGER NOT NULL DEFAULT 0');
   }
   if (!existingCols.includes('equipped_outfit')) {
     db.exec('ALTER TABLE users ADD COLUMN equipped_outfit TEXT');
@@ -619,16 +637,16 @@ function seedContent(db) {
 
   const upsertDeco = db.prepare(`
     INSERT INTO decoration_types (id, name, cost, required_level, width, height, sprite, growable, growth_seconds,
-      produces_item_id, production_seconds, fruit_spoil_seconds, lifespan_seconds, yield_min, yield_max)
+      produces_item_id, production_seconds, fruit_spoil_seconds, lifespan_seconds, yield_min, yield_max, season, banner_text)
     VALUES (@id, @name, @cost, @required_level, @width, @height, @sprite, @growable, @growth_seconds,
-      @produces_item_id, @production_seconds, @fruit_spoil_seconds, @lifespan_seconds, @yield_min, @yield_max)
+      @produces_item_id, @production_seconds, @fruit_spoil_seconds, @lifespan_seconds, @yield_min, @yield_max, @season, @banner_text)
     ON CONFLICT(id) DO NOTHING
   `);
   // Fruit-tree-only fields default to "not a fruit tree" (0/null) for
   // every other decoration — filled in here so each row below only needs
   // to specify them when it actually IS a fruit tree, instead of every
   // existing decoration needing 6 new boilerplate fields added.
-  const DECORATION_DEFAULTS = { produces_item_id: null, production_seconds: 0, fruit_spoil_seconds: 0, lifespan_seconds: 0, yield_min: 0, yield_max: 0 };
+  const DECORATION_DEFAULTS = { produces_item_id: null, production_seconds: 0, fruit_spoil_seconds: 0, lifespan_seconds: 0, yield_min: 0, yield_max: 0, season: null, banner_text: null, growable: 0, growth_seconds: 0 };
   const decorations = [
     { id: 'fence',      name: 'Fence',       cost: 5,   required_level: 1, width: 1, height: 1, sprite: 'fence', growable: 0, growth_seconds: 0 },
     { id: 'tree',       name: 'Tree',        cost: 50,  required_level: 1, width: 1, height: 1, sprite: 'tree', growable: 1, growth_seconds: 172800 }, // 2 days as a sapling before it's a full tree
@@ -659,6 +677,30 @@ function seedContent(db) {
       growable: 1, growth_seconds: 86400, produces_item_id: 'apple', production_seconds: 21600, fruit_spoil_seconds: 3600, lifespan_seconds: 432000, yield_min: 5, yield_max: 15 },
     { id: 'avocado_tree', name: 'Avocado Tree', cost: 3500, required_level: 1, width: 1, height: 1, sprite: 'avocado_tree',
       growable: 1, growth_seconds: 86400, produces_item_id: 'avocado', production_seconds: 21600, fruit_spoil_seconds: 3600, lifespan_seconds: 432000, yield_min: 5, yield_max: 15 },
+
+    // ---- Seasonal decorations — see server/lib/seasons.js for each
+    // season's buy window. Only buyable while that window is open, and
+    // swept off every farm/Bag the moment it closes (resolveSeasonalExpiry).
+    { id: 'christmas_tree', name: 'Christmas Tree', cost: 10000, required_level: 1, width: 4, height: 4, sprite: 'christmas_tree', season: 'christmas' },
+    { id: 'christmas_lights', name: 'Christmas Lights', cost: 3000, required_level: 1, width: 1, height: 1, sprite: 'christmas_lights', season: 'christmas' },
+    { id: 'gift_box', name: 'Gift Box', cost: 2000, required_level: 1, width: 1, height: 1, sprite: 'gift_box', season: 'christmas' },
+    { id: 'merry_christmas_banner', name: 'Merry Christmas Banner', cost: 5000, required_level: 1, width: 1, height: 1, sprite: 'banner', season: 'christmas', banner_text: 'Merry Christmas!' },
+
+    { id: 'scary_pumpkin', name: 'Scary Pumpkin', cost: 2500, required_level: 1, width: 1, height: 1, sprite: 'scary_pumpkin', season: 'halloween' },
+    { id: 'spider_web', name: 'Spider Web', cost: 2500, required_level: 1, width: 1, height: 1, sprite: 'spider_web', season: 'halloween' },
+    { id: 'scare_crow', name: 'Scare Crow', cost: 5000, required_level: 1, width: 1, height: 1, sprite: 'scare_crow', season: 'halloween' },
+    { id: 'crow', name: 'Crow', cost: 1500, required_level: 1, width: 1, height: 1, sprite: 'crow', season: 'halloween' },
+    { id: 'rip_stone', name: 'RIP Stone Tablet', cost: 2000, required_level: 1, width: 1, height: 1, sprite: 'rip_stone', season: 'halloween' },
+    { id: 'skeleton_dummy', name: 'Skeleton Dummy', cost: 7000, required_level: 1, width: 1, height: 1, sprite: 'skeleton_dummy', season: 'halloween' },
+    { id: 'happy_halloween_banner', name: 'Happy Halloween Banner', cost: 5000, required_level: 1, width: 1, height: 1, sprite: 'banner', season: 'halloween', banner_text: 'Happy Halloween!' },
+
+    { id: 'heart', name: 'Heart', cost: 2500, required_level: 1, width: 1, height: 1, sprite: 'heart', season: 'valentines' },
+    { id: 'cupid', name: 'Cupid', cost: 10000, required_level: 1, width: 1, height: 1, sprite: 'cupid', season: 'valentines' },
+    { id: 'arc_heart', name: 'Heart Arch', cost: 5000, required_level: 1, width: 1, height: 1, sprite: 'arc_heart', season: 'valentines' },
+    { id: 'happy_valentines_banner', name: 'Happy Valentines Banner', cost: 5000, required_level: 1, width: 1, height: 1, sprite: 'banner', season: 'valentines', banner_text: 'Happy Valentine\'s Day!' },
+
+    { id: 'fireworks', name: 'Fireworks', cost: 5000, required_level: 1, width: 1, height: 1, sprite: 'fireworks', season: 'new_year' },
+    { id: 'happy_new_year_banner', name: 'Happy New Year Banner', cost: 5000, required_level: 1, width: 1, height: 1, sprite: 'banner', season: 'new_year', banner_text: 'Happy New Year!' },
   ].map((d) => ({ ...DECORATION_DEFAULTS, ...d }));
   const txDeco = db.transaction((rows) => rows.forEach((r) => upsertDeco.run(r)));
   txDeco(decorations);
@@ -678,8 +720,8 @@ function seedContent(db) {
   txAnimals(animals);
 
   const upsertItem = db.prepare(`
-    INSERT INTO item_types (id, name, sell_price, sprite, category, energy_restore, cost)
-    VALUES (@id, @name, @sell_price, @sprite, @category, @energy_restore, @cost)
+    INSERT INTO item_types (id, name, sell_price, sprite, category, energy_restore, cost, season, giftable)
+    VALUES (@id, @name, @sell_price, @sprite, @category, @energy_restore, @cost, @season, @giftable)
     ON CONFLICT(id) DO NOTHING
   `);
   const items = [
@@ -719,7 +761,15 @@ function seedContent(db) {
     // /api/chat/shout. Not sellable back (sell_price 0), doesn't restore
     // energy — its whole purpose is being spent on a single Shout.
     { id: 'megaphone',        name: 'Megaphone',        sell_price: 0,   sprite: 'megaphone', category: 'tool', cost: 25000 },
-  ].map((it) => ({ energy_restore: 0, cost: 0, ...it }));
+    // Valentine's Day gifts — bought directly FOR a friend (see
+    // /api/shop/gift-to-friend), never placed on a farm, only buyable
+    // Feb 1-28 like every other Valentine's item (server/lib/seasons.js)
+    // and swept from Bags once the window closes (resolveSeasonalExpiry)
+    // same as the seasonal decorations. Chocolates restores energy like
+    // any other food; Red Roses is purely decorative/sentimental.
+    { id: 'red_roses',        name: 'Red Roses',        sell_price: 0,   sprite: 'red_roses', category: 'gift', cost: 25000, season: 'valentines', giftable: 1 },
+    { id: 'chocolates',       name: 'Chocolates',       sell_price: 0,   sprite: 'chocolates', category: 'gift', cost: 25000, season: 'valentines', giftable: 1, energy_restore: 20 },
+  ].map((it) => ({ energy_restore: 0, cost: 0, season: null, giftable: 0, ...it }));
   const txItems = db.transaction((rows) => rows.forEach((r) => upsertItem.run(r)));
   txItems(items);
 

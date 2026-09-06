@@ -3,7 +3,7 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
-const { grantRewards, resolveEnergy, addEnergy, nowSec, xpProgress, isReservedName, startResting, stopResting, resolveEquippedOutfit } = require('../lib/gameLogic');
+const { grantRewards, resolveEnergy, addEnergy, nowSec, xpProgress, isReservedName, startResting, stopResting, resolveEquippedOutfit, resolveSeasonalExpiry } = require('../lib/gameLogic');
 const { publicUser } = require('./auth');
 
 // Alternates coins/energy day to day — nothing else (no items, no xp,
@@ -187,6 +187,11 @@ module.exports = function playerRoutes(db) {
   });
 
   router.get('/inventory', (req, res) => {
+    // Bag-only sweep (no farmId — placed decorations are handled by
+    // serializeFarm instead) so a seasonal item still sitting un-placed
+    // in the Bag disappears here too, even in a session that never
+    // happens to load the farm view first.
+    resolveSeasonalExpiry(db, null, req.userId);
     const rows = db.prepare('SELECT item_id, quantity FROM inventory WHERE user_id = ? AND quantity > 0').all(req.userId);
     res.json(rows);
   });

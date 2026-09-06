@@ -47,6 +47,13 @@ const UI = (() => {
     crafted_bench: '🪑', crafted_bookshelf: '📚',
     // Animals (placeable)
     chicken: '🐔', cow: '🐄', pig: '🐷', sheep: '🐑',
+    // Seasonal (Christmas / Halloween / Valentine's / New Year)
+    christmas_tree: '🎄', christmas_lights: '✨', gift_box: '🎁',
+    merry_christmas_banner: '🎄', scary_pumpkin: '🎃', spider_web: '🕸️',
+    scare_crow: '🧑\u200d🌾', crow: '🐦\u200d⬛', rip_stone: '🪦', skeleton_dummy: '💀',
+    happy_halloween_banner: '🎃', heart: '❤️', cupid: '💘', arc_heart: '💕',
+    happy_valentines_banner: '❤️', red_roses: '🌹', chocolates: '🍫',
+    fireworks: '🎆', happy_new_year_banner: '🎆',
   };
 
   function toast(message) {
@@ -188,7 +195,7 @@ const UI = (() => {
     side_table: 'Small side table for your house interior — table lamps and TVs can be placed on top of it.',
   };
 
-  function renderShop(catalog, activeCategory, player, onBuy, onCategoryChange, onChangeName) {
+  function renderShop(catalog, activeCategory, player, onBuy, onCategoryChange, onChangeName, friendsList, onGift) {
     const body = panelBody();
     const categories = [
       { key: 'crops', label: 'Seeds' },
@@ -198,6 +205,10 @@ const UI = (() => {
       { key: 'fruit_trees', label: '🍎 Fruit Trees' },
       { key: 'interiors', label: 'Interior' },
       { key: 'tools', label: '📢 Tools' },
+      { key: 'christmas', label: '🎄 Christmas' },
+      { key: 'halloween', label: '🎃 Halloween' },
+      { key: 'valentines', label: '💘 Valentine\'s' },
+      { key: 'new_year', label: '🎆 New Year' },
       { key: 'outfits', label: 'Outfits' },
       { key: 'special_outfits', label: '⭐ Special' },
     ];
@@ -256,6 +267,81 @@ const UI = (() => {
       });
       body.querySelectorAll('.shop-card button[data-item]').forEach((btn) => {
         btn.addEventListener('click', () => onBuy('special_outfits', btn.dataset.item));
+      });
+      return;
+    }
+
+    const SEASON_KEYS = new Set(['christmas', 'halloween', 'valentines', 'new_year']);
+    if (SEASON_KEYS.has(activeCategory)) {
+      const activeSeasons = new Set(catalog.activeSeasons || []);
+      const isOpen = activeSeasons.has(activeCategory);
+      const seasonLabel = categories.find((c) => c.key === activeCategory).label;
+      // Seasonal DECORATIONS (placeable, buy-for-yourself) — filtered to
+      // THIS specific season only, not every season at once (each of the
+      // 4 events now gets its own tab/category instead of being lumped
+      // together under one shared "Seasonal" tab). Only shown as buyable
+      // while the window is open, same rule the server enforces on the
+      // actual purchase (see /api/shop/buy-placeable's isWithinBuyWindow
+      // check) — this is just keeping the Shop from showing something
+      // that would immediately get rejected if tapped.
+      const seasonalDecos = isOpen ? (catalog.decorations || []).filter((d) => d.season === activeCategory) : [];
+      // Seasonal GIFTS (Red Roses, Chocolates so far — item_types rows
+      // with giftable=1) — bought FOR a friend, never for yourself, so
+      // these get a friend-picker instead of a quantity field.
+      const seasonalGifts = isOpen ? (catalog.items || []).filter((it) => it.giftable && it.season === activeCategory) : [];
+
+      if (!isOpen) {
+        body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">${seasonLabel} isn't running right now — check back during its event window.</p>`;
+        body.querySelectorAll('.shop-tab').forEach((btn) => btn.addEventListener('click', () => onCategoryChange(btn.dataset.cat)));
+        return;
+      }
+
+      const decoCards = seasonalDecos.map((item) => {
+        const locked = player.level < item.required_level;
+        const affordable = player.coins >= item.cost;
+        return `
+          <div class="shop-card">
+            <div class="shop-icon">${ITEM_ICONS[item.id] || '🎉'}</div>
+            <div class="shop-name">${item.name}</div>
+            <div class="shop-price">🪙 ${item.cost}</div>
+            ${locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}
+            <button data-deco-item="${item.id}" ${(locked || !affordable) ? 'disabled' : ''}>${locked ? 'Locked' : 'Buy'}</button>
+          </div>`;
+      }).join('');
+
+      const friendOptions = (friendsList || []).map((f) => `<option value="${f.id}">${f.username}</option>`).join('');
+      const giftCards = seasonalGifts.map((item) => {
+        const affordable = player.coins >= item.cost;
+        const hasFriends = (friendsList || []).length > 0;
+        return `
+          <div class="shop-card">
+            <div class="shop-icon">${ITEM_ICONS[item.id] || '🎁'}</div>
+            <div class="shop-name">${item.name}${item.energy_restore ? ` (⚡+${item.energy_restore} when eaten)` : ''}</div>
+            <div class="shop-price">🪙 ${item.cost} — gift to a friend</div>
+            ${hasFriends
+              ? `<select data-gift-friend-for="${item.id}" style="width:100%;margin:4px 0;">${friendOptions}</select>
+                 <button data-gift-item="${item.id}" ${affordable ? '' : 'disabled'}>Send Gift</button>`
+              : `<div class="shop-level">Add a friend first to send this.</div>`}
+          </div>`;
+      }).join('');
+
+      body.innerHTML = `
+        <div class="shop-tabs">${tabs}</div>
+        <p class="panel-hint">${seasonLabel} is here! Limited-time items — removed automatically once the event ends.</p>
+        ${decoCards ? `<div class="panel-section-title">Decorations</div><div class="shop-grid">${decoCards}</div>` : ''}
+        ${giftCards ? `<div class="panel-section-title">Gifts for a Friend</div><div class="shop-grid">${giftCards}</div>` : ''}
+      `;
+      body.querySelectorAll('.shop-tab').forEach((btn) => btn.addEventListener('click', () => onCategoryChange(btn.dataset.cat)));
+      body.querySelectorAll('button[data-deco-item]').forEach((btn) => {
+        btn.addEventListener('click', () => onBuy('decoration', btn.dataset.decoItem, 1));
+      });
+      body.querySelectorAll('button[data-gift-item]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const select = body.querySelector(`select[data-gift-friend-for="${btn.dataset.giftItem}"]`);
+          const friendId = select ? select.value : null;
+          if (!friendId) { toast('Pick a friend first.'); return; }
+          onGift(btn.dataset.giftItem, friendId);
+        });
       });
       return;
     }
@@ -463,7 +549,7 @@ const UI = (() => {
     const seeds = items.filter((r) => r.item_id.startsWith('seed_'));
     const placeablePrefixes = ['building_', 'decoration_', 'animal_', 'interior_'];
     const placeables = items.filter((r) => placeablePrefixes.some((p) => r.item_id.startsWith(p)));
-    const FOOD_ITEMS = { bread: 5, rice_bowl: 6, corn_soup: 7, carrot_stew: 8, mashed_potato: 10, tomato_soup: 11, strawberry_cake: 14, pumpkin_pie: 17, fried_egg: 6, milkshake: 10, truffle_dish: 18, ice_cream: 5, hotdog: 8 };
+    const FOOD_ITEMS = { bread: 5, rice_bowl: 6, corn_soup: 7, carrot_stew: 8, mashed_potato: 10, tomato_soup: 11, strawberry_cake: 14, pumpkin_pie: 17, fried_egg: 6, milkshake: 10, truffle_dish: 18, ice_cream: 5, hotdog: 8, energy_potion: 600 };
     const food = items.filter((r) => FOOD_ITEMS[r.item_id] !== undefined);
     const produce = items.filter((r) => !r.item_id.startsWith('seed_') && !placeablePrefixes.some((p) => r.item_id.startsWith(p)) && FOOD_ITEMS[r.item_id] === undefined);
 

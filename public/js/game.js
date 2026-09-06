@@ -230,6 +230,24 @@ const DECORATION_STYLE = {
   sign:     { shape: 'sign',    post: '#6b4423', board: '#c7a877', boardDark: '#a9714a' },
   path:     { shape: 'path',    stone: '#c9c2b0', stoneDark: '#a9a08a' },
   pond:     { shape: 'pond',    water: '#5ab0ff', waterDark: '#3d8fe0', reed: '#4f8f2e' },
+  // ---- Seasonal ----
+  christmas_tree:   { shape: 'christmas_tree', trunk: '#6b4423', leaf: '#2d6b3a', leafDark: '#1f4d29', star: '#ffd24a', ornaments: ['#e0483e', '#f4c95d', '#5ab0ff'] },
+  christmas_lights: { shape: 'christmas_lights', post: '#4a3521', bulbs: ['#ff5a5a', '#5aff7a', '#5ab0ff', '#ffd24a'] },
+  gift_box:         { shape: 'gift_box', box: '#c9433a', ribbon: '#f4c95d' },
+  scary_pumpkin:    { shape: 'scary_pumpkin', body: '#e8791a', bodyDark: '#c46110', glow: '#ffb347', stem: '#4a7a2e' },
+  spider_web:       { shape: 'spider_web', web: '#e8e4d8', spider: '#241d17' },
+  scare_crow:       { shape: 'scare_crow', post: '#8b5e34', shirt: '#a9714a', hat: '#e8c25a', face: '#e8c99a' },
+  crow:             { shape: 'crow', body: '#231f1a', beak: '#e8a527' },
+  rip_stone:        { shape: 'rip_stone', stone: '#9a9a94', stoneDark: '#7a7a74' },
+  skeleton_dummy:   { shape: 'skeleton_dummy', bone: '#f0ead8', boneDark: '#cfc7ae', post: '#6b4423' },
+  heart:            { shape: 'heart', color: '#e0483e', colorDark: '#c4342a' },
+  cupid:            { shape: 'cupid', body: '#f6d9b8', wing: '#ffffff', hair: '#e8c25a' },
+  arc_heart:        { shape: 'arc_heart', color: '#f06090', colorDark: '#d0407a' },
+  fireworks:        { shape: 'fireworks', tube: '#4a3521', band: '#e8c25a' },
+  merry_christmas_banner:   { shape: 'banner', post: '#6b4423', cloth: '#2d6b3a', text: 'Merry Christmas!', textColor: '#ffffff' },
+  happy_halloween_banner:   { shape: 'banner', post: '#4a3521', cloth: '#e8791a', text: 'Happy Halloween!', textColor: '#241d17' },
+  happy_valentines_banner:  { shape: 'banner', post: '#6b4423', cloth: '#f06090', text: 'Happy Valentine\'s!', textColor: '#ffffff' },
+  happy_new_year_banner:    { shape: 'banner', post: '#4a3521', cloth: '#5ab0ff', text: 'Happy New Year!', textColor: '#ffffff' },
 };
 const ANIMAL_STYLE = {
   chicken: { shape: 'chicken', body: '#fdf6e3', comb: '#c0392b', beak: '#e8a527' },
@@ -378,6 +396,13 @@ class FarmGame {
     // plaza) — see setMarketMode/join wiring in main.js. Map<userId, actor>.
     this.remotePlayers = new Map();
     this.onSelfMove = null; // callback(tileX, tileY) fired whenever the local player walks somewhere
+    // Active Fireworks bursts — { x, y, startTime } in TILE coordinates,
+    // each auto-removed once its short life is up (see
+    // triggerFireworksBurst / _drawFireworksBursts). Deliberately brief
+    // and low-particle-count ("wag masyado mailaw para di malag" — not
+    // too bright/heavy so it doesn't lag), unlike the Lamp/Bonfire's
+    // continuous ambient particles.
+    this._fireworksBursts = [];
 
     this._bindEvents();
     this._resize();
@@ -523,6 +548,48 @@ class FarmGame {
   }
   setCasinoMachineUnlocked(machineId) {
     this.casinoLocks.delete(machineId);
+  }
+
+  // Records a new Fireworks burst to animate — see _drawFireworksBursts
+  // for the actual rendering, called once per frame from the main
+  // outdoor draw pass. x/y are TILE coordinates of the Fireworks
+  // decoration that was tapped.
+  triggerFireworksBurst(x, y) {
+    this._fireworksBursts.push({ x, y, startTime: performance.now() });
+  }
+
+  // A handful of small sparks radiating outward and fading over ~1.4s —
+  // deliberately brief and low-particle-count (no shadowBlur/glow layer)
+  // per "wag masyado mailaw para di malag", unlike the Lamp/Bonfire's
+  // continuous ambient particles. Old bursts are filtered out of the
+  // array as they expire, so this list never grows unbounded even if
+  // several Fireworks get set off back to back.
+  _drawFireworksBursts() {
+    if (!this._fireworksBursts.length) return;
+    const ctx = this.ctx;
+    const now = performance.now();
+    const LIFETIME = 1400;
+    this._fireworksBursts = this._fireworksBursts.filter((b) => now - b.startTime < LIFETIME);
+    const sparkColors = ['#ff5a5a', '#ffd24a', '#5ab0ff', '#5aff7a', '#ff8fd0'];
+    const sparkCount = this._superLow ? 3 : 6;
+    for (const burst of this._fireworksBursts) {
+      const progress = (now - burst.startTime) / LIFETIME;
+      const cx = burst.x * TILE + TILE / 2, cy = burst.y * TILE - TILE * 0.6;
+      for (let i = 0; i < sparkCount; i++) {
+        const ang = (Math.PI * 2 * i) / sparkCount;
+        const dist = progress * TILE * 0.9;
+        const sx = cx + Math.cos(ang) * dist;
+        const sy = cy + Math.sin(ang) * dist * 0.7;
+        const alpha = Math.max(0, 1 - progress * 1.3);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = sparkColors[i % sparkColors.length];
+        ctx.beginPath();
+        ctx.arc(sx, sy, TILE * 0.03, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
   }
 
   // Speech bubble above the local player's head (global chat while visible
@@ -2178,6 +2245,7 @@ class FarmGame {
     this._drawGhost();
     this._drawCharacterOverlay();
     this._drawWoodenBorder();
+    this._drawFireworksBursts();
 
     ctx.restore();
     this._drawWeatherOverlay(rect);
@@ -4956,6 +5024,42 @@ class FarmGame {
     return cached;
   }
 
+  // A couple of small butterflies gently looping above a Flower Bed —
+  // drawn as a SEPARATE, uncached overlay on top of the flower's cached
+  // sprite (see _drawDecoration), never baked into the cache itself,
+  // since a butterfly's whole point is to move; caching it would freeze
+  // it mid-flap forever, same reasoning as why the lamp/bonfire particle
+  // effects are excluded from the generic sprite cache. Deterministic
+  // per-flower-bed phase offset (from its own screen position, matching
+  // the lamp firefly pattern) so multiple flower beds don't all flutter
+  // in perfect unison. Skipped at reduced Graphics Quality (_lowDetailGlow/
+  // _superLow) — a nice-to-have flourish, not core information the way
+  // a ready-to-harvest glow is.
+  _drawFlowerButterflies(x, y, w, h) {
+    if (this._lowDetailGlow) return;
+    const ctx = this.ctx;
+    const tt = performance.now() / 1000;
+    const phase = (x + y) * 0.013;
+    const butterflies = this._superLow ? 1 : 2;
+    const colors = ['#ffd24a', '#ff8fb3'];
+    for (let i = 0; i < butterflies; i++) {
+      const loopT = tt * 0.6 + phase + i * 3.1;
+      const bx = x + w / 2 + Math.cos(loopT) * w * 0.42;
+      const by = y + h * 0.32 + Math.sin(loopT * 1.7) * h * 0.22;
+      const flap = Math.sin(tt * 14 + i * 2) * 0.5 + 0.5; // 0..1, fast wing-flap cycle
+      const wingSpan = w * (0.05 + flap * 0.03);
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath(); ctx.ellipse(-wingSpan * 0.5, 0, wingSpan, wingSpan * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(wingSpan * 0.5, 0, wingSpan, wingSpan * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#4a3521';
+      ctx.beginPath(); ctx.ellipse(0, 0, w * 0.012, w * 0.03, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
   _groundShadow(px, py, pw, ph) {
     const ctx = this.ctx;
     ctx.fillStyle = 'rgba(30,40,10,0.22)';
@@ -5032,7 +5136,7 @@ class FarmGame {
     // Rotation is applied to the CANVAS around the cached (always
     // unrotated) sprite, not baked into the cache itself, so one cached
     // image covers every rotation of that item.
-    const STATIC_SHAPE_EXCLUSIONS = new Set(['sign', 'lamp', 'bonfire']);
+    const STATIC_SHAPE_EXCLUSIONS = new Set(['sign', 'lamp', 'bonfire', 'christmas_lights']);
     if (!isCrafted && !STATIC_SHAPE_EXCLUSIONS.has(itemId)) {
       const REF = 192;
       const sprite = this._getCachedSprite(`decoration_${itemId}`, REF, () => {
@@ -5047,6 +5151,7 @@ class FarmGame {
       } else {
         ctx.drawImage(sprite, x, y, w, h);
       }
+      if (itemId === 'flower') this._drawFlowerButterflies(x, y, w, h);
       return;
     }
 
@@ -5643,6 +5748,369 @@ class FarmGame {
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(-w * 0.26, 0); ctx.lineTo(w * 0.26, 0); ctx.stroke();
       ctx.restore();
+    } else if (style.shape === 'christmas_tree') {
+      // A big conifer — 3 stacked triangular tiers (wider at the bottom),
+      // a short trunk, a gold star on top, and a scatter of ornament dots.
+      // Deterministic ornament positions (no Math.random) so the cached
+      // sprite always looks the same and never "reshuffles" on a redraw.
+      ctx.fillStyle = style.trunk;
+      ctx.fillRect(x + w * 0.46, y + h * 0.86, w * 0.08, h * 0.1);
+      const tiers = [
+        { cy: 0.78, halfW: 0.42, top: 0.5 },
+        { cy: 0.6, halfW: 0.32, top: 0.32 },
+        { cy: 0.42, halfW: 0.22, top: 0.16 },
+      ];
+      tiers.forEach((tier, i) => {
+        ctx.fillStyle = i % 2 === 0 ? style.leaf : style.leafDark;
+        ctx.beginPath();
+        ctx.moveTo(x + w * 0.5, y + h * tier.top);
+        ctx.lineTo(x + w * (0.5 - tier.halfW), y + h * tier.cy);
+        ctx.lineTo(x + w * (0.5 + tier.halfW), y + h * tier.cy);
+        ctx.closePath();
+        ctx.fill();
+      });
+      const ornamentSpots = [[0.4, 0.68], [0.6, 0.62], [0.46, 0.5], [0.56, 0.4], [0.5, 0.3]];
+      ornamentSpots.forEach(([dx, dy], i) => {
+        ctx.fillStyle = style.ornaments[i % style.ornaments.length];
+        ctx.beginPath();
+        ctx.arc(x + w * dx, y + h * dy, w * 0.025, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      // star on top
+      ctx.fillStyle = style.star;
+      ctx.save();
+      ctx.translate(x + w * 0.5, y + h * 0.1);
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const ang = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+        const innerAng = ang + Math.PI / 5;
+        ctx.lineTo(Math.cos(ang) * w * 0.07, Math.sin(ang) * w * 0.07);
+        ctx.lineTo(Math.cos(innerAng) * w * 0.03, Math.sin(innerAng) * w * 0.03);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else if (style.shape === 'christmas_lights') {
+      // A short strand of small colored bulbs strung between two low
+      // stakes, each one gently pulsing on its own phase — same
+      // deterministic "phase from position" idea as the Lamp's fireflies,
+      // just colored bulbs instead of white/gold glow, and much cheaper
+      // (no shadowBlur glow layer) since these are meant to be scattered
+      // around in numbers without adding real per-frame cost.
+      const tNow = performance.now() / 1000;
+      const phase = (x + y) * 0.013;
+      ctx.strokeStyle = '#2d2015';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.12, y + h * 0.55);
+      ctx.quadraticCurveTo(x + w * 0.5, y + h * 0.72, x + w * 0.88, y + h * 0.55);
+      ctx.stroke();
+      ctx.fillStyle = '#4a3521';
+      ctx.fillRect(x + w * 0.1, y + h * 0.5, w * 0.04, h * 0.35);
+      ctx.fillRect(x + w * 0.86, y + h * 0.5, w * 0.04, h * 0.35);
+      const bulbCount = this._superLow ? 2 : 4;
+      for (let i = 0; i < bulbCount; i++) {
+        const bt = i / 3;
+        const bx = x + w * (0.12 + bt * 0.76);
+        const by = y + h * (0.55 + Math.sin(bt * Math.PI) * 0.17);
+        const pulse = 0.55 + 0.45 * Math.sin(tNow * 3 + phase + i * 1.7);
+        ctx.save();
+        ctx.globalAlpha = this._lowDetailGlow ? 1 : pulse;
+        ctx.fillStyle = style.bulbs[i % style.bulbs.length];
+        ctx.beginPath();
+        ctx.arc(bx, by, w * 0.03, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    } else if (style.shape === 'gift_box') {
+      this._groundShadow(x, y, w, h);
+      const bx = x + w * 0.25, by = y + h * 0.5, bw = w * 0.5, bh = h * 0.38;
+      ctx.fillStyle = style.box;
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.strokeStyle = shade(style.box, -20);
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx, by, bw, bh);
+      ctx.fillStyle = style.ribbon;
+      ctx.fillRect(x + w * 0.47, by, w * 0.06, bh);
+      ctx.fillRect(bx, y + h * 0.62, bw, h * 0.06);
+      // bow on top
+      ctx.beginPath();
+      ctx.ellipse(x + w * 0.42, by - h * 0.02, w * 0.07, h * 0.05, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(x + w * 0.58, by - h * 0.02, w * 0.07, h * 0.05, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (style.shape === 'scary_pumpkin') {
+      this._groundShadow(x, y, w, h);
+      const cx = x + w / 2, cy = y + h * 0.62, r = w * 0.3;
+      ctx.fillStyle = style.stem;
+      ctx.fillRect(cx - w * 0.03, cy - r - h * 0.1, w * 0.06, h * 0.12);
+      ctx.fillStyle = style.body;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r, r * 0.82, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = style.bodyDark;
+      ctx.lineWidth = 2;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * r * 0.4, cy - r * 0.75);
+        ctx.quadraticCurveTo(cx + i * r * 0.55, cy, cx + i * r * 0.4, cy + r * 0.75);
+        ctx.stroke();
+      }
+      // carved glowing face
+      ctx.fillStyle = style.glow;
+      ctx.beginPath(); ctx.moveTo(cx - r * 0.35, cy - r * 0.2); ctx.lineTo(cx - r * 0.15, cy - r * 0.2); ctx.lineTo(cx - r * 0.25, cy); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx + r * 0.35, cy - r * 0.2); ctx.lineTo(cx + r * 0.15, cy - r * 0.2); ctx.lineTo(cx + r * 0.25, cy); ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.3, cy + r * 0.35);
+      ctx.lineTo(cx - r * 0.12, cy + r * 0.2); ctx.lineTo(cx, cy + r * 0.35);
+      ctx.lineTo(cx + r * 0.12, cy + r * 0.2); ctx.lineTo(cx + r * 0.3, cy + r * 0.35);
+      ctx.lineTo(cx + r * 0.2, cy + r * 0.5); ctx.lineTo(cx - r * 0.2, cy + r * 0.5);
+      ctx.closePath();
+      ctx.fill();
+    } else if (style.shape === 'spider_web') {
+      // Corner web — radial spokes + a few concentric arcs, anchored at
+      // the top-left corner of the tile like it's strung between two
+      // unseen points, plus a small spider sitting on it.
+      const ax = x + w * 0.06, ay = y + h * 0.06;
+      ctx.strokeStyle = style.web;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.85;
+      const reach = w * 0.55;
+      for (let i = 0; i <= 4; i++) {
+        const ang = (Math.PI / 2) * (i / 4);
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(ax + Math.cos(ang) * reach, ay + Math.sin(ang) * reach);
+        ctx.stroke();
+      }
+      for (let ring = 1; ring <= 3; ring++) {
+        ctx.beginPath();
+        ctx.arc(ax, ay, (reach * ring) / 3, 0, Math.PI / 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = style.spider;
+      ctx.beginPath();
+      ctx.arc(ax + reach * 0.45, ay + reach * 0.45, w * 0.035, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (style.shape === 'scare_crow') {
+      this._groundShadow(x, y, w, h);
+      const cx = x + w / 2;
+      ctx.strokeStyle = style.post;
+      ctx.lineWidth = Math.max(2, w * 0.045);
+      ctx.beginPath(); ctx.moveTo(cx, y + h * 0.92); ctx.lineTo(cx, y + h * 0.32); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - w * 0.26, y + h * 0.46); ctx.lineTo(cx + w * 0.26, y + h * 0.46); ctx.stroke();
+      // shirt/torso draped over the crossbar
+      ctx.fillStyle = style.shirt;
+      ctx.beginPath();
+      ctx.moveTo(cx - w * 0.22, y + h * 0.42);
+      ctx.lineTo(cx + w * 0.22, y + h * 0.42);
+      ctx.lineTo(cx + w * 0.16, y + h * 0.68);
+      ctx.lineTo(cx - w * 0.16, y + h * 0.68);
+      ctx.closePath();
+      ctx.fill();
+      // head
+      ctx.fillStyle = style.face;
+      ctx.beginPath();
+      ctx.arc(cx, y + h * 0.3, w * 0.14, 0, Math.PI * 2);
+      ctx.fill();
+      // straw hat
+      ctx.fillStyle = style.hat;
+      ctx.beginPath();
+      ctx.ellipse(cx, y + h * 0.22, w * 0.22, h * 0.05, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, y + h * 0.16, w * 0.13, Math.PI, 0);
+      ctx.fill();
+      // stitched X face
+      ctx.strokeStyle = '#4a3521';
+      ctx.lineWidth = 1.2;
+      [-1, 1].forEach((side) => {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * w * 0.07 - 2, y + h * 0.28);
+        ctx.lineTo(cx + side * w * 0.07 + 2, y + h * 0.32);
+        ctx.moveTo(cx + side * w * 0.07 + 2, y + h * 0.28);
+        ctx.lineTo(cx + side * w * 0.07 - 2, y + h * 0.32);
+        ctx.stroke();
+      });
+    } else if (style.shape === 'crow') {
+      const cx = x + w / 2, cy = y + h * 0.6;
+      ctx.fillStyle = style.body;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, w * 0.2, h * 0.14, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx + w * 0.16, cy - h * 0.1, w * 0.11, 0, Math.PI * 2);
+      ctx.fill();
+      // wing fold
+      ctx.fillStyle = shade(style.body, 12);
+      ctx.beginPath();
+      ctx.ellipse(cx - w * 0.03, cy, w * 0.13, h * 0.08, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      // tail
+      ctx.beginPath();
+      ctx.moveTo(cx - w * 0.18, cy + h * 0.02);
+      ctx.lineTo(cx - w * 0.32, cy - h * 0.02);
+      ctx.lineTo(cx - w * 0.3, cy + h * 0.1);
+      ctx.closePath();
+      ctx.fillStyle = style.body;
+      ctx.fill();
+      // beak
+      ctx.fillStyle = style.beak;
+      ctx.beginPath();
+      ctx.moveTo(cx + w * 0.25, cy - h * 0.11);
+      ctx.lineTo(cx + w * 0.34, cy - h * 0.08);
+      ctx.lineTo(cx + w * 0.25, cy - h * 0.06);
+      ctx.closePath();
+      ctx.fill();
+      // little feet perch line
+      ctx.strokeStyle = '#3a3028';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx - w * 0.06, cy + h * 0.13); ctx.lineTo(cx + w * 0.06, cy + h * 0.13); ctx.stroke();
+    } else if (style.shape === 'rip_stone') {
+      this._groundShadow(x, y, w, h);
+      const cx = x + w / 2;
+      ctx.fillStyle = style.stone;
+      ctx.beginPath();
+      ctx.moveTo(cx - w * 0.22, y + h * 0.85);
+      ctx.lineTo(cx - w * 0.22, y + h * 0.42);
+      ctx.arc(cx, y + h * 0.42, w * 0.22, Math.PI, 0);
+      ctx.lineTo(cx + w * 0.22, y + h * 0.85);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = style.stoneDark;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = style.stoneDark;
+      ctx.font = `bold ${Math.floor(w * 0.14)}px Nunito, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('RIP', cx, y + h * 0.6);
+    } else if (style.shape === 'skeleton_dummy') {
+      this._groundShadow(x, y, w, h);
+      const cx = x + w / 2;
+      ctx.strokeStyle = style.post;
+      ctx.lineWidth = Math.max(2, w * 0.035);
+      ctx.beginPath(); ctx.moveTo(cx, y + h * 0.92); ctx.lineTo(cx, y + h * 0.7); ctx.stroke();
+      ctx.fillStyle = style.bone;
+      ctx.strokeStyle = style.boneDark;
+      ctx.lineWidth = 1;
+      // skull
+      ctx.beginPath(); ctx.arc(cx, y + h * 0.28, w * 0.13, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#241d17';
+      ctx.beginPath(); ctx.arc(cx - w * 0.05, y + h * 0.27, w * 0.03, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + w * 0.05, y + h * 0.27, w * 0.03, 0, Math.PI * 2); ctx.fill();
+      // ribcage
+      ctx.fillStyle = style.bone;
+      ctx.strokeStyle = style.boneDark;
+      ctx.beginPath(); ctx.moveTo(cx, y + h * 0.4); ctx.lineTo(cx, y + h * 0.68); ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const ry = y + h * (0.44 + i * 0.08);
+        ctx.beginPath(); ctx.moveTo(cx, ry); ctx.quadraticCurveTo(cx - w * 0.16, ry + h * 0.02, cx - w * 0.13, ry + h * 0.06); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx, ry); ctx.quadraticCurveTo(cx + w * 0.16, ry + h * 0.02, cx + w * 0.13, ry + h * 0.06); ctx.stroke();
+      }
+      // arms + legs (simple bone lines)
+      ctx.beginPath(); ctx.moveTo(cx - w * 0.03, y + h * 0.42); ctx.lineTo(cx - w * 0.22, y + h * 0.58); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + w * 0.03, y + h * 0.42); ctx.lineTo(cx + w * 0.22, y + h * 0.58); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - w * 0.05, y + h * 0.68); ctx.lineTo(cx - w * 0.14, y + h * 0.88); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + w * 0.05, y + h * 0.68); ctx.lineTo(cx + w * 0.14, y + h * 0.88); ctx.stroke();
+    } else if (style.shape === 'heart') {
+      const cx = x + w / 2, cy = y + h * 0.56, r = w * 0.2;
+      ctx.fillStyle = style.color;
+      ctx.beginPath();
+      ctx.arc(cx - r * 0.55, cy - r * 0.3, r * 0.6, 0, Math.PI * 2);
+      ctx.arc(cx + r * 0.55, cy - r * 0.3, r * 0.6, 0, Math.PI * 2);
+      ctx.moveTo(cx - r, cy - r * 0.05);
+      ctx.lineTo(cx, cy + r * 0.75);
+      ctx.lineTo(cx + r, cy - r * 0.05);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = style.colorDark;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    } else if (style.shape === 'cupid') {
+      const cx = x + w / 2, cy = y + h * 0.58;
+      // wings
+      ctx.fillStyle = style.wing;
+      ctx.beginPath(); ctx.ellipse(cx - w * 0.16, cy - h * 0.02, w * 0.14, h * 0.1, -0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx + w * 0.16, cy - h * 0.02, w * 0.14, h * 0.1, 0.5, 0, Math.PI * 2); ctx.fill();
+      // body
+      ctx.fillStyle = style.body;
+      ctx.beginPath(); ctx.ellipse(cx, cy + h * 0.06, w * 0.13, h * 0.15, 0, 0, Math.PI * 2); ctx.fill();
+      // head
+      ctx.beginPath(); ctx.arc(cx, cy - h * 0.14, w * 0.12, 0, Math.PI * 2); ctx.fill();
+      // hair
+      ctx.fillStyle = style.hair;
+      ctx.beginPath(); ctx.arc(cx, cy - h * 0.2, w * 0.11, Math.PI, 0); ctx.fill();
+      // little bow held out front
+      ctx.strokeStyle = '#c48b3a';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(cx + w * 0.14, cy, w * 0.08, -0.8, 0.8); ctx.stroke();
+    } else if (style.shape === 'arc_heart') {
+      // A heart-shaped balloon arch you could walk under — two big
+      // rounded arcs meeting in a heart silhouette, standing on two feet.
+      const cx = x + w / 2;
+      ctx.strokeStyle = style.color;
+      ctx.lineWidth = Math.max(3, w * 0.09);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx - w * 0.32, y + h * 0.92);
+      ctx.quadraticCurveTo(cx - w * 0.4, y + h * 0.25, cx, y + h * 0.42);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + w * 0.32, y + h * 0.92);
+      ctx.quadraticCurveTo(cx + w * 0.4, y + h * 0.25, cx, y + h * 0.42);
+      ctx.stroke();
+      // little dip at the top-center to read as a heart, not a plain arch
+      ctx.strokeStyle = style.colorDark;
+      ctx.lineWidth = Math.max(2, w * 0.05);
+      ctx.beginPath();
+      ctx.arc(cx, y + h * 0.36, w * 0.07, 0, Math.PI);
+      ctx.stroke();
+    } else if (style.shape === 'fireworks') {
+      // The mortar tube itself is completely static — the actual burst is
+      // a separate, short-lived triggered effect (see triggerFireworksBurst
+      // in main.js/game.js), not something drawn continuously here, so a
+      // field full of these costs nothing extra per frame until one is
+      // actually set off.
+      this._groundShadow(x, y, w, h);
+      const cx = x + w / 2;
+      ctx.fillStyle = style.tube;
+      ctx.fillRect(cx - w * 0.09, y + h * 0.5, w * 0.18, h * 0.42);
+      ctx.fillStyle = style.band;
+      ctx.fillRect(cx - w * 0.1, y + h * 0.58, w * 0.2, h * 0.05);
+      ctx.fillRect(cx - w * 0.1, y + h * 0.78, w * 0.2, h * 0.05);
+    } else if (style.shape === 'banner') {
+      const cx = x + w / 2;
+      ctx.fillStyle = style.post;
+      ctx.fillRect(x + w * 0.06, y + h * 0.12, w * 0.05, h * 0.78);
+      ctx.fillRect(x + w * 0.89, y + h * 0.12, w * 0.05, h * 0.78);
+      ctx.fillStyle = style.cloth;
+      ctx.fillRect(x + w * 0.11, y + h * 0.22, w * 0.78, h * 0.4);
+      ctx.strokeStyle = shade(style.cloth, -20);
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x + w * 0.11, y + h * 0.22, w * 0.78, h * 0.4);
+      ctx.fillStyle = style.textColor;
+      ctx.font = `bold ${Math.floor(w * 0.075)}px Nunito, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // Wraps the fixed banner_text onto up to 2 lines if it's too wide
+      // for one — a hardcoded holiday message ("Happy Valentine's Day!")
+      // is longer than anything else drawn on a 1-tile-wide surface here,
+      // so a single ctx.fillText would just run off the edges otherwise.
+      const words = style.text.split(' ');
+      let line1 = '', line2 = '';
+      for (const word of words) {
+        if (ctx.measureText(line1 + word).width < w * 0.72 || !line1) line1 += (line1 ? ' ' : '') + word;
+        else line2 += (line2 ? ' ' : '') + word;
+      }
+      if (line2) {
+        ctx.fillText(line1, cx, y + h * 0.36);
+        ctx.fillText(line2, cx, y + h * 0.48);
+      } else {
+        ctx.fillText(line1, cx, y + h * 0.42);
+      }
     }
   }
 

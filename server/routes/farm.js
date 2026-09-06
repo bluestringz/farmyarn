@@ -1,8 +1,8 @@
 const express = require('express');
 const {
-  nowSec, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths, resolveFruitTreeDeaths,
+  nowSec, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths, resolveFruitTreeDeaths, resolveSeasonalExpiry,
   grantRewards, addInventory, notify,
-  resolveEnergy, spendEnergy, addEnergy, xpProgress, rollHarvestQuantity,
+  resolveEnergy, spendEnergy, addEnergy, xpProgress, rollHarvestQuantity, getTimerSetting,
 } = require('../lib/gameLogic');
 const {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
@@ -28,6 +28,7 @@ module.exports = function farmRoutes(db, io) {
     // forwarded past uncollected cycles. resolveFruitTreeDeaths (old age,
     // a separate lifespan-based mechanic) stays — see below.
     resolveFruitTreeDeaths(db, farm.id);
+    resolveSeasonalExpiry(db, farm.id, farm.owner_id);
     const tiles = db.prepare('SELECT x, y, state FROM farm_tiles WHERE farm_id = ?').all(farm.id);
     const crops = db.prepare('SELECT * FROM crops WHERE farm_id = ?').all(farm.id);
     const objects = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND location = 'outdoor'").all(farm.id).map(resolveObject);
@@ -522,7 +523,13 @@ module.exports = function farmRoutes(db, io) {
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
 
     const nextLevel = farm.expansion_level + 1;
-    const cost = 500 * Math.pow(2, farm.expansion_level); // doubling cost per expansion
+    const MAX_EXPANSION_LEVEL = 7;
+    if (nextLevel > MAX_EXPANSION_LEVEL) return res.status(400).json({ error: 'Your farm is already at maximum size.' });
+    // Individually admin-settable per level (see admin panel > 🏞️ Land
+    // Expansion Prices) instead of a fixed doubling formula — defaults
+    // match what the old formula would have charged, so nothing changed
+    // for anyone until an admin actually edits one.
+    const cost = getTimerSetting(db, `expand_cost_${nextLevel}`);
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
     if (user.coins < cost) return res.status(400).json({ error: `Expansion costs ${cost} coins` });
 
@@ -720,6 +727,24 @@ module.exports = function farmRoutes(db, io) {
     const succeeded = tx();
 
     res.json({ ok: true, succeeded });
+  });
+
+  // POST /api/farm/trigger-fireworks { objectId } — no cooldown, no cost
+  // (the Fireworks decoration itself was the one-time purchase) — just
+  // broadcasts a short burst to everyone CURRENTLY viewing that farm
+  // (same `farm:<ownerId>` space every remote-player/casino broadcast
+  // already uses). The actual burst animation is purely client-side and
+  // brief — see triggerFireworksBurst in game.js — this route's only job
+  // is confirming the object is real and telling everyone else to play it.
+  router.post('/trigger-fireworks', (req, res) => {
+    const { objectId } = req.body || {};
+    const farm = getOwnFarm(req.userId);
+    if (!farm) return res.status(400).json({ error: 'No farm' });
+    const obj = db.prepare("SELECT * FROM farm_objects WHERE id = ? AND farm_id = ? AND item_id = 'fireworks' AND location = 'outdoor'").get(objectId, farm.id);
+    if (!obj) return res.status(400).json({ error: 'Not a Fireworks decoration on your farm' });
+
+    if (io) io.to(`farm:${req.userId}`).emit('fireworks:triggered', { x: obj.grid_x, y: obj.grid_y });
+    res.json({ ok: true });
   });
 
   // POST /api/farm/eat { foodItemId } — consumes 1 food item, restores energy.

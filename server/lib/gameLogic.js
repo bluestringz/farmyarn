@@ -49,6 +49,20 @@ const DEFAULT_TIMERS = {
   energy_regen_seconds_resting: 2 * 60,
 };
 
+// Land Expansion prices (Expand 1 through Expand 7 — see /api/farm/expand
+// and the admin panel's 🏞️ Land Expansion Prices section). Stored in the
+// SAME game_settings table as the timers above (it's just a generic
+// key -> number store), kept in their own map instead of folded into
+// DEFAULT_TIMERS since these are coin amounts, not durations — reused via
+// getTimerSetting all the same, which doesn't care about the distinction.
+// Defaults match the old hardcoded "500 * 2^level" doubling formula this
+// replaced, so nobody's price silently changed the moment this shipped.
+const DEFAULT_EXPANSION_PRICES = {
+  expand_cost_1: 500, expand_cost_2: 1000, expand_cost_3: 2000, expand_cost_4: 4000,
+  expand_cost_5: 8000, expand_cost_6: 16000, expand_cost_7: 32000,
+};
+Object.assign(DEFAULT_TIMERS, DEFAULT_EXPANSION_PRICES);
+
 // Reads one tunable global timer (in seconds) from game_settings, falling
 // back to its hardcoded default if the admin hasn't overridden it. Cheap
 // single-row lookup — called at most a few times per farm load, so no
@@ -194,6 +208,46 @@ function resolveAnimalColdDeaths(db, farmId) {
 // A fruit tree dies of old age lifespan_seconds after it MATURES (not
 // from when it was planted) — same lazy "resolve whenever the farm is
 // read" pattern as every other neglect/death check in this file.
+// Sweeps away seasonal decorations/items whose season has ended — both
+// ones already PLACED on the farm (removed outright) and ones still
+// sitting un-placed in the Bag (inventory row deleted). Checked against
+// isWithinBuyWindow the same way a NEW purchase is (see
+// /api/shop/buy-placeable) — once a season's window closes, existing
+// copies don't get grandfathered in, they're swept the same as anyone
+// trying to buy one fresh would be turned away.
+function resolveSeasonalExpiry(db, farmId, userId) {
+  const { currentSeasonKeys } = require('./seasons');
+  const activeSeasons = new Set(currentSeasonKeys());
+
+  if (farmId) {
+    const placedSeasonal = db.prepare(`
+      SELECT fo.id, dt.season FROM farm_objects fo
+      JOIN decoration_types dt ON fo.item_id = dt.id
+      WHERE fo.farm_id = ? AND fo.object_type = 'decoration' AND dt.season IS NOT NULL
+    `).all(farmId);
+    for (const row of placedSeasonal) {
+      if (!activeSeasons.has(row.season)) {
+        db.prepare('DELETE FROM farm_objects WHERE id = ?').run(row.id);
+      }
+    }
+  }
+
+  if (userId) {
+    const seasonalDecos = db.prepare('SELECT id, season FROM decoration_types WHERE season IS NOT NULL').all();
+    const seasonalItems = db.prepare('SELECT id, season FROM item_types WHERE season IS NOT NULL').all();
+    for (const d of seasonalDecos) {
+      if (!activeSeasons.has(d.season)) {
+        db.prepare('DELETE FROM inventory WHERE user_id = ? AND item_id = ?').run(userId, `decoration_${d.id}`);
+      }
+    }
+    for (const it of seasonalItems) {
+      if (!activeSeasons.has(it.season)) {
+        db.prepare('DELETE FROM inventory WHERE user_id = ? AND item_id = ?').run(userId, it.id);
+      }
+    }
+  }
+}
+
 function resolveFruitTreeDeaths(db, farmId) {
   const t = nowSec();
   const trees = db.prepare(`
@@ -364,8 +418,8 @@ function isReservedName(name) {
 }
 module.exports = {
   nowSec, xpForLevel, levelForXp, xpProgress, initFarmTiles, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths,
-  resolveFruitTreeDeaths,
+  resolveFruitTreeDeaths, resolveSeasonalExpiry,
   grantRewards, addInventory, notify, resolveEnergy, spendEnergy, addEnergy, MAX_ENERGY,
   isReservedName, startResting, stopResting, resolveEquippedOutfit, rollHarvestQuantity, rollAnimalQuantity,
-  getTimerSetting, DEFAULT_TIMERS,
+  getTimerSetting, DEFAULT_TIMERS, DEFAULT_EXPANSION_PRICES,
 };

@@ -1630,6 +1630,19 @@
       return;
     }
 
+    // Fireworks — tap with no tool active to set it off. No cooldown, no
+    // cost per use (the decoration itself was the one-time purchase) —
+    // everyone currently viewing this farm sees the same brief burst (see
+    // the fireworks:triggered socket listener), not just whoever tapped it.
+    if (!state.tool && obj.object_type === 'decoration' && obj.item_id === 'fireworks' && !state.viewingUserId) {
+      try {
+        await Api.triggerFireworks(obj.id);
+      } catch (err) {
+        UI.toast(err.message);
+      }
+      return;
+    }
+
     // Fruit trees — collect ripe fruit either by tapping with NO tool
     // active (same "just walk up and tap it" interaction as an animal),
     // OR with the Harvest tool selected/auto-applying while walking —
@@ -1771,6 +1784,13 @@
       // already placed one still renders correctly.
       catalogForRender = { ...state.catalog, interiors: state.catalog.interiors.filter((i) => i.id !== 'painting') };
     }
+    let friendsList = [];
+    if (['christmas', 'halloween', 'valentines', 'new_year'].includes(category)) {
+      try {
+        const data = await Api.listFriends();
+        friendsList = data.friends || [];
+      } catch (e) { friendsList = []; }
+    }
     UI.renderShop(catalogForRender, category, state.me, async (cat, itemId, qty, color) => {
       try {
         if (cat === 'crops') {
@@ -1859,6 +1879,16 @@
         renderTopbar();
         UI.toast(res.wasFree ? 'Name set!' : 'Name changed! 💎 200 spent.');
         await renderShopPanel('outfits');
+      } catch (err) {
+        UI.toast(err.message);
+      }
+    }, friendsList, async (itemId, friendUserId) => {
+      try {
+        const res = await Api.giftToFriend(itemId, friendUserId);
+        state.me.coins = res.coins;
+        renderTopbar();
+        UI.toast(`🎁 Gift sent!`);
+        await renderShopPanel(category);
       } catch (err) {
         UI.toast(err.message);
       }
@@ -2502,6 +2532,9 @@
     });
     socket.on('casino:machine-unlocked', ({ machineId }) => {
       game.setCasinoMachineUnlocked(machineId);
+    });
+    socket.on('fireworks:triggered', ({ x, y }) => {
+      game.triggerFireworksBurst(x, y);
     });
 
     // ---- Chat ----

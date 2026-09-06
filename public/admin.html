@@ -115,6 +115,15 @@
   </div>
 
   <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">🏞️ Land Expansion Prices</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">Coin cost for each of the 7 farm expansions (Expand 1 through Expand 7 — a farm can't grow past level 7). Changes apply live, no restart needed.</p>
+    <table id="expansion-prices-table">
+      <thead><tr><th>Level</th><th>Current Cost</th><th>New Cost (coins)</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <p style="font-weight:700;margin-bottom:4px;">📦 Shop Stock</p>
     <p style="font-size:12px;color:#8a5a34;margin-top:0;">Cap how many of an item are available to buy — a GLOBAL count shared by every player, not per-player. Leave an item unlimited (the default) unless you specifically want to ration it. "Set" defines the cap and tops it up to that number right now; "Renew" just restocks back up to the existing cap.</p>
     <input id="stock-search-input" placeholder="Search item name...">
@@ -256,6 +265,7 @@ async function showApp() {
   await loadMailbox();
   await loadPrices();
   await loadTimers();
+  await loadExpansionPrices();
   await loadCasinoOdds();
   await loadShopStock();
 }
@@ -416,6 +426,32 @@ let allTimers = [];
 async function loadTimers() {
   allTimers = await api('GET', '/api/admin/timers');
   renderTimers();
+}
+
+// ---- Land Expansion Prices ----
+async function loadExpansionPrices() {
+  const rows = await api('GET', '/api/admin/expansion-prices');
+  const tbody = document.querySelector('#expansion-prices-table tbody');
+  tbody.innerHTML = rows.map((r) => `
+    <tr data-level="${r.level}">
+      <td>Expand ${r.level}</td>
+      <td class="timer-current">🪙 ${r.cost}</td>
+      <td><input type="number" class="timer-input" min="0" step="1" value="${r.cost}" style="width:110px"></td>
+      <td><button class="expansion-price-save-btn">Save</button></td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('tr[data-level]').forEach((tr) => {
+    tr.querySelector('.expansion-price-save-btn').addEventListener('click', async () => {
+      const cost = parseInt(tr.querySelector('.timer-input').value, 10);
+      if (!Number.isFinite(cost) || cost < 0) return alert('Enter a valid coin amount.');
+      try {
+        await api('POST', '/api/admin/set-expansion-price', { level: tr.dataset.level, cost });
+        await loadExpansionPrices();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+    });
+  });
 }
 
 function fmtHours(seconds) {

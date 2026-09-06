@@ -1,6 +1,7 @@
 const express = require('express');
-const { grantRewards, addInventory, nowSec, rollAnimalQuantity, spendEnergy, resolveEnergy } = require('../lib/gameLogic');
+const { grantRewards, addInventory, nowSec, rollAnimalQuantity, spendEnergy, resolveEnergy, notify } = require('../lib/gameLogic');
 const { getAllStock, consumeStock } = require('../lib/shopStock');
+const { isWithinBuyWindow, SEASONS, currentSeasonKeys } = require('../lib/seasons');
 const {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
   ENTERABLE_BUILDING_DIMENSIONS, BUILDING_ALLOWED_ANIMALS,
@@ -85,7 +86,13 @@ module.exports = function shopRoutes(db) {
     annotate(decorations, 'decoration');
     annotate(animals, 'animal');
     annotate(interiors, 'interior');
-    res.json({ crops, buildings, decorations, animals, items, outfits, interiors, dyePalette: DYE_PALETTE, dyeCost: DYE_COST });
+    // Which seasonal windows (see server/lib/seasons.js) are open RIGHT
+    // NOW, by the server's clock — the client uses this to decide which
+    // seasonal decorations/gifts to actually show as buyable in the Shop,
+    // rather than trusting the player's own device clock for anything
+    // that gates a purchase.
+    const activeSeasons = currentSeasonKeys();
+    res.json({ crops, buildings, decorations, animals, items, outfits, interiors, dyePalette: DYE_PALETTE, dyeCost: DYE_COST, activeSeasons });
   });
 
   // POST /api/shop/buy-tool { itemId, quantity } — for buyable consumable
@@ -108,6 +115,40 @@ module.exports = function shopRoutes(db) {
     addInventory(db, req.userId, itemId, qty);
     const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
     res.json({ ok: true, itemId, quantity: qty, coins: updated.coins });
+  });
+
+  // POST /api/shop/gift-to-friend { itemId, friendUserId } — for the
+  // giftable Valentine's items (Red Roses, Chocolates so far — item_types
+  // rows with giftable=1). Unlike every other purchase in this file, the
+  // bought item lands in the FRIEND's Bag, not the buyer's own — the
+  // buyer is the one who pays, but never actually holds it themselves.
+  router.post('/gift-to-friend', (req, res) => {
+    const { itemId, friendUserId } = req.body || {};
+    const friendId = parseInt(friendUserId, 10);
+    if (!friendId || friendId === req.userId) return res.status(400).json({ error: 'Pick a friend to send this to' });
+
+    const item = db.prepare('SELECT * FROM item_types WHERE id = ? AND giftable = 1').get(itemId);
+    if (!item) return res.status(400).json({ error: 'This item can\'t be gifted' });
+    if (item.season && !isWithinBuyWindow(item.season)) {
+      const seasonLabel = (SEASONS[item.season] && SEASONS[item.season].label) || item.season;
+      return res.status(400).json({ error: `${seasonLabel} isn't running right now — check back during its season.` });
+    }
+
+    const isFriend = db.prepare(`
+      SELECT 1 FROM friends WHERE status = 'accepted'
+      AND ((requester_id = ? AND receiver_id = ?) OR (requester_id = ? AND receiver_id = ?))
+    `).get(req.userId, friendId, friendId, req.userId);
+    if (!isFriend) return res.status(400).json({ error: 'You can only gift this to a friend' });
+
+    const user = db.prepare('SELECT coins, display_name, username FROM users WHERE id = ?').get(req.userId);
+    if (user.coins < item.cost) return res.status(400).json({ error: `Not enough coins — need ${item.cost}` });
+
+    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(item.cost, req.userId);
+    addInventory(db, friendId, itemId, 1);
+    notify(db, friendId, `🎁 ${user.display_name || user.username} sent you ${item.name}! Check your Bag.`);
+
+    const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
+    res.json({ ok: true, itemId, coins: updated.coins });
   });
 
   // POST /api/shop/buy-seed  { cropType, quantity } — seeds must be bought here first;
@@ -222,6 +263,10 @@ module.exports = function shopRoutes(db) {
 
     const def = lookupDefSync(db, category, itemId);
     if (!def) return res.status(400).json({ error: 'Unknown item' });
+    if (def.season && !isWithinBuyWindow(def.season)) {
+      const seasonLabel = (SEASONS[def.season] && SEASONS[def.season].label) || def.season;
+      return res.status(400).json({ error: `${seasonLabel} isn't running right now — check back during its season.` });
+    }
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
     if (user.level < def.required_level) return res.status(400).json({ error: `Requires level ${def.required_level}` });
