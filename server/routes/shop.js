@@ -1,7 +1,7 @@
 const express = require('express');
 const { grantRewards, addInventory, nowSec, rollAnimalQuantity, spendEnergy, resolveEnergy, notify } = require('../lib/gameLogic');
 const { getAllStock, consumeStock } = require('../lib/shopStock');
-const { isWithinBuyWindow, SEASONS, currentSeasonKeys } = require('../lib/seasons');
+const { isWithinBuyWindow, SEASONS, currentSeasonKeys, formatSeasonWindow } = require('../lib/seasons');
 const {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
   ENTERABLE_BUILDING_DIMENSIONS, BUILDING_ALLOWED_ANIMALS,
@@ -92,7 +92,13 @@ module.exports = function shopRoutes(db) {
     // rather than trusting the player's own device clock for anything
     // that gates a purchase.
     const activeSeasons = currentSeasonKeys();
-    res.json({ crops, buildings, decorations, animals, items, outfits, interiors, dyePalette: DYE_PALETTE, dyeCost: DYE_COST, activeSeasons });
+    // Human-readable buy window per season (e.g. "Nov 14 – Dec 31") so
+    // out-of-season items can show WHEN they'll actually become available
+    // instead of just being hidden or saying "not right now" with no
+    // further detail.
+    const seasonWindows = {};
+    for (const key of Object.keys(SEASONS)) seasonWindows[key] = formatSeasonWindow(key);
+    res.json({ crops, buildings, decorations, animals, items, outfits, interiors, dyePalette: DYE_PALETTE, dyeCost: DYE_COST, activeSeasons, seasonWindows });
   });
 
   // POST /api/shop/buy-tool { itemId, quantity } — for buyable consumable

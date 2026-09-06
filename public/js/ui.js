@@ -276,36 +276,25 @@ const UI = (() => {
       const activeSeasons = new Set(catalog.activeSeasons || []);
       const isOpen = activeSeasons.has(activeCategory);
       const seasonLabel = categories.find((c) => c.key === activeCategory).label;
-      // Seasonal DECORATIONS (placeable, buy-for-yourself) — filtered to
-      // THIS specific season only, not every season at once (each of the
-      // 4 events now gets its own tab/category instead of being lumped
-      // together under one shared "Seasonal" tab). Only shown as buyable
-      // while the window is open, same rule the server enforces on the
-      // actual purchase (see /api/shop/buy-placeable's isWithinBuyWindow
-      // check) — this is just keeping the Shop from showing something
-      // that would immediately get rejected if tapped.
-      const seasonalDecos = isOpen ? (catalog.decorations || []).filter((d) => d.season === activeCategory) : [];
-      // Seasonal GIFTS (Red Roses, Chocolates so far — item_types rows
-      // with giftable=1) — bought FOR a friend, never for yourself, so
-      // these get a friend-picker instead of a quantity field.
-      const seasonalGifts = isOpen ? (catalog.items || []).filter((it) => it.giftable && it.season === activeCategory) : [];
-
-      if (!isOpen) {
-        body.innerHTML = `<div class="shop-tabs">${tabs}</div><p class="panel-hint">${seasonLabel} isn't running right now — check back during its event window.</p>`;
-        body.querySelectorAll('.shop-tab').forEach((btn) => btn.addEventListener('click', () => onCategoryChange(btn.dataset.cat)));
-        return;
-      }
+      const windowText = (catalog.seasonWindows && catalog.seasonWindows[activeCategory]) || '';
+      // Always shown (not hidden out of season) — just grayed out/disabled
+      // with the schedule displayed, so players can see what's coming and
+      // plan for it, rather than the tab looking empty until the exact
+      // day it opens.
+      const seasonalDecos = (catalog.decorations || []).filter((d) => d.season === activeCategory);
+      const seasonalGifts = (catalog.items || []).filter((it) => it.giftable && it.season === activeCategory);
 
       const decoCards = seasonalDecos.map((item) => {
         const locked = player.level < item.required_level;
         const affordable = player.coins >= item.cost;
+        const disabled = !isOpen || locked || !affordable;
         return `
-          <div class="shop-card">
+          <div class="shop-card${!isOpen ? ' shop-card-outofseason' : ''}">
             <div class="shop-icon">${ITEM_ICONS[item.id] || '🎉'}</div>
             <div class="shop-name">${item.name}</div>
             <div class="shop-price">🪙 ${item.cost}</div>
-            ${locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}
-            <button data-deco-item="${item.id}" ${(locked || !affordable) ? 'disabled' : ''}>${locked ? 'Locked' : 'Buy'}</button>
+            ${!isOpen ? `<div class="shop-level">Available ${windowText}</div>` : locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}
+            <button data-deco-item="${item.id}" ${disabled ? 'disabled' : ''}>${!isOpen ? 'Not in season' : locked ? 'Locked' : 'Buy'}</button>
           </div>`;
       }).join('');
 
@@ -313,21 +302,24 @@ const UI = (() => {
       const giftCards = seasonalGifts.map((item) => {
         const affordable = player.coins >= item.cost;
         const hasFriends = (friendsList || []).length > 0;
+        const canSend = isOpen && affordable && hasFriends;
         return `
-          <div class="shop-card">
+          <div class="shop-card${!isOpen ? ' shop-card-outofseason' : ''}">
             <div class="shop-icon">${ITEM_ICONS[item.id] || '🎁'}</div>
             <div class="shop-name">${item.name}${item.energy_restore ? ` (⚡+${item.energy_restore} when eaten)` : ''}</div>
             <div class="shop-price">🪙 ${item.cost} — gift to a friend</div>
-            ${hasFriends
-              ? `<select data-gift-friend-for="${item.id}" style="width:100%;margin:4px 0;">${friendOptions}</select>
-                 <button data-gift-item="${item.id}" ${affordable ? '' : 'disabled'}>Send Gift</button>`
-              : `<div class="shop-level">Add a friend first to send this.</div>`}
+            ${!isOpen
+              ? `<div class="shop-level">Available ${windowText}</div><button disabled>Not in season</button>`
+              : hasFriends
+                ? `<select data-gift-friend-for="${item.id}" style="width:100%;margin:4px 0;">${friendOptions}</select>
+                   <button data-gift-item="${item.id}" ${canSend ? '' : 'disabled'}>Send Gift</button>`
+                : `<div class="shop-level">Add a friend first to send this.</div>`}
           </div>`;
       }).join('');
 
       body.innerHTML = `
         <div class="shop-tabs">${tabs}</div>
-        <p class="panel-hint">${seasonLabel} is here! Limited-time items — removed automatically once the event ends.</p>
+        <p class="panel-hint">${isOpen ? `${seasonLabel} is here! Limited-time items — removed automatically once the event ends.` : `${seasonLabel} isn't running right now — available ${windowText}. You can see what's coming, but can't buy until then.`}</p>
         ${decoCards ? `<div class="panel-section-title">Decorations</div><div class="shop-grid">${decoCards}</div>` : ''}
         ${giftCards ? `<div class="panel-section-title">Gifts for a Friend</div><div class="shop-grid">${giftCards}</div>` : ''}
       `;

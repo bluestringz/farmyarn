@@ -5024,6 +5024,16 @@ class FarmGame {
     return cached;
   }
 
+  // Shared day/night check — same "19:00 to 05:00" window _drawWeatherOverlay
+  // already uses for its dark tint and lamp punch-through, reused here so
+  // Flower Bed butterflies (daytime-only) and Lamp Post fireflies
+  // (nighttime-only) agree with what the screen actually looks like
+  // instead of each inventing their own threshold.
+  _isNight() {
+    const hour = new Date().getHours();
+    return hour >= 19 || hour < 5;
+  }
+
   // A couple of small butterflies gently looping above a Flower Bed —
   // drawn as a SEPARATE, uncached overlay on top of the flower's cached
   // sprite (see _drawDecoration), never baked into the cache itself,
@@ -5034,9 +5044,11 @@ class FarmGame {
   // the lamp firefly pattern) so multiple flower beds don't all flutter
   // in perfect unison. Skipped at reduced Graphics Quality (_lowDetailGlow/
   // _superLow) — a nice-to-have flourish, not core information the way
-  // a ready-to-harvest glow is.
+  // a ready-to-harvest glow is. Also skipped at night — butterflies are
+  // a daytime thing; fireflies (see the Lamp Post's own night-only check)
+  // take over after dark instead.
   _drawFlowerButterflies(x, y, w, h) {
-    if (this._lowDetailGlow) return;
+    if (this._lowDetailGlow || this._isNight()) return;
     const ctx = this.ctx;
     const tt = performance.now() / 1000;
     const phase = (x + y) * 0.013;
@@ -5657,10 +5669,13 @@ class FarmGame {
       // same "glowing orbit" idea as the Special Outfit aura's floating
       // orbs, just smaller and scoped to right around the lamp instead of
       // a whole character. Gradient-based halos (not shadowBlur) to keep
-      // this cheap even with several lamp posts on one farm.
+      // this cheap even with several lamp posts on one farm. Nighttime
+      // only (_isNight()) — fireflies don't make sense showing up in
+      // broad daylight, same reasoning as why Flower Bed butterflies are
+      // daytime-only (see _drawFlowerButterflies).
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      const fireflyCount = this._lowDetailGlow ? 0 : 3;
+      const fireflyCount = (this._lowDetailGlow || !this._isNight()) ? 0 : 3;
       for (let i = 0; i < fireflyCount; i++) {
         const angle = t * (0.7 + i * 0.15) + phase + (i / fireflyCount) * Math.PI * 2;
         const orbitR = w * (0.32 + 0.15 * Math.sin(t * 0.9 + i * 2));

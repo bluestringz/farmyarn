@@ -795,6 +795,14 @@ button.picker-item .picker-icon { font-size: 20px; line-height: 1; }
   gap: 4px;
   text-align: center;
 }
+/* Out-of-season seasonal item — still fully visible (so players can see
+   what's coming and plan for it) but visually "grayed out" and its buy
+   button disabled, rather than being hidden from the Shop entirely until
+   the exact day its window opens. */
+.shop-card-outofseason {
+  opacity: 0.55;
+  filter: grayscale(0.6);
+}
 .shop-card .shop-icon { font-size: 28px; }
 .shop-card .shop-name { font-weight: 800; font-size: 13px; }
 .shop-card .shop-price { font-size: 12px; color: #8a6a12; font-weight: 700; }

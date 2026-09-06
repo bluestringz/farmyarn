@@ -60,4 +60,22 @@ function currentSeasonKeys(now = new Date()) {
   return Object.keys(SEASONS).filter((key) => isWithinBuyWindow(key, now));
 }
 
-module.exports = { SEASONS, isWithinBuyWindow, currentSeasonKeys };
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Human-readable buy window, e.g. "Nov 14 – Dec 31" — sent to the client
+// so an out-of-season item can show WHEN it'll actually become available
+// instead of just "not right now" with no further detail.
+function formatSeasonWindow(seasonKey) {
+  const season = SEASONS[seasonKey];
+  if (!season) return '';
+  const s = season.buyStart, e = season.buyEnd;
+  // Valentine's buyEnd.day is 29 internally (so a leap-year Feb 29th still
+  // counts as in-window) but always DISPLAYED as 28, since telling players
+  // "through Feb 29" reads as a mistake in every non-leap year (3 years
+  // out of 4) — the actual date check is unaffected, this only touches
+  // what's shown here.
+  const displayDay = (seasonKey === 'valentines' && e.day === 29) ? 28 : e.day;
+  return `${MONTH_NAMES[s.month - 1]} ${s.day} – ${MONTH_NAMES[e.month - 1]} ${displayDay}`;
+}
+
+module.exports = { SEASONS, isWithinBuyWindow, currentSeasonKeys, formatSeasonWindow };
