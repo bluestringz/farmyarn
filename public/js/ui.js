@@ -412,7 +412,11 @@ const UI = (() => {
       // the Fruit Trees tab shows ONLY them.
       const isFruitTree = !!item.produces_item_id;
       if (activeCategory === 'fruit_trees') return isFruitTree;
-      if (activeCategory === 'decorations') return !isFruitTree;
+      // Seasonal decorations (Christmas Tree, Scary Pumpkin, etc.) each
+      // live in their OWN dedicated tab (🎄/🎃/💘/🎆 — see the SEASON_KEYS
+      // branch above) instead of also cluttering the regular Decor tab
+      // with the same items twice.
+      if (activeCategory === 'decorations') return !isFruitTree && !item.season;
       // catalog.items is a mix of everything in item_types (crops'
       // harvested produce, animal products, cooked food, the Energy
       // Potion, AND buyable Tools like the Megaphone) — the Tools tab

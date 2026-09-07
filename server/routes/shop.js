@@ -818,6 +818,12 @@ function findOverlap(db, farmId, location, x, y, w, h, excludeId) {
     // this function is used, both placing something new and moving an
     // existing object onto a path tile.
     if (o.object_type === 'decoration' && o.item_id === 'path') continue;
+    // Wall-mounted interior items (Air Conditioner, Painting, Wall Light —
+    // WALL_MOUNTED_ITEMS above) sit up on the wall band, not on the floor
+    // — so a floor-level piece of furniture placed on the same tile isn't
+    // actually competing for the same physical space, the same reasoning
+    // as why a path tile doesn't block whatever gets placed on top of it.
+    if (o.object_type === 'interior' && WALL_MOUNTED_ITEMS.has(o.item_id)) continue;
     const def = lookupDefSync(db, o.object_type, o.item_id);
     const ow = def ? def.width || 1 : 1;
     const oh = def ? def.height || 1 : 1;
@@ -838,6 +844,11 @@ function findAllOverlapping(db, farmId, location, x, y, w, h, excludeId) {
   ).all(...(excludeId ? [farmId, location, excludeId] : [farmId, location]));
   const overlapping = [];
   for (const o of objects) {
+    // Same reasoning as findOverlap above — a path tile or a wall-mounted
+    // item occupies a different physical "plane" than floor-level
+    // objects, so neither should count as competing for the same spot.
+    if (o.object_type === 'decoration' && o.item_id === 'path') continue;
+    if (o.object_type === 'interior' && WALL_MOUNTED_ITEMS.has(o.item_id)) continue;
     const def = lookupDefSync(db, o.object_type, o.item_id);
     const ow = def ? def.width || 1 : 1;
     const oh = def ? def.height || 1 : 1;
