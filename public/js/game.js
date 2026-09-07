@@ -3864,7 +3864,14 @@ class FarmGame {
         // further (0.5) brings the whole sprite down to a size that
         // actually fits sitting on furniture within its own tile,
         // anchored just slightly above normal standing-ground level.
-        ctx.translate(cx, groundY + (c.bob || 0) - TILE * 0.05);
+        // Feet-anchor needs to land near FLOOR level (roughly where a
+        // standing character's feet already sit), not up at seat-cushion
+        // height — anchoring near the seat made the shrunk sprite's feet
+        // look like they were planted ON TOP of the seat (standing on
+        // the furniture) instead of sitting on it with legs hanging down
+        // toward the floor in front. The smaller scale (0.5) keeps the
+        // head from poking above the tile even with this lower anchor.
+        ctx.translate(cx, groundY + (c.bob || 0) + TILE * 0.08);
         ctx.scale(0.8, 0.5);
         ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
       } else {
@@ -4154,7 +4161,14 @@ class FarmGame {
       // the whole sprite down to a size that actually fits sitting on
       // furniture within its own tile, anchored just slightly above
       // normal standing-ground level.
-      ctx.translate(cx, groundY + c.bob - TILE * 0.05);
+      // Feet-anchor needs to land near FLOOR level (roughly where a
+      // standing character's feet already sit), not up at seat-cushion
+      // height — anchoring near the seat made the shrunk sprite's feet
+      // look like they were planted ON TOP of the seat (standing on the
+      // furniture) instead of sitting on it with legs hanging down
+      // toward the floor in front. The smaller scale (0.5) keeps the
+      // head from poking above the tile even with this lower anchor.
+      ctx.translate(cx, groundY + c.bob + TILE * 0.08);
       ctx.scale(0.8, 0.5);
       ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
     } else {
