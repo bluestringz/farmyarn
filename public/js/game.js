@@ -3391,7 +3391,11 @@ class FarmGame {
       ctx.fillStyle = '#4a3521';
       ctx.fillRect(x, y, w * 0.06, h);
     } else if (itemId === 'bench') {
-      const bx = x + w * 0.14, by = y + h * 0.42, bw = w * 0.72;
+      // by shifted from 0.42 to 0.09 — same off-center-when-rotated fix
+      // as the outdoor bench in _drawDecorationShape (see its comment):
+      // the shape used to span 0.66-1.0 of the tile, packed into the
+      // bottom third instead of centered around 0.5.
+      const bx = x + w * 0.14, by = y + h * 0.09, bw = w * 0.72;
       // No backrest bar (same reasoning as the outdoor bench in
       // _drawDecorationShape) — it visually cut across a seated
       // character's torso at roughly chest height.
@@ -3435,16 +3439,21 @@ class FarmGame {
       ctx.beginPath(); ctx.moveTo(x + w * 0.15, y + h * 0.43); ctx.lineTo(x + w * 0.85, y + h * 0.43); ctx.stroke();
     } else if (itemId === 'chair') {
       ctx.fillStyle = '#8b5e34';
+      // Shifted up ~0.09 from before — same off-center-when-rotated
+      // fix as the bench (see its comment in _drawDecorationShape): the
+      // whole shape's span (backrest to legs) was centered around 0.59
+      // of the tile instead of 0.5, invisible when unrotated but
+      // noticeable once spun 90°/180°/270°.
       // backrest — lower now, just above the seat, not up near where a
       // seated character's chest/head would be (same fix as the bench).
-      ctx.beginPath(); this._roundRect(x + w * 0.28, y + h * 0.32, w * 0.44, h * 0.14, 4); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); this._roundRect(x + w * 0.28, y + h * 0.23, w * 0.44, h * 0.14, 4); ctx.fill(); ctx.stroke();
       // seat
-      ctx.beginPath(); this._roundRect(x + w * 0.2, y + h * 0.45, w * 0.6, h * 0.14, 3); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); this._roundRect(x + w * 0.2, y + h * 0.36, w * 0.6, h * 0.14, 3); ctx.fill(); ctx.stroke();
       // legs — pulled in closer to center (was 0.24/0.70) so a seated
       // character's body actually covers them instead of leaving them
       // visibly poking out past either side.
-      ctx.fillRect(x + w * 0.34, y + h * 0.58, w * 0.06, h * 0.28);
-      ctx.fillRect(x + w * 0.6, y + h * 0.58, w * 0.06, h * 0.28);
+      ctx.fillRect(x + w * 0.34, y + h * 0.49, w * 0.06, h * 0.28);
+      ctx.fillRect(x + w * 0.6, y + h * 0.49, w * 0.06, h * 0.28);
     } else if (itemId === 'cabinet') {
       ctx.fillStyle = '#a9714a';
       ctx.beginPath(); this._roundRect(x + w * 0.14, y + h * 0.1, w * 0.72, h * 0.72, 5); ctx.fill(); ctx.stroke();
@@ -5721,7 +5730,17 @@ class FarmGame {
       // (~0.63 of a tile) — the seat plank used to be wider than that
       // (0.72), so it stuck out past the character on both sides even
       // with the legs pulled in and the backrest lowered.
-      const bx = x + w * 0.22, by = y + h * 0.42, bw = w * 0.56;
+      // `by` shifted up from the old 0.42 to 0.13 — the WHOLE shape
+      // (backrest+seat+legs together) used to span roughly 0.58-1.0 of
+      // the tile, packed entirely into the bottom 42% instead of
+      // centered — invisible when the bench sits flat, but glaringly
+      // obvious once rotated: rotating an off-center shape around the
+      // TILE's center swings it out to whichever side the rotation
+      // points, instead of spinning in place, which is exactly what
+      // made a ring of rotated benches around a bonfire each look shifted
+      // toward a different edge of their own tile. This centers the
+      // whole shape's span at roughly 0.29-0.71, symmetric around 0.5.
+      const bx = x + w * 0.22, by = y + h * 0.13, bw = w * 0.56;
       // The backrest sits just above the seat now, not up near where a
       // seated character's chest/head would be — a backrest that tall
       // used to visually cut across a seated character's torso no matter
