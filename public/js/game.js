@@ -3255,24 +3255,19 @@ class FarmGame {
         this._drawFurniture(px, py - wallBandDepth, pw, wallBandDepth, obj.item_id, 0);
         ctx.restore();
       } else {
-        // For a NON-square item (the 2×1 Dining Table so far — everything
-        // else here really is 1×1, unlike the wrong old assumption this
-        // replaced), a 90°/270° rotation needs its footprint's width and
-        // height swapped before drawing, not just the shape spun in place
-        // — otherwise _drawFurniture's own internal ctx.rotate() ends up
-        // turning the table inside a bounding box still sized as if it
-        // were unrotated, which put the rotated sprite off-center and
-        // overlapping whatever was on the adjacent tile instead of
-        // actually rotating in place. Same swap _drawGhost already does
-        // correctly for the placement preview — this just matches it for
-        // the object once it's actually placed.
-        const rotation = obj.rotation || 0;
-        const swapsDimensions = (rotation === 90 || rotation === 270) && w !== h;
-        const drawW = swapsDimensions ? ph : pw;
-        const drawH = swapsDimensions ? pw : ph;
-        const centerX = px + pw / 2, centerY = py + ph / 2;
-        const drawX = centerX - drawW / 2, drawY = centerY - drawH / 2;
-        this._drawFurniture(drawX, drawY, drawW, drawH, obj.item_id, rotation);
+        // Passes the ORIGINAL (unrotated) px,py,pw,ph straight through —
+        // same safe pattern _drawGhost already uses for the placement
+        // preview. _drawFurniture's own internal ctx.rotate() handles
+        // spinning the shape 90°/270° in place around ITS OWN natural
+        // center entirely on its own; a previous attempt here additionally
+        // pre-swapped the width/height passed in before rotating, which
+        // compounded with that internal rotation into a doubly-transformed,
+        // distorted "plus sign" shape instead of a clean rotation — this
+        // relies on the shape's own drawing code (chair/bench/table/rug)
+        // being correctly self-centered within its box instead, which is
+        // what actually fixes a rotated non-square item looking off-center
+        // or overlapping a neighboring tile.
+        this._drawFurniture(px, py, pw, ph, obj.item_id, obj.rotation || 0);
       }
     }
 
@@ -3331,12 +3326,14 @@ class FarmGame {
     const isCrafted = itemId.startsWith('crafted_');
     itemId = isCrafted ? itemId.slice('crafted_'.length) : itemId;
 
-    // A real 90°-step spin, not just a mirror. Most furniture here is
-    // 1×1 so this never visibly needs the box to change shape — but for
-    // the one that isn't (table, 2×1 — see the swapsDimensions handling
-    // at this function's caller), the (x,y,w,h) passed in has ALREADY
-    // been adjusted to the correct rotated footprint before it gets here,
-    // so this rotate-in-place is always operating on the right box.
+    // A real 90°-step spin, not just a mirror, around this box's OWN
+    // center — the caller always passes the item's ORIGINAL (unrotated)
+    // footprint (px,py,pw,ph straight from grid_x/grid_y/width/height),
+    // never pre-swapped for rotation. For a non-square item (table, 2×1
+    // — everything else here is 1×1), correctness instead comes from the
+    // shape-drawing code below (see 'table') being properly centered
+    // within that box on both axes, so spinning it in place lands right
+    // without needing any pre-adjustment here or at the caller.
     if (rotation) {
       ctx.save();
       ctx.translate(x + w / 2, y + h / 2);
