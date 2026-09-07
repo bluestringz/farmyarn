@@ -3255,19 +3255,30 @@ class FarmGame {
         this._drawFurniture(px, py - wallBandDepth, pw, wallBandDepth, obj.item_id, 0);
         ctx.restore();
       } else {
-        // Passes the ORIGINAL (unrotated) px,py,pw,ph straight through —
-        // same safe pattern _drawGhost already uses for the placement
-        // preview. _drawFurniture's own internal ctx.rotate() handles
-        // spinning the shape 90°/270° in place around ITS OWN natural
-        // center entirely on its own; a previous attempt here additionally
-        // pre-swapped the width/height passed in before rotating, which
-        // compounded with that internal rotation into a doubly-transformed,
-        // distorted "plus sign" shape instead of a clean rotation — this
-        // relies on the shape's own drawing code (chair/bench/table/rug)
-        // being correctly self-centered within its box instead, which is
-        // what actually fixes a rotated non-square item looking off-center
-        // or overlapping a neighboring tile.
-        this._drawFurniture(px, py, pw, ph, obj.item_id, obj.rotation || 0);
+        // For a NON-square item (table, 2×1 — everything else here is
+        // 1×1), a 90°/270° rotation needs the shape SHIFTED before
+        // rotating, not just spun where it already sits — the server's
+        // grid_x/grid_y anchor is the footprint's TOP-LEFT corner, but
+        // _drawFurniture's rotation spins around whatever center it's
+        // given, so rotating in place around the UNROTATED box's center
+        // left the result straddling the boundary between the anchor
+        // tile and its neighbor, instead of occupying one clean tile
+        // column running down from that same anchor. This computes
+        // where the shape needs to be positioned so that rotating it (at
+        // its own NATURAL, unswapped pw×ph size — passing the swapped
+        // size instead was an earlier, wrong attempt that distorted the
+        // shape itself, see _drawFurniture's own rotation comment) lands
+        // the final rotated footprint occupying exactly (px, py, ph, pw)
+        // — one tile wide, two tiles tall, anchored at the same top-left
+        // corner as the unrotated placement.
+        const rotation = obj.rotation || 0;
+        let drawX = px, drawY = py;
+        if ((rotation === 90 || rotation === 270) && w !== h) {
+          const targetCenterX = px + ph / 2, targetCenterY = py + pw / 2;
+          drawX = targetCenterX - pw / 2;
+          drawY = targetCenterY - ph / 2;
+        }
+        this._drawFurniture(drawX, drawY, pw, ph, obj.item_id, rotation);
       }
     }
 
@@ -3749,18 +3760,35 @@ class FarmGame {
       this._drawDecoration(px, py, w, h, g.itemId, rotation, g.x, g.y, this.farm ? this.farm.objects : null, fakeGrowthState, false);
     }
     else if (g.category === 'animal') this._drawAnimal(px, py, w, h, g.itemId, false, rotation);
-    else if (g.category === 'interior') this._drawFurniture(px, py, w, h, g.itemId, rotation);
+    else if (g.category === 'interior') {
+      // Same shift-before-rotate fix as the placed-object rendering in
+      // _drawIndoorObjects (see its comment) — for a non-square item
+      // rotated 90°/270°, this keeps the ghost preview's shape actually
+      // matching the highlight box drawn around it below, instead of the
+      // shape rotating in place around the wrong center while the box
+      // frames a different target entirely.
+      let drawX = px, drawY = py;
+      if ((rotation === 90 || rotation === 270) && w !== h) {
+        drawX = px + h / 2 - w / 2;
+        drawY = py + w / 2 - h / 2;
+      }
+      this._drawFurniture(drawX, drawY, w, h, g.itemId, rotation);
+    }
 
     // Decorations and furniture do a real 90°-step spin (not just a
     // mirror), rotating around the footprint's own center — so for a
     // non-square item (a 2×1 rug, table, bed...) turned 90°/270°, the
-    // highlight box needs its width/height swapped to actually frame the
-    // rotated shape instead of the original orientation's box.
+    // highlight box needs its width/height swapped AND repositioned to
+    // stay anchored at the same top-left tile corner (px,py) — matching
+    // where the shape itself actually ends up (see above and
+    // _drawIndoorObjects) — rather than staying centered on the
+    // unrotated box's center, which left the box (and the shape it's
+    // meant to frame) straddling the boundary between the anchor tile
+    // and its neighbor instead of framing one clean tile column.
     const swapsDimensions = (g.category === 'decoration' || g.category === 'interior') && (rotation === 90 || rotation === 270);
     const boxW = swapsDimensions ? h : w;
     const boxH = swapsDimensions ? w : h;
-    const cx = px + w / 2, cy = py + h / 2;
-    const boxX = cx - boxW / 2, boxY = cy - boxH / 2;
+    const boxX = px, boxY = py;
 
     ctx.strokeStyle = '#ffc84a';
     ctx.lineWidth = 3;
