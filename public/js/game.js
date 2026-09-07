@@ -3405,38 +3405,50 @@ class FarmGame {
       ctx.fillRect(bx + 2, by + h * 0.34, w * 0.06, h * 0.24);
       ctx.fillRect(bx + bw - w * 0.08, by + h * 0.34, w * 0.06, h * 0.24);
     } else if (itemId === 'rug') {
+      // Nudged up ~0.025 for the same reason as chair/bench/table — was
+      // centered at 0.525 instead of exactly 0.5, small enough to be
+      // basically invisible but fixed anyway while its neighbors got the
+      // same treatment.
       ctx.fillStyle = '#c0392b';
       ctx.beginPath();
-      this._roundRect(x + w * 0.08, y + h * 0.25, w * 0.84, h * 0.55, 8);
+      this._roundRect(x + w * 0.08, y + h * 0.225, w * 0.84, h * 0.55, 8);
       ctx.fill(); ctx.stroke();
       ctx.strokeStyle = '#e8d4b0';
       ctx.lineWidth = 2;
-      this._roundRect(x + w * 0.16, y + h * 0.33, w * 0.68, h * 0.39, 5);
+      this._roundRect(x + w * 0.16, y + h * 0.305, w * 0.68, h * 0.39, 5);
       ctx.stroke();
       // simple diamond pattern
       ctx.strokeStyle = 'rgba(255,255,255,0.4)';
       ctx.lineWidth = 1;
       for (let i = 0; i < 3; i++) {
-        const cx2 = x + w * (0.28 + i * 0.22), cy2 = y + h * 0.52;
+        const cx2 = x + w * (0.28 + i * 0.22), cy2 = y + h * 0.495;
         ctx.beginPath();
         ctx.moveTo(cx2, cy2 - 6); ctx.lineTo(cx2 + 6, cy2); ctx.lineTo(cx2, cy2 + 6); ctx.lineTo(cx2 - 6, cy2);
         ctx.closePath(); ctx.stroke();
       }
     } else if (itemId === 'table') {
       ctx.fillStyle = '#a9714a';
+      // Shifted up ~0.09 from before — same off-center-when-rotated fix
+      // as chair/bench (see their comments): the tabletop+legs together
+      // spanned 0.28-0.90 of the table's own box (center ~0.59), not
+      // 0.5 — invisible for a table sitting flat, but visibly off-center
+      // once rotated 90°/270° into portrait orientation, since rotating
+      // an off-center shape around the box's true center swings it
+      // toward whichever side the rotation points instead of spinning
+      // in place.
       // legs
-      ctx.fillRect(x + w * 0.1, y + h * 0.55, w * 0.06, h * 0.35);
-      ctx.fillRect(x + w * 0.84, y + h * 0.55, w * 0.06, h * 0.35);
-      ctx.strokeRect(x + w * 0.1, y + h * 0.55, w * 0.06, h * 0.35);
-      ctx.strokeRect(x + w * 0.84, y + h * 0.55, w * 0.06, h * 0.35);
+      ctx.fillRect(x + w * 0.1, y + h * 0.46, w * 0.06, h * 0.35);
+      ctx.fillRect(x + w * 0.84, y + h * 0.46, w * 0.06, h * 0.35);
+      ctx.strokeRect(x + w * 0.1, y + h * 0.46, w * 0.06, h * 0.35);
+      ctx.strokeRect(x + w * 0.84, y + h * 0.46, w * 0.06, h * 0.35);
       // tabletop
       ctx.fillStyle = '#c68b52';
       ctx.beginPath();
-      this._roundRect(x + w * 0.05, y + h * 0.28, w * 0.9, h * 0.3, 4);
+      this._roundRect(x + w * 0.05, y + h * 0.19, w * 0.9, h * 0.3, 4);
       ctx.fill(); ctx.stroke();
       ctx.strokeStyle = 'rgba(94,59,31,0.4)';
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x + w * 0.15, y + h * 0.43); ctx.lineTo(x + w * 0.85, y + h * 0.43); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + w * 0.15, y + h * 0.34); ctx.lineTo(x + w * 0.85, y + h * 0.34); ctx.stroke();
     } else if (itemId === 'chair') {
       ctx.fillStyle = '#8b5e34';
       // Shifted up ~0.09 from before — same off-center-when-rotated
