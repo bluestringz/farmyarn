@@ -31,7 +31,7 @@ const UI = (() => {
     pumpkin_pie: '🥧', fried_egg: '🍳', milkshake: '🥤',
     truffle_dish: '🍄', ice_cream: '🍦', hotdog: '🌭', energy_potion: '🧪',
     // Buildings
-    farmhouse: '🏠', chicken_coop: '🐔', cow_barn: '🐄', barn: '🐄',
+    farmhouse: '🏠', chicken_coop: '🐔', cow_barn: '🐄', barn: '🐷',
     mansion: '🏰', silo: '🌾', workshop: '🔨', storage_shed: '📦',
     market_stall: '🏪', well: '💧',
     // Decorations

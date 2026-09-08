@@ -963,7 +963,12 @@
   // stays in sync with whichever of those happened most recently.
   function updateAutoApplySelectionReady() {
     if (state.tool === 'plant') {
-      game.autoApplySelectionReady = !!(state.buildSelection && state.buildSelection.category === 'crop');
+      // Trees/fruit trees (category 'decoration') now plant instantly
+      // just like actual crop seeds do (see handleTileClick's plant
+      // branch) — so walking with one selected while holding a direction
+      // should auto-plant across tiles the same way, instead of only
+      // seeds getting that fast "walk and it plants itself" treatment.
+      game.autoApplySelectionReady = !!(state.buildSelection && (state.buildSelection.category === 'crop' || state.buildSelection.category === 'decoration'));
     } else if (state.tool === 'feed') {
       game.autoApplySelectionReady = !!state.selectedFeedId;
     } else {
@@ -1374,15 +1379,29 @@
       } else if (state.tool === 'plant') {
         if (state.viewingUserId || state.inHouse) return;
         if (!state.buildSelection) { UI.toast('Pick a seed or tree first'); return; }
-        // Trees/fruit trees (category 'decoration', moved here from
-        // Build — see openSeedPicker) use the SAME preview/rotate/
-        // confirm placement flow as Build's other decorations, not the
-        // immediate "tap a plowed tile, done" flow actual crop seeds
-        // use — they don't need plowed ground, and placement itself
-        // still needs a confirm step (rotation, exact spot) the way any
-        // other decoration does.
+        // Trees/fruit trees (category 'decoration', moved here from Build
+        // — see openSeedPicker) now plant the same instant, no-confirm way
+        // actual crop seeds do — walk up, plant, done — instead of the
+        // preview/rotate/confirm flow Build's other decorations use. A
+        // tree never actually needed rotation (it looks the same from
+        // every angle) or a "confirm the exact spot" step beyond just
+        // tapping/walking onto the tile, so that extra step just slowed
+        // down planting several at once compared to how fast seeds
+        // already are — this also means auto-apply-while-walking (see
+        // AUTO_APPLY_TOOLS) now covers trees too, so holding a direction
+        // and walking across open ground plants one per tile exactly like
+        // it already does for seeds.
         if (state.buildSelection.category === 'decoration') {
-          showPendingPlacement(x, y);
+          if (!TREE_DECORATION_IDS.has(state.buildSelection.itemId)) {
+            showPendingPlacement(x, y);
+            return;
+          }
+          game.walkTo(x, y, null);
+          await Api.placeObject('decoration', state.buildSelection.itemId, x, y, 0, 'outdoor');
+          UI.toast(`Planted ${state.buildSelection.itemId.replace(/_/g, ' ')}!`);
+          game.playAction(ACTION_ICON.plant);
+          await refreshCurrentFarm();
+          await openSeedPicker(); // refresh remaining tree count
           return;
         }
         if (state.buildSelection.category !== 'crop') { UI.toast('Pick a seed first'); return; }

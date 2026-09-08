@@ -623,7 +623,7 @@ function seedContent(db) {
   const buildings = [
     { id: 'farmhouse',    name: 'House',        cost: 100000, required_level: 1, width: 2, height: 2, sprite: 'farmhouse', category: 'building' },
     { id: 'mansion',      name: 'Mansion',       cost: 10000000, required_level: 1, width: 7, height: 4, sprite: 'mansion', category: 'building' },
-    { id: 'barn',         name: 'Barn',         cost: 800,  required_level: 3, width: 3, height: 2, sprite: 'barn', category: 'building' },
+    { id: 'barn',         name: 'Pig & Sheep Barn', cost: 800,  required_level: 3, width: 3, height: 2, sprite: 'barn', category: 'building' },
     { id: 'silo',         name: 'Silo',         cost: 600,  required_level: 4, width: 1, height: 2, sprite: 'silo', category: 'building' },
     { id: 'well',         name: 'Well',         cost: 300,  required_level: 2, width: 1, height: 1, sprite: 'well', category: 'building' },
     { id: 'market_stall', name: 'Market Stall', cost: 500,  required_level: 3, width: 2, height: 2, sprite: 'market', category: 'building' },
@@ -634,6 +634,11 @@ function seedContent(db) {
   ];
   const txBuildings = db.transaction((rows) => rows.forEach((r) => upsertBuilding.run(r)));
   txBuildings(buildings);
+  // ON CONFLICT DO NOTHING above means an existing "barn" row (seeded
+  // under its old plain name, before it was clarified that it houses
+  // Pigs AND Sheep, not just one or the other) never picks up this rename
+  // on its own — a one-time, narrowly-scoped catch-up UPDATE instead.
+  db.prepare("UPDATE building_types SET name = 'Pig & Sheep Barn' WHERE id = 'barn' AND name = 'Barn'").run();
 
   const upsertDeco = db.prepare(`
     INSERT INTO decoration_types (id, name, cost, required_level, width, height, sprite, growable, growth_seconds,
