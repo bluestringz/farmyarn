@@ -167,6 +167,17 @@
     <button id="send-all-btn" style="background:var(--wood-dark, #5e3b1f); color:#fff;">Send to All</button>
     <span id="send-all-status" style="margin-left:8px;font-size:13px;"></span>
   </div>
+
+  <div class="card" style="border-color:#c4552e;">
+    <p style="font-weight:700;margin-bottom:4px;color:#a13d1c;">⚠️ Reset Game (Everyone)</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">
+      Resets EVERY account's progress back to a fresh start — coins, energy, level, farm (back to a fresh 12×12 plot), Bag, costumes, land expansion, everything. <strong>Accounts themselves are NOT deleted</strong> — usernames/passwords/display names/admin status all stay exactly as they are. The Shop's own prices/stock caps are NEVER touched — only stock QUANTITIES renew back to their configured max, same as the per-item Renew button. Every account that exists right now gets a 🏆 Pioneer Trophy in their Bag as a keepsake, placeable in their house for display.
+    </p>
+    <p style="font-size:12px;color:#a13d1c;font-weight:700;">This can't be undone. Back up the database first if there's any doubt.</p>
+    <input type="text" id="reset-game-confirm-input" placeholder='Type RESET to confirm' style="width:220px;">
+    <button id="reset-game-btn" style="background:#a13d1c; color:#fff;">Reset Game for Everyone</button>
+    <span id="reset-game-status" style="margin-left:8px;font-size:13px;"></span>
+  </div>
 </div>
 
 <script>
@@ -1005,6 +1016,32 @@ document.getElementById('send-all-btn').addEventListener('click', async () => {
   } catch (err) {
     statusEl.textContent = '';
     alert('Send failed: ' + err.message);
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('reset-game-btn').addEventListener('click', async () => {
+  const confirmInput = document.getElementById('reset-game-confirm-input');
+  const statusEl = document.getElementById('reset-game-status');
+  const btn = document.getElementById('reset-game-btn');
+  if (confirmInput.value.trim() !== 'RESET') {
+    return alert('Type RESET (all caps) in the confirmation box first.');
+  }
+  if (!confirm('This resets EVERY account\'s progress back to a fresh start. Accounts themselves stay, but coins/energy/farm/Bag/land all reset. This cannot be undone. Are you absolutely sure?')) return;
+
+  const original = btn.textContent;
+  btn.textContent = 'Resetting...';
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    const res = await api('POST', '/api/admin/reset-game', { confirm: 'RESET' });
+    statusEl.textContent = `✅ Reset ${res.playersReset} account${res.playersReset === 1 ? '' : 's'} to a fresh start.`;
+    confirmInput.value = '';
+  } catch (err) {
+    statusEl.textContent = '';
+    alert('Reset failed: ' + err.message);
   } finally {
     btn.textContent = original;
     btn.disabled = false;

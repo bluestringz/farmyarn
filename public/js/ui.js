@@ -53,7 +53,7 @@ const UI = (() => {
     scare_crow: '🧑\u200d🌾', crow: '🐦\u200d⬛', rip_stone: '🪦', skeleton_dummy: '💀',
     happy_halloween_banner: '🎃', heart: '❤️', cupid: '💘', arc_heart: '💕',
     happy_valentines_banner: '❤️', red_roses: '🌹', chocolates: '🍫',
-    fireworks: '🎆', happy_new_year_banner: '🎆',
+    fireworks: '🎆', happy_new_year_banner: '🎆', pioneer_trophy: '🏆',
   };
 
   function toast(message) {
@@ -405,6 +405,10 @@ const UI = (() => {
       // out of Decor/Interior here keeps the Shop from showing something
       // that would look free but can't actually be bought this way.
       if (item.id.startsWith('crafted_')) return false;
+      // A one-off commemorative reward, never sold at the Shop — the only
+      // way to get one is already having had an account when a full game
+      // reset happened (see /api/admin/reset-game).
+      if (item.id === 'pioneer_trophy') return false;
       // Fruit trees (Mango/Apple/Avocado) get their own dedicated tab —
       // produces_item_id is what marks a decoration as a fruit tree (see
       // decoration_types in server/db/migrate.js) — so the regular Decor

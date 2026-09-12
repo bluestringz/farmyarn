@@ -4,7 +4,7 @@ const os = require('os');
 const fs = require('fs');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
-const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY, getTimerSetting, DEFAULT_TIMERS } = require('../lib/gameLogic');
+const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY, getTimerSetting, DEFAULT_TIMERS, initFarmTiles } = require('../lib/gameLogic');
 const { DB_PATH } = require('../db/migrate');
 const { listOddsFields, oddsKey, getOverrideBp, setOverrideBp, clearOverride } = require('../lib/casinoConfig');
 const { getAllStock, setStock, renewStock, removeStock } = require('../lib/shopStock');
@@ -224,6 +224,88 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
   // small GET/POST pair rather than folded into /timers and set-global-
   // timer, which are specifically about durations and would show these
   // nonsensically converted to "hours" if reused as-is.
+  // POST /api/admin/reset-game { confirm: 'RESET' } — a full, one-way
+  // reset of every account's PROGRESS back to a fresh-signup state. This
+  // is deliberately narrow about what it touches:
+  //   - Accounts themselves are NEVER deleted — username, password,
+  //     display name, avatar, gender, admin status all stay exactly as
+  //     they are. Only the columns tracked as "progress" (coins, energy,
+  //     level, xp, currencies, farm, Bag, costumes, etc.) reset.
+  //   - The Shop's own configuration — prices, stock caps, everything an
+  //     admin has set up under Prices/Timers/Stock — is NEVER touched.
+  //     Stock QUANTITIES get renewed back to their configured max (same
+  //     as the per-item "Renew" button already does), which is a
+  //     deliberately different thing from resetting the CONFIGURATION
+  //     itself.
+  //   - Every account that existed at the moment of the reset gets a
+  //     Pioneer Trophy in their Bag (see interior_types) as a keepsake —
+  //     placeable for display, movable back to the Bag like any other
+  //     furniture, no other special behavior.
+  // Requires the literal confirmation phrase in the request body — this
+  // is a destructive, site-wide, unrecoverable action, so it's guarded
+  // the same way as any other "type the word to confirm" action, on top
+  // of whatever confirmation the client-side button itself already asks.
+  router.post('/reset-game', (req, res) => {
+    const { confirm } = req.body || {};
+    if (confirm !== 'RESET') return res.status(400).json({ error: 'Confirmation phrase required' });
+
+    const existingUserIds = db.prepare('SELECT id FROM users').all().map((u) => u.id);
+
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM chat_messages').run();
+      db.prepare('DELETE FROM notifications').run();
+      db.prepare('DELETE FROM password_reset_requests').run();
+      db.prepare('DELETE FROM help_actions').run();
+      db.prepare('DELETE FROM friends').run();
+      db.prepare('DELETE FROM daily_rewards_claimed').run();
+      db.prepare('DELETE FROM marketplace_listings').run();
+      db.prepare('UPDATE marketplace_stalls SET renter_id = NULL, rented_until = NULL, listing_item_id = NULL, listing_price = NULL, listing_quantity = 0').run();
+
+      for (const userId of existingUserIds) {
+        db.prepare(`
+          UPDATE users SET
+            level = 1, xp = 0, coins = 100, premium_currency = 0, gm_points = 0,
+            energy = 1000, energy_updated_at = strftime('%s','now'),
+            equipped_outfit = NULL, dye_color = NULL,
+            is_banned = 0, suspended_until = NULL, is_resting = 0,
+            friend_water_count = 0, friend_water_date = NULL
+          WHERE id = ?
+        `).run(userId);
+
+        db.prepare('DELETE FROM owned_outfits WHERE user_id = ?').run(userId);
+        db.prepare('INSERT INTO owned_outfits (user_id, outfit_id) VALUES (?, ?)').run(userId, 'classic_overalls');
+
+        db.prepare('DELETE FROM inventory WHERE user_id = ?').run(userId);
+        db.prepare('DELETE FROM storage_items WHERE user_id = ?').run(userId);
+        db.prepare('DELETE FROM fridge_storage WHERE user_id = ?').run(userId);
+
+        const farm = db.prepare('SELECT id FROM farms WHERE owner_id = ?').get(userId);
+        if (farm) {
+          db.prepare('DELETE FROM crops WHERE farm_id = ?').run(farm.id);
+          db.prepare('DELETE FROM farm_objects WHERE farm_id = ?').run(farm.id);
+          db.prepare('DELETE FROM farm_tiles WHERE farm_id = ?').run(farm.id);
+          db.prepare('UPDATE farms SET width = 12, height = 12, expansion_level = 0 WHERE id = ?').run(farm.id);
+          initFarmTiles(db, farm.id, 12, 12);
+          db.prepare(`
+            INSERT INTO farm_objects (farm_id, object_type, item_id, grid_x, grid_y, rotation)
+            VALUES (?, 'building', 'farmhouse', 0, 0, 0)
+          `).run(farm.id);
+        }
+
+        // Pioneer Trophy — one per account that existed before this reset.
+        addInventory(db, userId, 'interior_pioneer_trophy', 1);
+      }
+
+      // Renew shop stock QUANTITIES to their configured max — never
+      // touches the max_stock cap or any other admin-configured setting.
+      const stockRows = db.prepare('SELECT category, item_id FROM shop_stock').all();
+      for (const row of stockRows) renewStock(db, row.category, row.item_id);
+    });
+    tx();
+
+    res.json({ ok: true, playersReset: existingUserIds.length });
+  });
+
   router.get('/expansion-prices', (req, res) => {
     const rows = [];
     for (let level = 1; level <= 7; level++) {

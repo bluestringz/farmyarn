@@ -862,6 +862,15 @@ function seedContent(db) {
     { id: 'crafted_bed',       name: 'Crafted Bed',       cost: 0, required_level: 1, width: 2, height: 1, sprite: 'bed' },
     { id: 'crafted_cabinet',   name: 'Crafted Cabinet',   cost: 0, required_level: 1, width: 1, height: 1, sprite: 'cabinet' },
     { id: 'crafted_bookshelf', name: 'Crafted Bookshelf', cost: 0, required_level: 1, width: 1, height: 1, sprite: 'bookshelf' },
+    // A commemorative reward, never bought at the Shop (see the shop
+    // filter's explicit id check, same idea as the crafted_ exclusion
+    // just above) — granted once, automatically, to every account that
+    // existed at the moment of a full game reset (see /api/admin/reset-
+    // game). Placeable indoors for display like any other furniture, and
+    // just as movable back into the Bag if they want to rearrange —
+    // nothing about it is actually special mechanically, it's just a
+    // keepsake.
+    { id: 'pioneer_trophy',    name: 'Pioneer Trophy',    cost: 0, required_level: 1, width: 1, height: 1, sprite: 'pioneer_trophy' },
   ];
   const txInterior = db.transaction((rows) => rows.forEach((r) => upsertInterior.run(r)));
   txInterior(interiorItems);

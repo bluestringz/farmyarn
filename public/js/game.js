@@ -3632,6 +3632,37 @@ class FarmGame {
           bx += bw + 1;
         }
       }
+    } else if (itemId === 'pioneer_trophy') {
+      this._groundShadow(x, y, w, h);
+      const cx = x + w / 2;
+      // Base/stand
+      ctx.fillStyle = '#6b4423';
+      ctx.fillRect(cx - w * 0.14, y + h * 0.78, w * 0.28, h * 0.1);
+      // Stem
+      ctx.fillStyle = '#e8c25a';
+      ctx.fillRect(cx - w * 0.04, y + h * 0.6, w * 0.08, h * 0.2);
+      // Cup body
+      ctx.beginPath();
+      ctx.moveTo(cx - w * 0.22, y + h * 0.32);
+      ctx.quadraticCurveTo(cx - w * 0.22, y + h * 0.58, cx, y + h * 0.6);
+      ctx.quadraticCurveTo(cx + w * 0.22, y + h * 0.58, cx + w * 0.22, y + h * 0.32);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#c48b2e';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Handles
+      ctx.strokeStyle = '#e8c25a';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(cx - w * 0.24, y + h * 0.4, w * 0.08, Math.PI * 0.3, Math.PI * 1.4); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx + w * 0.24, y + h * 0.4, w * 0.08, Math.PI * 1.6, Math.PI * 0.7); ctx.stroke();
+      // Rim + star
+      ctx.fillStyle = '#f4d878';
+      ctx.beginPath(); ctx.ellipse(cx, y + h * 0.32, w * 0.22, h * 0.04, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff3c4';
+      ctx.font = `${Math.floor(w * 0.22)}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('★', cx, y + h * 0.44);
     } else if (itemId === 'table_lamp') {
       // Small lamp on its own stand — the same "breathing" glow as the
       // outdoor Lamp Post (see DECORATION_STYLE's 'lamp' shape), so a
