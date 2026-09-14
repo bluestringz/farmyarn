@@ -3248,6 +3248,11 @@ class FarmGame {
   // sync manually for the same reason as above.
   static TABLE_FURNITURE = new Set(['table', 'side_table']);
   static MUST_SIT_ON_TABLE = new Set(['table_lamp', 'tv']);
+  // Unlike MUST_SIT_ON_TABLE, these are just as happy sitting on bare
+  // floor — the tableTiles.has(...) check below still only lifts them to
+  // tabletop height for whichever individual placement actually IS on a
+  // table right now (see CAN_BE_ON_TABLE_ITEMS in server/routes/shop.js).
+  static CAN_SIT_ON_TABLE = new Set(['pioneer_trophy']);
 
   _drawIndoorObjects() {
     const t = this._estimatedServerTime();
@@ -3284,7 +3289,7 @@ class FarmGame {
         this._drawAnimal(px, py, pw, ph, obj.item_id, ready, obj.rotation || 0);
         this._drawFeedIndicator(px, py, pw, fed, ready);
         if (this._isAnimalCold(obj)) this._drawColdIndicator(px, py, pw);
-      } else if (FarmGame.MUST_SIT_ON_TABLE.has(obj.item_id) && tableTiles.has(`${obj.grid_x},${obj.grid_y}`)) {
+      } else if ((FarmGame.MUST_SIT_ON_TABLE.has(obj.item_id) || FarmGame.CAN_SIT_ON_TABLE.has(obj.item_id)) && tableTiles.has(`${obj.grid_x},${obj.grid_y}`)) {
         tabletopDecor.push({ obj, px, py, pw, ph });
       } else if (FarmGame.WALL_MOUNTED_FURNITURE.has(obj.item_id) && obj.grid_y === 0) {
         // Mounted flush in the BACK wall band itself (see

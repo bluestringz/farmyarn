@@ -22,6 +22,10 @@ const WALL_MOUNTED_ITEMS = new Set(['painting', 'wall_light', 'aircon']);
 // Dining Table or Side Table), not just anywhere on open floor. Checked
 // against TABLE_ITEM_IDS below.
 const MUST_BE_ON_TABLE_ITEMS = new Set(['table_lamp', 'tv']);
+// Unlike MUST_BE_ON_TABLE_ITEMS, these are fine either on open floor OR
+// stacked on a table/side table — a table is never REQUIRED, just allowed
+// as one more valid spot for it (see the shared blocking check below).
+const CAN_BE_ON_TABLE_ITEMS = new Set(['pioneer_trophy']);
 const TABLE_ITEM_IDS = new Set(['table', 'side_table']);
 
 // What's actually allowed in the Refrigerator — READY-TO-EAT food only
@@ -370,7 +374,7 @@ module.exports = function shopRoutes(db) {
     // normal "anything here at all blocks the spot" rule below, only
     // reject if something OTHER than a table/side table is there; a bare
     // table with nothing on it is required, not just allowed.
-    if (category === 'interior' && MUST_BE_ON_TABLE_ITEMS.has(itemId)) {
+    if (category === 'interior' && (MUST_BE_ON_TABLE_ITEMS.has(itemId) || CAN_BE_ON_TABLE_ITEMS.has(itemId))) {
       const overlapping = findAllOverlapping(db, farm.id, loc, x, y, w, h);
       const blocker = overlapping.find((o) => !(o.object.object_type === 'interior' && TABLE_ITEM_IDS.has(o.object.item_id)));
       if (blocker) {
@@ -378,9 +382,14 @@ module.exports = function shopRoutes(db) {
           error: `That spot already has a ${blocker.def ? blocker.def.name : blocker.object.item_id} on it (at ${blocker.object.grid_x},${blocker.object.grid_y}) — remove it first or pick a different spot.`,
         });
       }
-      const hasTable = overlapping.some((o) => o.object.object_type === 'interior' && TABLE_ITEM_IDS.has(o.object.item_id));
-      if (!hasTable) {
-        return res.status(400).json({ error: `${def.name} has to be placed on top of a table or side table` });
+      // Only items that REQUIRE a table (not just allow one) enforce this
+      // — CAN_BE_ON_TABLE_ITEMS is happy on bare floor too, so it skips
+      // this check and falls through to a normal, already-clear spot.
+      if (MUST_BE_ON_TABLE_ITEMS.has(itemId)) {
+        const hasTable = overlapping.some((o) => o.object.object_type === 'interior' && TABLE_ITEM_IDS.has(o.object.item_id));
+        if (!hasTable) {
+          return res.status(400).json({ error: `${def.name} has to be placed on top of a table or side table` });
+        }
       }
     } else {
       const blocking = findOverlap(db, farm.id, loc, x, y, w, h);
@@ -472,7 +481,7 @@ module.exports = function shopRoutes(db) {
         return res.status(400).json({ error: `${def.name} has to be mounted against a wall — the top row, or the leftmost/rightmost column of the room` });
       }
     }
-    if (obj.object_type === 'interior' && MUST_BE_ON_TABLE_ITEMS.has(obj.item_id)) {
+    if (obj.object_type === 'interior' && (MUST_BE_ON_TABLE_ITEMS.has(obj.item_id) || CAN_BE_ON_TABLE_ITEMS.has(obj.item_id))) {
       const overlapping = findAllOverlapping(db, farm.id, obj.location, x, y, w, h, objectId);
       const blocker = overlapping.find((o) => !(o.object.object_type === 'interior' && TABLE_ITEM_IDS.has(o.object.item_id)));
       if (blocker) {
@@ -480,9 +489,11 @@ module.exports = function shopRoutes(db) {
           error: `That spot already has a ${blocker.def ? blocker.def.name : blocker.object.item_id} on it (at ${blocker.object.grid_x},${blocker.object.grid_y}) — remove it first or pick a different spot.`,
         });
       }
-      const hasTable = overlapping.some((o) => o.object.object_type === 'interior' && TABLE_ITEM_IDS.has(o.object.item_id));
-      if (!hasTable) {
-        return res.status(400).json({ error: `${def.name} has to be placed on top of a table or side table` });
+      if (MUST_BE_ON_TABLE_ITEMS.has(obj.item_id)) {
+        const hasTable = overlapping.some((o) => o.object.object_type === 'interior' && TABLE_ITEM_IDS.has(o.object.item_id));
+        if (!hasTable) {
+          return res.status(400).json({ error: `${def.name} has to be placed on top of a table or side table` });
+        }
       }
     } else {
       const blocking = findOverlap(db, farm.id, obj.location, x, y, w, h, objectId);
@@ -523,14 +534,24 @@ module.exports = function shopRoutes(db) {
   });
 
   // DELETE /api/shop/object/:id - remove any object the OWNER placed (fixes mistaken placements;
-  // not a refund system, just removal).
+  // not a refund system, just removal) — EXCEPT the Pioneer Trophy (see
+  // /api/admin/reset-game), a one-of-a-kind keepsake reward that goes back
+  // to the Bag instead of being deleted, so un-displaying it never
+  // permanently loses it. Every other object still just gets deleted.
   router.delete('/object/:id', (req, res) => {
     const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(req.userId);
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
     const obj = db.prepare('SELECT * FROM farm_objects WHERE id = ? AND farm_id = ?').get(req.params.id, farm.id);
     if (!obj) return res.status(404).json({ error: 'Object not found on your farm' });
     db.prepare('DELETE FROM farm_objects WHERE id = ?').run(obj.id);
-    res.json({ ok: true });
+
+    let returnedToBag = false;
+    if (obj.object_type === 'interior' && obj.item_id === 'pioneer_trophy') {
+      addInventory(db, req.userId, 'interior_pioneer_trophy', 1);
+      returnedToBag = true;
+    }
+
+    res.json({ ok: true, returnedToBag });
   });
 
   // Wheat-to-feed conversion at the Silo — 2 wheat per chicken feed, scaling

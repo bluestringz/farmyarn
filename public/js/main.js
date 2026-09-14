@@ -1483,8 +1483,11 @@
       const label = obj.item_id.replace(/_/g, ' ');
       if (!confirm(`Remove this ${label}?`)) return;
       try {
-        await Api.deleteObject(obj.id);
-        UI.toast('Removed!');
+        const result = await Api.deleteObject(obj.id);
+        // The Pioneer Trophy specifically goes back to the Bag instead of
+        // being deleted (see the /api/shop/object/:id route) — everything
+        // else still just gets removed.
+        UI.toast(result.returnedToBag ? 'Returned to your Bag!' : 'Removed!');
         if (state.inHouse) await refreshInterior();
         else await refreshCurrentFarm();
       } catch (err) {
