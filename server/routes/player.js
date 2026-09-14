@@ -3,7 +3,7 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
-const { grantRewards, resolveEnergy, addEnergy, nowSec, xpProgress, isReservedName, startResting, stopResting, resolveEquippedOutfit, resolveSeasonalExpiry } = require('../lib/gameLogic');
+const { grantRewards, resolveEnergy, addEnergy, nowSec, xpProgress, isReservedName, startResting, stopResting, resolveEquippedOutfit, resolveSeasonalExpiry, getEnergyRules, MAX_ENERGY, SPECIAL_OUTFIT_KEYS, SPECIAL_OUTFIT_MAX_ENERGY } = require('../lib/gameLogic');
 const { publicUser } = require('./auth');
 
 // Alternates coins/energy day to day — nothing else (no items, no xp,
@@ -126,7 +126,7 @@ module.exports = function playerRoutes(db) {
     resolveEnergy(db, req.userId);
     resolveEquippedOutfit(db, req.userId);
     const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
-    res.json({ ...publicUser(fresh), xpProgress: xpProgress(fresh.xp) });
+    res.json({ ...publicUser(db, fresh), xpProgress: xpProgress(fresh.xp) });
   });
 
   // GET /api/player/leaderboard — the "Most Rich" ranking, frozen for the
@@ -182,7 +182,21 @@ module.exports = function playerRoutes(db) {
     if (owned.expires_at !== null && owned.expires_at <= t) {
       return res.status(400).json({ error: 'That costume rental expired — renew it in the Shop to wear it again' });
     }
+    // Settle energy regen at the OLD cap/rate first — same "resolve before
+    // the switch" pattern startResting/stopResting already use — so
+    // elapsed time before this swap is credited at the rate that actually
+    // applied during it, not retroactively at the new one.
+    resolveEnergy(db, req.userId);
     db.prepare('UPDATE users SET equipped_outfit = ?, dye_color = NULL WHERE id = ?').run(outfitId, req.userId);
+    // Swapping OUT of a Special costume (Swordsman/Sorcerer/Lancer) drops
+    // the energy cap back down to the normal 1000 — any energy banked
+    // above that from the temporarily-higher 1300 cap is lost outright, by
+    // design. It doesn't come back even if a Special costume goes back on
+    // later — re-equipping only raises the CEILING again, it doesn't
+    // restore what got clamped away.
+    const newOutfit = db.prepare('SELECT sprite_key FROM outfit_types WHERE id = ?').get(outfitId);
+    const newMaxEnergy = SPECIAL_OUTFIT_KEYS.has(newOutfit && newOutfit.sprite_key) ? SPECIAL_OUTFIT_MAX_ENERGY : MAX_ENERGY;
+    db.prepare('UPDATE users SET energy = MIN(energy, ?) WHERE id = ?').run(newMaxEnergy, req.userId);
     res.json({ ok: true, outfitId });
   });
 

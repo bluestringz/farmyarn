@@ -330,14 +330,56 @@ function notify(db, userId, type, message) {
 // long it's been since energy_updated_at, the same pattern crops use for
 // growth — no background job needed, it just settles on read.
 const MAX_ENERGY = 1000;
+
+// The three "Special" costumes (Swordsman/Sorcerer/Lancer — see
+// outfit_types' sprite_key column and their *_costume rows in migrate.js,
+// GM-Points-only, admin-granted) all grant the SAME gameplay bonus while
+// worn: a higher energy cap, faster energy regen, and slightly faster crop
+// growth — on top of being cosmetic. Movement speed (also part of the
+// bonus) is applied client-side only, see FarmGame._updateActor /
+// _updateFreeRoamMovement in game.js, since movement itself isn't
+// server-authoritative in this game. Keyed off the SAME sprite_key the
+// client uses to pick which character sprite to draw, so wardrobe swap
+// and bonus swap always stay in sync automatically — no separate
+// "which outfit IDs get the bonus" list to keep updated by hand.
+const SPECIAL_OUTFIT_KEYS = new Set(['swordsman', 'sorcerer', 'lancer']);
+const SPECIAL_OUTFIT_MAX_ENERGY = 1300;
+const SPECIAL_OUTFIT_RESTING_REGEN_SECONDS = 40;
+const SPECIAL_OUTFIT_STANDING_REGEN_SECONDS = 90;
+const SPECIAL_OUTFIT_GROWTH_MULTIPLIER = 0.95; // 5% less growth time, locked in at planting (same "applied once, at the moment of the action" pattern watering's 10% boost already uses — see /plant and /water in farm.js)
+
+function equippedOutfitSpriteKey(db, userId) {
+  const user = db.prepare('SELECT equipped_outfit FROM users WHERE id = ?').get(userId);
+  if (!user || !user.equipped_outfit) return null;
+  const outfit = db.prepare('SELECT sprite_key FROM outfit_types WHERE id = ?').get(user.equipped_outfit);
+  return outfit ? outfit.sprite_key : null;
+}
+
+function hasSpecialOutfit(db, userId) {
+  return SPECIAL_OUTFIT_KEYS.has(equippedOutfitSpriteKey(db, userId));
+}
+
+// Single source of truth for the energy-cap/regen-speed part of the
+// bonus — resolveEnergy and addEnergy both read this instead of each
+// re-deriving it, so the two can't ever drift out of sync with each other.
+function getEnergyRules(db, userId) {
+  const special = hasSpecialOutfit(db, userId);
+  return {
+    maxEnergy: special ? SPECIAL_OUTFIT_MAX_ENERGY : MAX_ENERGY,
+    restingRegenSeconds: special ? SPECIAL_OUTFIT_RESTING_REGEN_SECONDS : getTimerSetting(db, 'energy_regen_seconds_resting'),
+    standingRegenSeconds: special ? SPECIAL_OUTFIT_STANDING_REGEN_SECONDS : getTimerSetting(db, 'energy_regen_seconds'),
+  };
+}
+
 function resolveEnergy(db, userId) {
   const user = db.prepare('SELECT energy, energy_updated_at, is_resting FROM users WHERE id = ?').get(userId);
   if (!user) return null;
-  const regenSeconds = getTimerSetting(db, user.is_resting ? 'energy_regen_seconds_resting' : 'energy_regen_seconds');
+  const rules = getEnergyRules(db, userId);
+  const regenSeconds = user.is_resting ? rules.restingRegenSeconds : rules.standingRegenSeconds;
   const elapsed = nowSec() - (user.energy_updated_at || nowSec());
   const regen = Math.floor(elapsed / regenSeconds);
-  if (regen <= 0 || user.energy >= MAX_ENERGY) return user.energy;
-  const newEnergy = Math.min(MAX_ENERGY, user.energy + regen);
+  if (regen <= 0 || user.energy >= rules.maxEnergy) return user.energy;
+  const newEnergy = Math.min(rules.maxEnergy, user.energy + regen);
   // Only "spend" the regen time that was actually used, so partial progress
   // toward the next point isn't lost/reset.
   const usedSeconds = regen * regenSeconds;
@@ -386,12 +428,13 @@ function resolveEquippedOutfit(db, userId) {
   }
 }
 
-// Adds energy (from eating food), capped at MAX_ENERGY. Does not touch
-// energy_updated_at's regen bookkeeping beyond resolving first, so idle
-// regen still resumes correctly afterward.
+// Adds energy (from eating food), capped at the player's current max (1300
+// instead of 1000 while a Special costume is worn — see getEnergyRules
+// above). Does not touch energy_updated_at's regen bookkeeping beyond
+// resolving first, so idle regen still resumes correctly afterward.
 function addEnergy(db, userId, amount) {
   const current = resolveEnergy(db, userId) || 0;
-  const next = Math.min(MAX_ENERGY, current + amount);
+  const next = Math.min(getEnergyRules(db, userId).maxEnergy, current + amount);
   db.prepare('UPDATE users SET energy = ? WHERE id = ?').run(next, userId);
   return next;
 }
@@ -422,4 +465,5 @@ module.exports = {
   grantRewards, addInventory, notify, resolveEnergy, spendEnergy, addEnergy, MAX_ENERGY,
   isReservedName, startResting, stopResting, resolveEquippedOutfit, rollHarvestQuantity, rollAnimalQuantity,
   getTimerSetting, DEFAULT_TIMERS, DEFAULT_EXPANSION_PRICES,
+  hasSpecialOutfit, getEnergyRules, SPECIAL_OUTFIT_KEYS, SPECIAL_OUTFIT_MAX_ENERGY, SPECIAL_OUTFIT_GROWTH_MULTIPLIER,
 };

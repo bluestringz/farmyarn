@@ -3,6 +3,7 @@ const {
   nowSec, resolveCropStates, resolveAnimalDeaths, resolveAnimalColdDeaths, resolveFruitTreeDeaths, resolveSeasonalExpiry,
   grantRewards, addInventory, notify,
   resolveEnergy, spendEnergy, addEnergy, xpProgress, rollHarvestQuantity, getTimerSetting,
+  hasSpecialOutfit, SPECIAL_OUTFIT_GROWTH_MULTIPLIER,
 } = require('../lib/gameLogic');
 const {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
@@ -281,14 +282,22 @@ module.exports = function farmRoutes(db, io) {
     db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(seedRow.id);
 
     const t = nowSec();
+    // A Special costume (Swordsman/Sorcerer/Lancer) worn AT THE MOMENT OF
+    // PLANTING locks in 5% faster growth for this crop — same "applied
+    // once, at the moment of the action" pattern watering's 10% boost
+    // already uses (see /water below), rather than continuously
+    // re-checking what's equipped on every resolveCropStates poll.
+    const growthSeconds = hasSpecialOutfit(db, req.userId)
+      ? Math.round(crop.growth_seconds * SPECIAL_OUTFIT_GROWTH_MULTIPLIER)
+      : crop.growth_seconds;
     db.prepare(`
       INSERT INTO crops (farm_id, tile_x, tile_y, crop_type, planted_at, growth_end_at, watered, state)
       VALUES (?, ?, ?, ?, ?, ?, 0, 'growing')
-    `).run(farm.id, x, y, cropType, t, t + crop.growth_seconds);
+    `).run(farm.id, x, y, cropType, t, t + growthSeconds);
 
     res.json({
       ok: true,
-      crop: { x, y, cropType, plantedAt: t, growthEndAt: t + crop.growth_seconds, state: 'growing' },
+      crop: { x, y, cropType, plantedAt: t, growthEndAt: t + growthSeconds, state: 'growing' },
       energy: resolveEnergy(db, req.userId),
     });
   });

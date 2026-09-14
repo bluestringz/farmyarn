@@ -867,7 +867,7 @@ class FarmGame {
     const ndx = dx / mag, ndy = dy / mag;
 
     const c = this._character;
-    const speed = TILE * 3.2;
+    const speed = TILE * 3.2 * FarmGame.moveSpeedMultFor(c.outfitKey);
     const moveDist = speed * dt * speedScale;
     let nx = c.x + ndx * moveDist;
     let ny = c.y + ndy * moveDist;
@@ -2190,7 +2190,7 @@ class FarmGame {
   // Shared walking-interpolation logic for both the local character and any
   // remote players sharing the current space.
   _updateActor(c, dt, now) {
-    const speed = TILE * 3.2; // world units per second
+    const speed = TILE * 3.2 * FarmGame.moveSpeedMultFor(c.outfitKey); // world units per second
     if (c.moving) {
       const dx = c.targetX - c.x, dy = c.targetY - c.y;
       const dist = Math.hypot(dx, dy);
@@ -3253,6 +3253,17 @@ class FarmGame {
   // tabletop height for whichever individual placement actually IS on a
   // table right now (see CAN_BE_ON_TABLE_ITEMS in server/routes/shop.js).
   static CAN_SIT_ON_TABLE = new Set(['pioneer_trophy']);
+  // The three "Special" costumes (see outfit_types' sprite_key column and
+  // SPECIAL_OUTFIT_KEYS in server/lib/gameLogic.js, kept in sync manually
+  // for the same reason as the sets above) grant x1.5 walking speed while
+  // worn. Movement itself isn't server-authoritative in this game, so
+  // this is the one part of the whole bonus that's applied purely
+  // client-side — everything else (energy cap/regen, crop growth) is
+  // enforced server-side instead.
+  static SPECIAL_OUTFIT_KEYS = new Set(['swordsman', 'sorcerer', 'lancer']);
+  static moveSpeedMultFor(outfitKey) {
+    return FarmGame.SPECIAL_OUTFIT_KEYS.has(outfitKey) ? 1.5 : 1;
+  }
 
   _drawIndoorObjects() {
     const t = this._estimatedServerTime();

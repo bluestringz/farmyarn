@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const { signToken } = require('../middleware/auth');
-const { initFarmTiles, nowSec, MAX_ENERGY, isReservedName, resolveEquippedOutfit } = require('../lib/gameLogic');
+const { initFarmTiles, nowSec, MAX_ENERGY, isReservedName, resolveEquippedOutfit, getEnergyRules } = require('../lib/gameLogic');
 const { friendNewUserWithAllAdmins } = require('../lib/adminFriends');
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
@@ -73,7 +73,7 @@ module.exports = function authRoutes(db, io, onlineUsers) {
       const token = signToken(user);
       return res.status(201).json({
         token,
-        user: publicUser(user),
+        user: publicUser(db, user),
       });
     } catch (err) {
       console.error('register error', err);
@@ -136,7 +136,7 @@ module.exports = function authRoutes(db, io, onlineUsers) {
       // panel login has no socket to kick, and kicking the game's socket
       // here would disconnect an unrelated, still-valid game session.
       if (!isAdminCtx && kickExistingSessions) kickExistingSessions(user.id);
-      return res.json({ token, user: publicUser(fresh) });
+      return res.json({ token, user: publicUser(db, fresh) });
     } catch (err) {
       console.error('login error', err);
       return res.status(500).json({ error: 'Login failed' });
@@ -165,7 +165,7 @@ module.exports = function authRoutes(db, io, onlineUsers) {
   return router;
 };
 
-function publicUser(user) {
+function publicUser(db, user) {
   return {
     id: user.id,
     username: user.username,
@@ -181,7 +181,7 @@ function publicUser(user) {
     gmPoints: user.gm_points,
     energy: user.energy,
     isResting: !!user.is_resting,
-    maxEnergy: MAX_ENERGY,
+    maxEnergy: getEnergyRules(db, user.id).maxEnergy,
     isAdmin: !!user.is_admin,
   };
 }
