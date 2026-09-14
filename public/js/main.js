@@ -889,7 +889,9 @@
 
   async function refreshInterior() {
     if (!state.interiorSpace) return;
-    const opts = state.interiorSpace.buildingId ? { buildingId: state.interiorSpace.buildingId } : { space: 'house' };
+    const opts = state.interiorSpace.buildingId
+      ? { buildingId: state.interiorSpace.buildingId, floor: state.interiorSpace.floor }
+      : { space: 'house' };
     if (state.viewingUserId) opts.ownerId = state.viewingUserId;
     const interior = await Api.myInterior(opts);
     game.setInteriorMode(interior);
@@ -1636,22 +1638,26 @@
     // Staircase — tap it (with no tool active) to go up/down a floor in a
     // multi-floor building (currently just the mansion). Available to
     // owner and visitor alike, same as walking around the room already is.
-    // Same "walk over, then go" feel as the Casino's fixed staircases
-    // (see handleCasinoStairsClick/game.js's own stairs-click handling) —
-    // the character visibly walks to the staircase tile first instead of
-    // instantly jumping straight to the next floor on tap.
+    // Same "walk over, THEN go" sequencing as walkToDoorAndEnter above —
+    // actually waits for the character to arrive at the staircase tile
+    // before changing floors, instead of firing the floor change almost
+    // immediately regardless of whether the walk visually finished.
     if (obj.item_id === 'staircase' && obj.object_type === 'interior' && state.inHouse
         && !state.tool) {
       const current = state.interiorSpace.floor || 1;
       const maxFloor = state.interiorSpace.maxFloor || 1;
       const nextFloor = current >= maxFloor ? current - 1 : current + 1;
       if (nextFloor < 1 || nextFloor > maxFloor) { UI.toast('Nowhere else to go.'); return; }
-      game.walkTo(obj.grid_x, obj.grid_y, null);
+      const arrived = await game.walkToAndWait(obj.grid_x, obj.grid_y);
+      if (!arrived) return; // a later tap redirected the character elsewhere before reaching the stairs
       try {
+        game.setTransitioning(true);
         await enterBuilding({ id: state.interiorSpace.buildingId }, nextFloor, true);
         UI.toast(`Floor ${nextFloor}`);
       } catch (err) {
         UI.toast(err.message);
+      } finally {
+        game.setTransitioning(false);
       }
       return;
     }

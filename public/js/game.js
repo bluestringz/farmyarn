@@ -1421,7 +1421,7 @@ class FarmGame {
     let wx, wy;
     if (stairsHere) {
       wx = (stairsHere.grid_x + 0.5) * TILE;
-      const landingY = Math.min(stairsHere.grid_y + 2, interiorData.height - 1);
+      const landingY = Math.min(stairsHere.grid_y + 1, interiorData.height - 1);
       wy = (landingY + 0.5) * TILE;
     } else {
       wx = (interiorData.width / 2) * TILE;
