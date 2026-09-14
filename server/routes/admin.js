@@ -8,9 +8,29 @@ const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY, getTimerSett
 const { DB_PATH } = require('../db/migrate');
 const { listOddsFields, oddsKey, getOverrideBp, setOverrideBp, clearOverride } = require('../lib/casinoConfig');
 const { getAllStock, setStock, renewStock, removeStock } = require('../lib/shopStock');
+const { isMaintenanceMode, setMaintenanceMode } = require('../lib/maintenance');
 
 module.exports = function adminRoutes(db, onlineUsers, io) {
   const router = express.Router();
+
+  // GET /api/admin/maintenance — current on/off state, for the admin panel
+  // to reflect on load (e.g. after a page refresh).
+  router.get('/maintenance', (req, res) => {
+    res.json({ enabled: isMaintenanceMode(db) });
+  });
+
+  // POST /api/admin/maintenance { enabled } — flips the site-wide
+  // maintenance flag (see server/lib/maintenance.js + the blocking
+  // middleware in server/index.js). Also tells any already-open game
+  // clients right away over Socket.IO, so someone mid-session sees the
+  // maintenance banner immediately instead of only on their next action
+  // or refresh.
+  router.post('/maintenance', (req, res) => {
+    const enabled = !!(req.body && req.body.enabled);
+    setMaintenanceMode(db, enabled);
+    if (io) io.emit('maintenance:changed', { enabled });
+    res.json({ ok: true, enabled });
+  });
 
   // POST /api/admin/announce { message } — broadcasts to every connected
   // player immediately (like a global chat message, but visually distinct

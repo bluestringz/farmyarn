@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 
 const { getDb } = require('./db/migrate');
 const { requireAuth, requireAdmin, JWT_SECRET } = require('./middleware/auth');
+const { isMaintenanceMode } = require('./lib/maintenance');
 
 const db = getDb();
 
@@ -29,6 +30,39 @@ app.use(express.json({ limit: '256kb' }));
 // refresh farm), and the old ceiling was tight enough to trip during a
 // normal fast-clicking session, not just abuse/bots.
 app.use('/api/', rateLimit({ windowMs: 60 * 1000, max: 600, standardHeaders: true, legacyHeaders: false }));
+
+// ---- Site-wide maintenance mode ----
+// Toggled from the admin panel (see /api/admin/maintenance in
+// routes/admin.js). While it's on, everyone EXCEPT the admin panel itself
+// gets blocked: API calls get a 503, and any page load gets the
+// maintenance banner (public/maintenance.html) instead of the game.
+// Placed before every route mount below so it can intercept both the API
+// routers and the static/catch-all page serving further down — a single
+// check covers the whole site instead of needing one per route.
+function isMaintenanceExempt(req) {
+  if (req.path.startsWith('/api/admin')) return true; // admin panel's own API calls
+  if (req.path === '/api/health') return true;
+  if (req.path === '/api/bootstrap-admin') return true;
+  if (req.path === '/admin.html') return true; // the admin panel page itself
+  // Shared static assets — needed so the admin panel and the maintenance
+  // page itself (its banner image) keep rendering correctly.
+  if (req.path.startsWith('/css/') || req.path.startsWith('/js/') || req.path.startsWith('/assets/')) return true;
+  // The one game-vs-admin fork in a single endpoint: /api/auth/login is
+  // shared by both the game client and the admin panel (see routes/auth.js,
+  // which reads body.context), so only the admin-flavored login is let
+  // through here — a regular player login during maintenance still 503s.
+  if (req.path === '/api/auth/login' && req.body && req.body.context === 'admin') return true;
+  return false;
+}
+
+app.use((req, res, next) => {
+  if (!isMaintenanceMode(db) || isMaintenanceExempt(req)) return next();
+  if (req.path.startsWith('/api/')) {
+    return res.status(503).json({ error: 'FarmYARN is under maintenance right now. Please try again in a bit.', maintenance: true });
+  }
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(__dirname, '..', 'public', 'maintenance.html'));
+});
 
 // ---- Routes ----
 app.use('/api/auth', require('./routes/auth')(db, io, onlineUsers));

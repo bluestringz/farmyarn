@@ -40,6 +40,14 @@ const Api = (() => {
       if (res.status === 401 && message === 'Logged in from another device' && onSessionSuperseded) {
         onSessionSuperseded();
       }
+      // Fallback for the maintenance-mode banner (see server/index.js) —
+      // normally the Socket.IO 'maintenance:changed' event in main.js
+      // catches this instantly, but a request that lands right as
+      // maintenance turns on (or with the socket briefly disconnected)
+      // still gets caught here instead of just showing a generic error.
+      if (res.status === 503 && data && data.maintenance) {
+        window.location.reload();
+      }
       const err = new Error(message);
       err.status = res.status;
       throw err;

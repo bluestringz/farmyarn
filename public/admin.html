@@ -54,6 +54,13 @@
   </div>
 
   <div class="card">
+    <p style="font-weight:700;margin-bottom:4px;">🛠️ Maintenance Mode</p>
+    <p style="font-size:12px;color:#8a5a34;margin-top:0;">While this is ON, everyone trying to access the site sees the maintenance banner instead of the game (anyone already playing gets kicked to it right away too). This admin panel keeps working the whole time. Turn it OFF and have players refresh once your patch is done.</p>
+    <p style="margin:8px 0;">Status: <span id="maintenance-status-badge" style="font-weight:700;">Loading…</span></p>
+    <button id="maintenance-toggle-btn">Loading…</button>
+  </div>
+
+  <div class="card">
     <p style="font-weight:700;margin-bottom:4px;">📢 Send Announcement</p>
     <p style="font-size:12px;color:#8a5a34;margin-top:0;">Broadcasts instantly to every player currently online, and shows up in everyone's Global chat (marked "Announcement") from then on, including anyone who logs in later.</p>
     <input type="text" id="announce-input" maxlength="500" placeholder="Type your announcement...">
@@ -272,6 +279,7 @@ async function showApp() {
   document.getElementById('admin-app').style.display = 'block';
   document.getElementById('admin-logout-btn').style.display = 'inline-block';
   await loadStats();
+  await loadMaintenanceStatus();
   await loadPlayers();
   await loadMailbox();
   await loadPrices();
@@ -294,6 +302,36 @@ async function loadStats() {
   badge.textContent = s.pendingPasswordRequests > 0 ? `(${s.pendingPasswordRequests} pending)` : '';
   badge.style.color = s.pendingPasswordRequests > 0 ? '#c0392b' : '#8a5a34';
 }
+
+function renderMaintenanceStatus(enabled) {
+  const badge = document.getElementById('maintenance-status-badge');
+  const btn = document.getElementById('maintenance-toggle-btn');
+  badge.textContent = enabled ? 'ON — site is showing the maintenance banner' : 'OFF — game is live';
+  badge.style.color = enabled ? '#c0392b' : '#4f8f2e';
+  btn.textContent = enabled ? 'Turn OFF Maintenance Mode' : 'Turn ON Maintenance Mode';
+  btn.style.background = enabled ? '#4f8f2e' : '#c0392b';
+  btn.dataset.enabled = enabled ? '1' : '0';
+}
+
+async function loadMaintenanceStatus() {
+  const s = await api('GET', '/api/admin/maintenance');
+  renderMaintenanceStatus(s.enabled);
+}
+
+document.getElementById('maintenance-toggle-btn').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  const next = btn.dataset.enabled !== '1';
+  if (next && !confirm('Turn maintenance mode ON? Players will be shown the maintenance banner right away.')) return;
+  btn.disabled = true;
+  try {
+    const res = await api('POST', '/api/admin/maintenance', { enabled: next });
+    renderMaintenanceStatus(res.enabled);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 let allPrices = [];
 const TABLE_LABELS = {

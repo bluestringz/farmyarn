@@ -2515,6 +2515,15 @@
       window.location.reload();
     });
 
+    // Admin flipped maintenance mode on from the admin panel — reload right
+    // away instead of waiting for this session's next action to hit a 503,
+    // so the maintenance banner (server/public/maintenance.html) shows up
+    // immediately for anyone already playing.
+    socket.on('maintenance:changed', ({ enabled }) => {
+      if (!enabled) return;
+      window.location.reload();
+    });
+
     // ---- Shared presence (farm visits + Marketplace) ----
     socket.on('presence:roster', ({ space, occupants }) => {
       if (space !== state.currentSpace) return;
