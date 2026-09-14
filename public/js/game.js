@@ -3724,6 +3724,40 @@ class FarmGame {
       ctx.font = `${Math.floor(w * 0.22)}px serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('★', cx, y + h * 0.44);
+      // Glittering sparkles drifting around the cup — the one truly
+      // special, one-of-a-kind keepsake reward in the game (see
+      // /api/admin/reset-game), so it gets a visual treatment nothing
+      // else does. Skipped at low graphics settings/zoomed-out view, same
+      // as the fireplace embers above.
+      if (!this._lowDetailGlow) {
+        const sparkleT = performance.now() / 1000;
+        const sparklePhase = (x + y) * 0.017; // staggers multiple trophies, if ever placed more than one, so they don't twinkle in lockstep
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const sparkleCount = 5;
+        for (let i = 0; i < sparkleCount; i++) {
+          const angle = sparkleT * (0.4 + i * 0.07) + sparklePhase + (i / sparkleCount) * Math.PI * 2;
+          const radius = w * (0.28 + 0.05 * (i % 2));
+          const sx = cx + Math.cos(angle) * radius;
+          const sy = y + h * 0.42 + Math.sin(angle) * radius * 0.55;
+          const twinkle = 0.4 + 0.6 * Math.max(0, Math.sin(sparkleT * 2.4 + i * 1.7 + sparklePhase));
+          if (twinkle < 0.15) continue; // fully faded out this instant
+          const size = w * (0.03 + 0.015 * (i % 3));
+          const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, size * 2.2);
+          grad.addColorStop(0, `rgba(255,250,210,${twinkle})`);
+          grad.addColorStop(1, 'rgba(255,250,210,0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath(); ctx.arc(sx, sy, size * 2.2, 0, Math.PI * 2); ctx.fill();
+          // Small 4-point sparkle cross for a crisper twinkle on top of the glow
+          ctx.strokeStyle = `rgba(255,255,255,${twinkle})`;
+          ctx.lineWidth = Math.max(1, size * 0.5);
+          ctx.beginPath();
+          ctx.moveTo(sx - size, sy); ctx.lineTo(sx + size, sy);
+          ctx.moveTo(sx, sy - size); ctx.lineTo(sx, sy + size);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
     } else if (itemId === 'table_lamp') {
       // Small lamp on its own stand — the same "breathing" glow as the
       // outdoor Lamp Post (see DECORATION_STYLE's 'lamp' shape), so a
