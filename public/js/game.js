@@ -1619,6 +1619,62 @@ class FarmGame {
     this.camera.y = rect.height / 2 - cy * this.camera.scale;
   }
 
+  // ---- Full-farm screenshot (the 📸 Screenshot button in the toolbar) ----
+  // Captures the ENTIRE current farm — at a fixed 1:1 (TILE-native) scale,
+  // regardless of whatever the player has currently zoomed/panned the
+  // real camera to — so there's no need to zoom out and awkwardly try to
+  // fit the whole farm in view before taking a picture. Only ever used in
+  // outdoor farm mode (own or a visited farm); doesn't touch the player's
+  // real on-screen camera or canvas at all, since this instance is only
+  // pointed at a separate, temporarily-attached canvas for the one frame
+  // it takes to render, then restored. Returns a PNG data URL, or null if
+  // there's no farm loaded (e.g. mid-transition) or the browser refuses
+  // (canvas export can throw on some very old/locked-down browsers).
+  captureFullFarmScreenshot() {
+    if (!this.farm || this.mode === 'indoor') return null;
+    const worldW = this.farm.width * TILE;
+    const worldH = this.farm.height * TILE;
+
+    const shotCanvas = document.createElement('canvas');
+    // Kept attached to the DOM (just moved far off-screen) — the resize/
+    // draw logic below reads getBoundingClientRect(), which only reports
+    // a real size for an element that's actually in the page layout, even
+    // if it's never visually shown to anyone.
+    shotCanvas.style.position = 'fixed';
+    shotCanvas.style.left = '-100000px';
+    shotCanvas.style.top = '0px';
+    shotCanvas.style.width = `${worldW}px`;
+    shotCanvas.style.height = `${worldH}px`;
+    document.body.appendChild(shotCanvas);
+
+    const prev = {
+      canvas: this.canvas, ctx: this.ctx, camera: this.camera,
+      userZoomed: this._userZoomed, lastResizeCheckTime: this._lastResizeCheckTime,
+    };
+    try {
+      this.canvas = shotCanvas;
+      this.ctx = shotCanvas.getContext('2d');
+      this.camera = { x: 0, y: 0, scale: 1 }; // whole farm, top-left origin, no pan/zoom
+      this._userZoomed = true; // just in case anything mid-draw checks this — the temp camera above is never auto-fit-adjusted
+      this._lastResizeCheckTime = 0; // force _draw()'s self-correcting resize check to actually size this brand-new canvas
+      this._resize();
+      this._draw();
+      return shotCanvas.toDataURL('image/png');
+    } catch (err) {
+      console.error('Farm screenshot failed', err);
+      return null;
+    } finally {
+      this.canvas = prev.canvas;
+      this.ctx = prev.ctx;
+      this.camera = prev.camera;
+      this._userZoomed = prev.userZoomed;
+      this._lastResizeCheckTime = prev.lastResizeCheckTime;
+      document.body.removeChild(shotCanvas);
+    }
+  }
+
+
+
   // Sets the manual Graphics Quality override (Settings → Graphics
   // Quality) — see graphicsQuality's comment in the constructor.
   setGraphicsQuality(quality) {

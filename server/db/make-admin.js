@@ -1,6 +1,7 @@
 // Usage: node server/db/make-admin.js <username>
 require('dotenv').config();
 const { getDb } = require('./migrate');
+const { friendAdminWithAllUsers } = require('../lib/adminFriends');
 
 const username = process.argv[2];
 if (!username) {
@@ -15,5 +16,6 @@ if (!user) {
   process.exit(1);
 }
 db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
+friendAdminWithAllUsers(db, user.id);
 console.log(`${username} is now an admin. Log in at /admin.html`);
 db.close();
