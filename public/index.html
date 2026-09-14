@@ -95,7 +95,6 @@
     <div class="topbar-actions">
       <button class="icon-btn" id="music-toggle-btn" title="Music">🔊</button>
       <button class="icon-btn" id="fullscreen-toggle-btn" title="Fullscreen — bigger view, especially in landscape on mobile">⛶</button>
-      <button class="icon-btn" id="screenshot-btn" title="Screenshot — captures the whole farm, no need to zoom out first">📸</button>
       <button class="icon-btn" id="notif-btn" title="Notifications">🔔<span class="badge hidden" id="notif-badge">0</span></button>
       <button class="icon-btn" id="friends-btn" title="Friends">👥</button>
       <button class="icon-btn" id="settings-btn" title="Account Settings">⚙️</button>
@@ -360,20 +359,6 @@
       <button class="btn" id="forgot-password-cancel" style="flex:1">Cancel</button>
       <button class="btn btn-primary" id="forgot-password-submit" style="flex:1">Send request</button>
     </div>
-  </div>
-</div>
-
-<!-- MAINTENANCE OVERLAY — shown whenever the admin panel's Maintenance
-     Mode is ON and THIS account isn't an admin (admins are never blocked —
-     see server/index.js). Lives outside #game-screen/#auth-screen so it
-     can cover either one; toggled from main.js via showMaintenanceOverlay/
-     hideMaintenanceOverlay, both on initial page load and live over
-     Socket.IO the moment an admin flips the switch. -->
-<div id="maintenance-overlay" class="modal-overlay hidden" style="z-index:200;">
-  <div class="modal-card" style="max-width:480px; text-align:center;">
-    <img src="/assets/branding/maintenance-banner.png" alt="FarmYARN is under maintenance" style="width:100%; border-radius:10px; margin-bottom:14px;">
-    <p>We're doing a bit of upkeep to make FarmYARN better. Hang tight — this won't take long!</p>
-    <button class="btn btn-primary" id="maintenance-refresh-btn" style="width:100%">🔄 Refresh</button>
   </div>
 </div>
 

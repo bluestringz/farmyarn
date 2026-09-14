@@ -3,7 +3,6 @@ const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const { signToken } = require('../middleware/auth');
 const { initFarmTiles, nowSec, MAX_ENERGY, isReservedName, resolveEquippedOutfit } = require('../lib/gameLogic');
-const { friendNewUserWithAllAdmins } = require('../lib/adminFriends');
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
@@ -63,11 +62,6 @@ module.exports = function authRoutes(db, io, onlineUsers) {
         INSERT INTO farm_objects (farm_id, object_type, item_id, grid_x, grid_y, rotation)
         VALUES (?, 'building', 'farmhouse', 0, 0, 0)
       `).run(farmInfo.lastInsertRowid);
-
-      // Auto-friend every admin with this brand-new account (see
-      // server/lib/adminFriends.js) so admins can always Visit/screenshot
-      // any farm without manually sending/accepting a friend request.
-      friendNewUserWithAllAdmins(db, userId);
 
       const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
       const token = signToken(user);

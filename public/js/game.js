@@ -649,49 +649,25 @@ class FarmGame {
     return this._blockedSetCache;
   }
 
-  // Same caching reasoning as _getBlockedTileSet above, just for Wall/
-  // Fireplace inside a house — see _updateFreeRoamMovement's indoor
-  // branch, which already blocks WASD/joystick movement onto these tiles
-  // directly. walkTo's indoor branch (below) needs the SAME obstacle set
-  // so a tapped destination (a bed/chair on the far side of a wall) gets
-  // routed AROUND it instead of walking in a straight line straight
-  // through — tap-to-walk used to have no indoor pathfinding at all, so
-  // a wall that correctly stopped you cold when using WASD did nothing
-  // to stop a tapped destination beyond it.
-  _getIndoorBlockedTileSet() {
-    if (this._indoorBlockedSetSource !== (this.interior && this.interior.objects)) {
-      const blocked = new Set();
-      const BLOCKING_INTERIOR_IDS = new Set(['wall', 'fireplace']);
-      if (this.interior) {
-        for (const obj of this.interior.objects) {
-          if (obj.object_type === 'interior' && BLOCKING_INTERIOR_IDS.has(obj.item_id)) {
-            blocked.add(`${obj.grid_x},${obj.grid_y}`);
-          }
-        }
-      }
-      this._indoorBlockedSetCache = blocked;
-      this._indoorBlockedSetSource = this.interior && this.interior.objects;
-    }
-    return this._indoorBlockedSetCache;
-  }
-
-  // Plain BFS over the tile grid — farms/rooms are small (tens of tiles
-  // per side) so this is effectively instant and always finds the
-  // shortest route when one exists. Returns an ordered list of waypoint
-  // tiles (excluding the start, including the destination), or null if
-  // there's no way through. width/height/blocked are passed in (rather
-  // than always reading farm.width/_getBlockedTileSet directly) so the
-  // SAME algorithm serves both the outdoor farm (_findPath below) and
-  // indoor rooms (walkTo's indoor branch) without duplicating it.
-  _findPathGeneric(startX, startY, endX, endY, width, height, blocked) {
-    if (endX < 0 || endY < 0 || endX >= width || endY >= height) return null;
+  // Plain BFS over the tile grid — farms are small (tens of tiles per side)
+  // so this is effectively instant and always finds the shortest route when
+  // one exists. Returns an ordered list of waypoint tiles (excluding the
+  // start, including the destination), or null if there's no way through.
+  _findPath(startX, startY, endX, endY) {
+    if (!this.farm) return [{ x: endX, y: endY }];
+    const w = this.farm.width, h = this.farm.height;
+    if (endX < 0 || endY < 0 || endX >= w || endY >= h) return null;
     if (startX === endX && startY === endY) return [];
+    const blocked = this._getBlockedTileSet();
     if (blocked.has(`${endX},${endY}`)) return null;
 
     const key = (x, y) => `${x},${y}`;
     const startKey = key(startX, startY);
     const queue = [[startX, startY]];
-    let qHead = 0;
+    let qHead = 0; // index-based dequeue instead of Array.shift(), which is
+                    // O(n) per call and turns this whole BFS into O(n²) at
+                    // the node counts a wide-open big farm can reach —
+                    // qHead++ is O(1) regardless of how many nodes are queued.
     const visited = new Set([startKey]);
     const cameFrom = new Map();
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -702,14 +678,14 @@ class FarmGame {
       if (cx === endX && cy === endY) { found = true; break; }
       for (const [dx, dy] of dirs) {
         const nx = cx + dx, ny = cy + dy;
-        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
         const nk = key(nx, ny);
         if (visited.has(nk) || blocked.has(nk)) continue;
         visited.add(nk);
         cameFrom.set(nk, key(cx, cy));
         queue.push([nx, ny]);
       }
-      if (visited.size > 30000) break;
+      if (visited.size > 30000) break; // safety cap against a pathological runaway search — land expansion is uncapped, and the old 4000 limit could actually fail to find a path across a big, wide-open farm (not just slow it down), so this needs real headroom, not just a small guard
     }
     if (!found) return null;
 
@@ -722,11 +698,6 @@ class FarmGame {
       if (!curKey) break;
     }
     return path;
-  }
-
-  _findPath(startX, startY, endX, endY) {
-    if (!this.farm) return [{ x: endX, y: endY }];
-    return this._findPathGeneric(startX, startY, endX, endY, this.farm.width, this.farm.height, this._getBlockedTileSet());
   }
 
   // Kicks off movement toward the next queued waypoint — shared by the
@@ -891,17 +862,16 @@ class FarmGame {
       nx = Math.max(0, Math.min(this.farm.width * TILE - 1, nx));
       ny = Math.max(0, Math.min(this.farm.height * TILE - 1, ny));
     } else if (this.mode === 'indoor' && this.interior) {
-      // Wall and Fireplace actually block movement — everything else
-      // placeable indoors still doesn't (a rug, a small plant, etc. are
-      // fine to walk near/over), but these two specifically read as
+      // Wall (interior furniture) actually blocks movement — everything
+      // else placeable indoors still doesn't (a rug, a small plant, etc.
+      // are fine to walk near/over), but a Wall specifically read as
       // "you can just walk straight through it," which doesn't make
-      // sense for a solid partition or a lit hearth.
+      // sense for something that's supposed to be a solid partition.
       const curTileX = Math.floor(c.x / TILE), curTileY = Math.floor(c.y / TILE);
       const tryTileX = Math.floor(nx / TILE), tryTileY = Math.floor(ny / TILE);
-      const BLOCKING_INTERIOR_IDS = new Set(['wall', 'fireplace']);
-      const isBlockedAt = (tx, ty) => this.interior.objects.some((o) => o.object_type === 'interior' && BLOCKING_INTERIOR_IDS.has(o.item_id) && o.grid_x === tx && o.grid_y === ty);
-      if (isBlockedAt(tryTileX, curTileY)) nx = c.x;
-      if (isBlockedAt(curTileX, tryTileY)) ny = c.y;
+      const isWallAt = (tx, ty) => this.interior.objects.some((o) => o.object_type === 'interior' && o.item_id === 'wall' && o.grid_x === tx && o.grid_y === ty);
+      if (isWallAt(tryTileX, curTileY)) nx = c.x;
+      if (isWallAt(curTileX, tryTileY)) ny = c.y;
       nx = Math.max(0, Math.min(this.interior.width * TILE - 1, nx));
       ny = Math.max(0, Math.min(this.interior.height * TILE - 1, ny));
     } else if (this.mode === 'market') {
@@ -1165,22 +1135,7 @@ class FarmGame {
       this._advanceToNextWaypoint(c);
       return;
     }
-    // Indoor: same BFS pathfinding as outdoors, just against Wall/
-    // Fireplace instead of fences/buildings (see _getIndoorBlockedTileSet)
-    // — this used to be a straight-line walk with no obstacle avoidance
-    // at all, so tapping a bed/chair on the far side of a wall walked
-    // straight through it instead of routing around, even though normal
-    // WASD/joystick movement already correctly stopped at that same wall.
-    if (this.mode === 'indoor' && this.interior) {
-      const path = this._findPathGeneric(startTileX, startTileY, tileX, tileY, this.interior.width, this.interior.height, this._getIndoorBlockedTileSet());
-      if (path === null) return;
-      c.path = path;
-      c.pendingAction = actionGlyph || null;
-      this._advanceToNextWaypoint(c);
-      return;
-    }
-    // Market: simple direct walk, no pathfinding — it's an open plaza
-    // with no walls/obstacles to route around.
+    // Market / indoor: simple direct walk, no farm-grid pathfinding.
     c.path = [];
     const targetX = tileX * TILE + TILE / 2, targetY = tileY * TILE + TILE / 2;
     const dx = targetX - c.x, dy = targetY - c.y;
@@ -1618,62 +1573,6 @@ class FarmGame {
     this.camera.x = rect.width / 2 - cx * this.camera.scale;
     this.camera.y = rect.height / 2 - cy * this.camera.scale;
   }
-
-  // ---- Full-farm screenshot (the 📸 Screenshot button in the toolbar) ----
-  // Captures the ENTIRE current farm — at a fixed 1:1 (TILE-native) scale,
-  // regardless of whatever the player has currently zoomed/panned the
-  // real camera to — so there's no need to zoom out and awkwardly try to
-  // fit the whole farm in view before taking a picture. Only ever used in
-  // outdoor farm mode (own or a visited farm); doesn't touch the player's
-  // real on-screen camera or canvas at all, since this instance is only
-  // pointed at a separate, temporarily-attached canvas for the one frame
-  // it takes to render, then restored. Returns a PNG data URL, or null if
-  // there's no farm loaded (e.g. mid-transition) or the browser refuses
-  // (canvas export can throw on some very old/locked-down browsers).
-  captureFullFarmScreenshot() {
-    if (!this.farm || this.mode === 'indoor') return null;
-    const worldW = this.farm.width * TILE;
-    const worldH = this.farm.height * TILE;
-
-    const shotCanvas = document.createElement('canvas');
-    // Kept attached to the DOM (just moved far off-screen) — the resize/
-    // draw logic below reads getBoundingClientRect(), which only reports
-    // a real size for an element that's actually in the page layout, even
-    // if it's never visually shown to anyone.
-    shotCanvas.style.position = 'fixed';
-    shotCanvas.style.left = '-100000px';
-    shotCanvas.style.top = '0px';
-    shotCanvas.style.width = `${worldW}px`;
-    shotCanvas.style.height = `${worldH}px`;
-    document.body.appendChild(shotCanvas);
-
-    const prev = {
-      canvas: this.canvas, ctx: this.ctx, camera: this.camera,
-      userZoomed: this._userZoomed, lastResizeCheckTime: this._lastResizeCheckTime,
-    };
-    try {
-      this.canvas = shotCanvas;
-      this.ctx = shotCanvas.getContext('2d');
-      this.camera = { x: 0, y: 0, scale: 1 }; // whole farm, top-left origin, no pan/zoom
-      this._userZoomed = true; // just in case anything mid-draw checks this — the temp camera above is never auto-fit-adjusted
-      this._lastResizeCheckTime = 0; // force _draw()'s self-correcting resize check to actually size this brand-new canvas
-      this._resize();
-      this._draw();
-      return shotCanvas.toDataURL('image/png');
-    } catch (err) {
-      console.error('Farm screenshot failed', err);
-      return null;
-    } finally {
-      this.canvas = prev.canvas;
-      this.ctx = prev.ctx;
-      this.camera = prev.camera;
-      this._userZoomed = prev.userZoomed;
-      this._lastResizeCheckTime = prev.lastResizeCheckTime;
-      document.body.removeChild(shotCanvas);
-    }
-  }
-
-
 
   // Sets the manual Graphics Quality override (Settings → Graphics
   // Quality) — see graphicsQuality's comment in the constructor.
@@ -3311,30 +3210,7 @@ class FarmGame {
         this._drawFurniture(px, py - wallBandDepth, pw, wallBandDepth, obj.item_id, 0);
         ctx.restore();
       } else {
-        // For a NON-square item (table, 2×1 — everything else here is
-        // 1×1), a 90°/270° rotation needs the shape SHIFTED before
-        // rotating, not just spun where it already sits — the server's
-        // grid_x/grid_y anchor is the footprint's TOP-LEFT corner, but
-        // _drawFurniture's rotation spins around whatever center it's
-        // given, so rotating in place around the UNROTATED box's center
-        // left the result straddling the boundary between the anchor
-        // tile and its neighbor, instead of occupying one clean tile
-        // column running down from that same anchor. This computes
-        // where the shape needs to be positioned so that rotating it (at
-        // its own NATURAL, unswapped pw×ph size — passing the swapped
-        // size instead was an earlier, wrong attempt that distorted the
-        // shape itself, see _drawFurniture's own rotation comment) lands
-        // the final rotated footprint occupying exactly (px, py, ph, pw)
-        // — one tile wide, two tiles tall, anchored at the same top-left
-        // corner as the unrotated placement.
-        const rotation = obj.rotation || 0;
-        let drawX = px, drawY = py;
-        if ((rotation === 90 || rotation === 270) && w !== h) {
-          const targetCenterX = px + ph / 2, targetCenterY = py + pw / 2;
-          drawX = targetCenterX - pw / 2;
-          drawY = targetCenterY - ph / 2;
-        }
-        this._drawFurniture(drawX, drawY, pw, ph, obj.item_id, rotation);
+        this._drawFurniture(px, py, pw, ph, obj.item_id, obj.rotation || 0);
       }
     }
 
@@ -3393,14 +3269,9 @@ class FarmGame {
     const isCrafted = itemId.startsWith('crafted_');
     itemId = isCrafted ? itemId.slice('crafted_'.length) : itemId;
 
-    // A real 90°-step spin, not just a mirror, around this box's OWN
-    // center — the caller always passes the item's ORIGINAL (unrotated)
-    // footprint (px,py,pw,ph straight from grid_x/grid_y/width/height),
-    // never pre-swapped for rotation. For a non-square item (table, 2×1
-    // — everything else here is 1×1), correctness instead comes from the
-    // shape-drawing code below (see 'table') being properly centered
-    // within that box on both axes, so spinning it in place lands right
-    // without needing any pre-adjustment here or at the caller.
+    // A real 90°-step spin, not just a mirror — the footprint is square
+    // (every piece of furniture is 1×1) so a true rotation never needs the
+    // placement highlight box to change shape.
     if (rotation) {
       ctx.save();
       ctx.translate(x + w / 2, y + h / 2);
@@ -3455,11 +3326,7 @@ class FarmGame {
       ctx.fillStyle = '#4a3521';
       ctx.fillRect(x, y, w * 0.06, h);
     } else if (itemId === 'bench') {
-      // by shifted from 0.42 to 0.09 — same off-center-when-rotated fix
-      // as the outdoor bench in _drawDecorationShape (see its comment):
-      // the shape used to span 0.66-1.0 of the tile, packed into the
-      // bottom third instead of centered around 0.5.
-      const bx = x + w * 0.14, by = y + h * 0.09, bw = w * 0.72;
+      const bx = x + w * 0.14, by = y + h * 0.42, bw = w * 0.72;
       // No backrest bar (same reasoning as the outdoor bench in
       // _drawDecorationShape) — it visually cut across a seated
       // character's torso at roughly chest height.
@@ -3469,67 +3336,50 @@ class FarmGame {
       ctx.fillRect(bx + 2, by + h * 0.34, w * 0.06, h * 0.24);
       ctx.fillRect(bx + bw - w * 0.08, by + h * 0.34, w * 0.06, h * 0.24);
     } else if (itemId === 'rug') {
-      // Nudged up ~0.025 for the same reason as chair/bench/table — was
-      // centered at 0.525 instead of exactly 0.5, small enough to be
-      // basically invisible but fixed anyway while its neighbors got the
-      // same treatment.
       ctx.fillStyle = '#c0392b';
       ctx.beginPath();
-      this._roundRect(x + w * 0.08, y + h * 0.225, w * 0.84, h * 0.55, 8);
+      this._roundRect(x + w * 0.08, y + h * 0.25, w * 0.84, h * 0.55, 8);
       ctx.fill(); ctx.stroke();
       ctx.strokeStyle = '#e8d4b0';
       ctx.lineWidth = 2;
-      this._roundRect(x + w * 0.16, y + h * 0.305, w * 0.68, h * 0.39, 5);
+      this._roundRect(x + w * 0.16, y + h * 0.33, w * 0.68, h * 0.39, 5);
       ctx.stroke();
       // simple diamond pattern
       ctx.strokeStyle = 'rgba(255,255,255,0.4)';
       ctx.lineWidth = 1;
       for (let i = 0; i < 3; i++) {
-        const cx2 = x + w * (0.28 + i * 0.22), cy2 = y + h * 0.495;
+        const cx2 = x + w * (0.28 + i * 0.22), cy2 = y + h * 0.52;
         ctx.beginPath();
         ctx.moveTo(cx2, cy2 - 6); ctx.lineTo(cx2 + 6, cy2); ctx.lineTo(cx2, cy2 + 6); ctx.lineTo(cx2 - 6, cy2);
         ctx.closePath(); ctx.stroke();
       }
     } else if (itemId === 'table') {
       ctx.fillStyle = '#a9714a';
-      // Shifted up ~0.09 from before — same off-center-when-rotated fix
-      // as chair/bench (see their comments): the tabletop+legs together
-      // spanned 0.28-0.90 of the table's own box (center ~0.59), not
-      // 0.5 — invisible for a table sitting flat, but visibly off-center
-      // once rotated 90°/270° into portrait orientation, since rotating
-      // an off-center shape around the box's true center swings it
-      // toward whichever side the rotation points instead of spinning
-      // in place.
       // legs
-      ctx.fillRect(x + w * 0.1, y + h * 0.46, w * 0.06, h * 0.35);
-      ctx.fillRect(x + w * 0.84, y + h * 0.46, w * 0.06, h * 0.35);
-      ctx.strokeRect(x + w * 0.1, y + h * 0.46, w * 0.06, h * 0.35);
-      ctx.strokeRect(x + w * 0.84, y + h * 0.46, w * 0.06, h * 0.35);
+      ctx.fillRect(x + w * 0.1, y + h * 0.55, w * 0.06, h * 0.35);
+      ctx.fillRect(x + w * 0.84, y + h * 0.55, w * 0.06, h * 0.35);
+      ctx.strokeRect(x + w * 0.1, y + h * 0.55, w * 0.06, h * 0.35);
+      ctx.strokeRect(x + w * 0.84, y + h * 0.55, w * 0.06, h * 0.35);
       // tabletop
       ctx.fillStyle = '#c68b52';
       ctx.beginPath();
-      this._roundRect(x + w * 0.05, y + h * 0.19, w * 0.9, h * 0.3, 4);
+      this._roundRect(x + w * 0.05, y + h * 0.28, w * 0.9, h * 0.3, 4);
       ctx.fill(); ctx.stroke();
       ctx.strokeStyle = 'rgba(94,59,31,0.4)';
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x + w * 0.15, y + h * 0.34); ctx.lineTo(x + w * 0.85, y + h * 0.34); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + w * 0.15, y + h * 0.43); ctx.lineTo(x + w * 0.85, y + h * 0.43); ctx.stroke();
     } else if (itemId === 'chair') {
       ctx.fillStyle = '#8b5e34';
-      // Shifted up ~0.09 from before — same off-center-when-rotated
-      // fix as the bench (see its comment in _drawDecorationShape): the
-      // whole shape's span (backrest to legs) was centered around 0.59
-      // of the tile instead of 0.5, invisible when unrotated but
-      // noticeable once spun 90°/180°/270°.
       // backrest — lower now, just above the seat, not up near where a
       // seated character's chest/head would be (same fix as the bench).
-      ctx.beginPath(); this._roundRect(x + w * 0.28, y + h * 0.23, w * 0.44, h * 0.14, 4); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); this._roundRect(x + w * 0.28, y + h * 0.32, w * 0.44, h * 0.14, 4); ctx.fill(); ctx.stroke();
       // seat
-      ctx.beginPath(); this._roundRect(x + w * 0.2, y + h * 0.36, w * 0.6, h * 0.14, 3); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); this._roundRect(x + w * 0.2, y + h * 0.45, w * 0.6, h * 0.14, 3); ctx.fill(); ctx.stroke();
       // legs — pulled in closer to center (was 0.24/0.70) so a seated
       // character's body actually covers them instead of leaving them
       // visibly poking out past either side.
-      ctx.fillRect(x + w * 0.34, y + h * 0.49, w * 0.06, h * 0.28);
-      ctx.fillRect(x + w * 0.6, y + h * 0.49, w * 0.06, h * 0.28);
+      ctx.fillRect(x + w * 0.34, y + h * 0.58, w * 0.06, h * 0.28);
+      ctx.fillRect(x + w * 0.6, y + h * 0.58, w * 0.06, h * 0.28);
     } else if (itemId === 'cabinet') {
       ctx.fillStyle = '#a9714a';
       ctx.beginPath(); this._roundRect(x + w * 0.14, y + h * 0.1, w * 0.72, h * 0.72, 5); ctx.fill(); ctx.stroke();
@@ -3688,37 +3538,6 @@ class FarmGame {
           bx += bw + 1;
         }
       }
-    } else if (itemId === 'pioneer_trophy') {
-      this._groundShadow(x, y, w, h);
-      const cx = x + w / 2;
-      // Base/stand
-      ctx.fillStyle = '#6b4423';
-      ctx.fillRect(cx - w * 0.14, y + h * 0.78, w * 0.28, h * 0.1);
-      // Stem
-      ctx.fillStyle = '#e8c25a';
-      ctx.fillRect(cx - w * 0.04, y + h * 0.6, w * 0.08, h * 0.2);
-      // Cup body
-      ctx.beginPath();
-      ctx.moveTo(cx - w * 0.22, y + h * 0.32);
-      ctx.quadraticCurveTo(cx - w * 0.22, y + h * 0.58, cx, y + h * 0.6);
-      ctx.quadraticCurveTo(cx + w * 0.22, y + h * 0.58, cx + w * 0.22, y + h * 0.32);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = '#c48b2e';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      // Handles
-      ctx.strokeStyle = '#e8c25a';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(cx - w * 0.24, y + h * 0.4, w * 0.08, Math.PI * 0.3, Math.PI * 1.4); ctx.stroke();
-      ctx.beginPath(); ctx.arc(cx + w * 0.24, y + h * 0.4, w * 0.08, Math.PI * 1.6, Math.PI * 0.7); ctx.stroke();
-      // Rim + star
-      ctx.fillStyle = '#f4d878';
-      ctx.beginPath(); ctx.ellipse(cx, y + h * 0.32, w * 0.22, h * 0.04, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#fff3c4';
-      ctx.font = `${Math.floor(w * 0.22)}px serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('★', cx, y + h * 0.44);
     } else if (itemId === 'table_lamp') {
       // Small lamp on its own stand — the same "breathing" glow as the
       // outdoor Lamp Post (see DECORATION_STYLE's 'lamp' shape), so a
@@ -3847,35 +3666,18 @@ class FarmGame {
       this._drawDecoration(px, py, w, h, g.itemId, rotation, g.x, g.y, this.farm ? this.farm.objects : null, fakeGrowthState, false);
     }
     else if (g.category === 'animal') this._drawAnimal(px, py, w, h, g.itemId, false, rotation);
-    else if (g.category === 'interior') {
-      // Same shift-before-rotate fix as the placed-object rendering in
-      // _drawIndoorObjects (see its comment) — for a non-square item
-      // rotated 90°/270°, this keeps the ghost preview's shape actually
-      // matching the highlight box drawn around it below, instead of the
-      // shape rotating in place around the wrong center while the box
-      // frames a different target entirely.
-      let drawX = px, drawY = py;
-      if ((rotation === 90 || rotation === 270) && w !== h) {
-        drawX = px + h / 2 - w / 2;
-        drawY = py + w / 2 - h / 2;
-      }
-      this._drawFurniture(drawX, drawY, w, h, g.itemId, rotation);
-    }
+    else if (g.category === 'interior') this._drawFurniture(px, py, w, h, g.itemId, rotation);
 
     // Decorations and furniture do a real 90°-step spin (not just a
     // mirror), rotating around the footprint's own center — so for a
     // non-square item (a 2×1 rug, table, bed...) turned 90°/270°, the
-    // highlight box needs its width/height swapped AND repositioned to
-    // stay anchored at the same top-left tile corner (px,py) — matching
-    // where the shape itself actually ends up (see above and
-    // _drawIndoorObjects) — rather than staying centered on the
-    // unrotated box's center, which left the box (and the shape it's
-    // meant to frame) straddling the boundary between the anchor tile
-    // and its neighbor instead of framing one clean tile column.
+    // highlight box needs its width/height swapped to actually frame the
+    // rotated shape instead of the original orientation's box.
     const swapsDimensions = (g.category === 'decoration' || g.category === 'interior') && (rotation === 90 || rotation === 270);
     const boxW = swapsDimensions ? h : w;
     const boxH = swapsDimensions ? w : h;
-    const boxX = px, boxY = py;
+    const cx = px + w / 2, cy = py + h / 2;
+    const boxX = cx - boxW / 2, boxY = cy - boxH / 2;
 
     ctx.strokeStyle = '#ffc84a';
     ctx.lineWidth = 3;
@@ -3987,25 +3789,11 @@ class FarmGame {
         ctx.scale(0.8, 0.68);
         ctx.drawImage(img, -displayWidth / 2, -displayHeight / 2, displayWidth, displayHeight);
       } else if (c.restPose === 'sit') {
-        // The standing sprite is tall relative to a tile (displayHeight
-        // is TILE*1.45) — shrinking it by 0.62 (the old scale) still left
-        // it nearly as tall as a full tile, so anchoring its bottom
-        // anywhere near a chair/bench's actual seat height (well up
-        // within the tile, not at the very bottom) pushed its TOP clean
-        // above the tile entirely — reading as "the chair is above my
-        // head" instead of the character sitting on it. Shrinking
-        // further (0.5) brings the whole sprite down to a size that
-        // actually fits sitting on furniture within its own tile,
-        // anchored just slightly above normal standing-ground level.
-        // Feet-anchor needs to land near FLOOR level (roughly where a
-        // standing character's feet already sit), not up at seat-cushion
-        // height — anchoring near the seat made the shrunk sprite's feet
-        // look like they were planted ON TOP of the seat (standing on
-        // the furniture) instead of sitting on it with legs hanging down
-        // toward the floor in front. The smaller scale (0.5) keeps the
-        // head from poking above the tile even with this lower anchor.
-        ctx.translate(cx, groundY + (c.bob || 0) + TILE * 0.08);
-        ctx.scale(0.8, 0.5);
+        // Sunk down further than before so more of the character visually
+        // overlaps the seat/legs — otherwise it read as "standing behind
+        // a low table" rather than actually sitting on the furniture.
+        ctx.translate(cx, groundY + (c.bob || 0) + TILE * 0.32);
+        ctx.scale(0.85, 0.62);
         ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
       } else {
         ctx.translate(cx, groundY + (c.bob || 0));
@@ -4284,25 +4072,8 @@ class FarmGame {
       // whatever furniture it was meant to be centered on.
       ctx.drawImage(img, -displayWidth / 2, -displayHeight / 2, displayWidth, displayHeight);
     } else if (c.restPose === 'sit') {
-      // The standing sprite is tall relative to a tile (displayHeight is
-      // TILE*1.45) — shrinking it by 0.62 (the old scale) still left it
-      // nearly as tall as a full tile, so anchoring its bottom anywhere
-      // near a chair/bench's actual seat height (well up within the
-      // tile, not at the very bottom) pushed its TOP clean above the
-      // tile entirely — reading as "the chair is above my head" instead
-      // of the character sitting on it. Shrinking further (0.5) brings
-      // the whole sprite down to a size that actually fits sitting on
-      // furniture within its own tile, anchored just slightly above
-      // normal standing-ground level.
-      // Feet-anchor needs to land near FLOOR level (roughly where a
-      // standing character's feet already sit), not up at seat-cushion
-      // height — anchoring near the seat made the shrunk sprite's feet
-      // look like they were planted ON TOP of the seat (standing on the
-      // furniture) instead of sitting on it with legs hanging down
-      // toward the floor in front. The smaller scale (0.5) keeps the
-      // head from poking above the tile even with this lower anchor.
-      ctx.translate(cx, groundY + c.bob + TILE * 0.08);
-      ctx.scale(0.8, 0.5);
+      ctx.translate(cx, groundY + c.bob + TILE * 0.32);
+      ctx.scale(0.85, 0.62);
       ctx.drawImage(img, -displayWidth / 2, -displayHeight, displayWidth, displayHeight);
     } else {
       ctx.translate(cx, groundY + c.bob);
@@ -5854,17 +5625,7 @@ class FarmGame {
       // (~0.63 of a tile) — the seat plank used to be wider than that
       // (0.72), so it stuck out past the character on both sides even
       // with the legs pulled in and the backrest lowered.
-      // `by` shifted up from the old 0.42 to 0.13 — the WHOLE shape
-      // (backrest+seat+legs together) used to span roughly 0.58-1.0 of
-      // the tile, packed entirely into the bottom 42% instead of
-      // centered — invisible when the bench sits flat, but glaringly
-      // obvious once rotated: rotating an off-center shape around the
-      // TILE's center swings it out to whichever side the rotation
-      // points, instead of spinning in place, which is exactly what
-      // made a ring of rotated benches around a bonfire each look shifted
-      // toward a different edge of their own tile. This centers the
-      // whole shape's span at roughly 0.29-0.71, symmetric around 0.5.
-      const bx = x + w * 0.22, by = y + h * 0.13, bw = w * 0.56;
+      const bx = x + w * 0.22, by = y + h * 0.42, bw = w * 0.56;
       // The backrest sits just above the seat now, not up near where a
       // seated character's chest/head would be — a backrest that tall
       // used to visually cut across a seated character's torso no matter

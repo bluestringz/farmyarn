@@ -9,16 +9,8 @@ const jwt = require('jsonwebtoken');
 
 const { getDb } = require('./db/migrate');
 const { requireAuth, requireAdmin, JWT_SECRET } = require('./middleware/auth');
-const { isMaintenanceMode } = require('./lib/maintenance');
-const { ensureAllAdminsFriendedWithEveryone, friendAdminWithAllUsers } = require('./lib/adminFriends');
 
 const db = getDb();
-
-// Safety net (see server/lib/adminFriends.js) — covers any admin promoted
-// directly in the database, or pre-existing data from before this feature
-// existed. New registrations and admin promotions THROUGH the app (below)
-// stay in sync on their own; this just catches everything else at boot.
-ensureAllAdminsFriendedWithEveryone(db);
 
 const app = express();
 const server = http.createServer(app);
@@ -37,72 +29,6 @@ app.use(express.json({ limit: '256kb' }));
 // refresh farm), and the old ceiling was tight enough to trip during a
 // normal fast-clicking session, not just abuse/bots.
 app.use('/api/', rateLimit({ windowMs: 60 * 1000, max: 600, standardHeaders: true, legacyHeaders: false }));
-
-// ---- Site-wide maintenance mode ----
-// Toggled from the admin panel (see /api/admin/maintenance in
-// routes/admin.js). While it's on, regular players are blocked at the API
-// level (503) — but an ADMIN ACCOUNT is never blocked, whether they're
-// hitting the admin panel's own routes or just logging into and playing
-// the normal game client, so staff can keep checking the actual game
-// while everyone else sees the maintenance notice. The static page itself
-// (index.html) is never blocked — it always loads normally so the login
-// form is reachable — the maintenance notice for regular players is shown
-// client-side (see public/js/main.js) once their own API calls start
-// coming back 503.
-function requesterIsAdmin(req) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return false;
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(payload.sub);
-    return !!(user && user.is_admin);
-  } catch (err) {
-    return false;
-  }
-}
-
-function isMaintenanceExempt(req) {
-  if (req.path.startsWith('/api/admin')) return true; // admin panel's own API calls
-  if (req.path === '/api/health') return true;
-  if (req.path === '/api/bootstrap-admin') return true;
-  if (req.path === '/api/maintenance-status') return true; // public, so the client can show a notice even when logged out
-  if (req.path === '/admin.html') return true; // the admin panel page itself
-  // Shared static assets, and the app shell itself — always reachable so
-  // an admin (or anyone) can always get to the login screen; regular play
-  // is actually gated by the API responses below, not by this page load.
-  if (req.path.startsWith('/css/') || req.path.startsWith('/js/') || req.path.startsWith('/assets/')) return true;
-  if (req.method === 'GET' && !req.path.startsWith('/api/')) return true;
-  if (req.path === '/api/auth/login') {
-    // /api/auth/login is shared by both the game client and the admin
-    // panel (see routes/auth.js, which reads body.context) — the
-    // admin-panel-flavored login is always exempt, and so is a GAME login
-    // for an account that's actually an admin (looked up by username,
-    // since there's no token yet to check at this point). A regular
-    // player's login still 503s.
-    if (req.body && req.body.context === 'admin') return true;
-    const username = req.body && req.body.username;
-    if (typeof username === 'string') {
-      const row = db.prepare('SELECT is_admin FROM users WHERE username = ?').get(username);
-      if (row && row.is_admin) return true;
-    }
-    return false;
-  }
-  // Any other request carrying a valid admin's auth token bypasses the
-  // block entirely — this is what lets an admin keep playing/checking the
-  // game like normal while regular players get 503s on the same routes.
-  if (requesterIsAdmin(req)) return true;
-  return false;
-}
-
-app.get('/api/maintenance-status', (req, res) => {
-  res.json({ enabled: isMaintenanceMode(db) });
-});
-
-app.use((req, res, next) => {
-  if (!isMaintenanceMode(db) || isMaintenanceExempt(req)) return next();
-  return res.status(503).json({ error: 'FarmYARN is under maintenance right now. Please try again in a bit.', maintenance: true });
-});
 
 // ---- Routes ----
 app.use('/api/auth', require('./routes/auth')(db, io, onlineUsers));
@@ -134,7 +60,6 @@ app.get('/api/bootstrap-admin', (req, res) => {
   const user = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (!user) return res.status(404).json({ error: `No account found with username "${username}"` });
   db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
-  friendAdminWithAllUsers(db, user.id);
   res.send(`✅ "${username}" is now an admin. Log out and back in, then visit /admin.html`);
 });
 
