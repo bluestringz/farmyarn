@@ -58,8 +58,7 @@ const DEFAULT_TIMERS = {
 // Defaults match the old hardcoded "500 * 2^level" doubling formula this
 // replaced, so nobody's price silently changed the moment this shipped.
 const DEFAULT_EXPANSION_PRICES = {
-  expand_cost_1: 500, expand_cost_2: 1000, expand_cost_3: 2000, expand_cost_4: 4000,
-  expand_cost_5: 8000, expand_cost_6: 16000, expand_cost_7: 32000,
+  expand_cost_1: 500, expand_cost_2: 1000, expand_cost_3: 2000, expand_cost_4: 4000, expand_cost_5: 8000,
 };
 Object.assign(DEFAULT_TIMERS, DEFAULT_EXPANSION_PRICES);
 

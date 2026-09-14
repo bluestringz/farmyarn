@@ -237,7 +237,7 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
   });
 
   // ---- Land Expansion Prices (Admin Panel > 🏞️ Land Expansion Prices) ----
-  // 7 individually-settable coin costs (Expand 1 through Expand 7 — see
+  // 5 individually-settable coin costs (Expand 1 through Expand 5 — see
   // /api/farm/expand's MAX_EXPANSION_LEVEL). Uses the exact same
   // game_settings key-value store as the Timer Settings above (raw coin
   // amounts here instead of seconds), so this is deliberately its own
@@ -328,7 +328,7 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
 
   router.get('/expansion-prices', (req, res) => {
     const rows = [];
-    for (let level = 1; level <= 7; level++) {
+    for (let level = 1; level <= 5; level++) {
       const key = `expand_cost_${level}`;
       rows.push({ level, key, cost: getTimerSetting(db, key) });
     }
@@ -338,7 +338,7 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
   router.post('/set-expansion-price', (req, res) => {
     const { level, cost } = req.body || {};
     const lvl = parseInt(level, 10);
-    if (!Number.isInteger(lvl) || lvl < 1 || lvl > 7) return res.status(400).json({ error: 'Level must be 1-7' });
+    if (!Number.isInteger(lvl) || lvl < 1 || lvl > 5) return res.status(400).json({ error: 'Level must be 1-5' });
     const coins = parseInt(cost, 10);
     if (!Number.isFinite(coins) || coins < 0) return res.status(400).json({ error: 'Enter a valid coin amount' });
     db.prepare('INSERT INTO game_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')

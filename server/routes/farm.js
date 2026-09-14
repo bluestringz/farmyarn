@@ -146,6 +146,23 @@ module.exports = function farmRoutes(db, io) {
     res.json(payload);
   });
 
+  // GET /api/farm/expand-cost — the actual admin-configured price for
+  // THIS player's next expansion level (see expand_cost_N in the Timers
+  // admin panel), so the client's confirm dialog can show the real
+  // number instead of assuming the old fixed-doubling formula still
+  // applies (the /expand route below already always charged the real,
+  // admin-configured price — only the confirmation text was stale). Has
+  // to be registered BEFORE the /:userId route right below, or Express
+  // would match "expand-cost" as a userId param instead of hitting this.
+  router.get('/expand-cost', (req, res) => {
+    const farm = getOwnFarm(req.userId);
+    if (!farm) return res.status(404).json({ error: 'Farm not found' });
+    const nextLevel = farm.expansion_level + 1;
+    const MAX_EXPANSION_LEVEL = 5; // lowered from 7 - farm was getting too big
+    if (nextLevel > MAX_EXPANSION_LEVEL) return res.json({ maxed: true });
+    res.json({ cost: getTimerSetting(db, `expand_cost_${nextLevel}`), nextLevel });
+  });
+
   // GET /api/farm/:userId - view any player's farm (read-only visit)
   router.get('/:userId', (req, res) => {
     const targetId = parseInt(req.params.userId, 10);
@@ -532,7 +549,7 @@ module.exports = function farmRoutes(db, io) {
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
 
     const nextLevel = farm.expansion_level + 1;
-    const MAX_EXPANSION_LEVEL = 7;
+    const MAX_EXPANSION_LEVEL = 5; // lowered from 7 - farm was getting too big
     if (nextLevel > MAX_EXPANSION_LEVEL) return res.status(400).json({ error: 'Your farm is already at maximum size.' });
     // Individually admin-settable per level (see admin panel > 🏞️ Land
     // Expansion Prices) instead of a fixed doubling formula — defaults
@@ -542,7 +559,7 @@ module.exports = function farmRoutes(db, io) {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
     if (user.coins < cost) return res.status(400).json({ error: `Expansion costs ${cost} coins` });
 
-    const addWidth = 4, addHeight = 4;
+    const addWidth = 2, addHeight = 2; // lowered from 4 - each expand should be a smaller bump
     const newWidth = farm.width + addWidth;
     const newHeight = farm.height + addHeight;
 

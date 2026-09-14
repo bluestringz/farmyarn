@@ -135,6 +135,7 @@ const Api = (() => {
     harvest: (x, y) => request('POST', '/api/farm/harvest', { x, y }),
     sell: (itemId, quantity) => request('POST', '/api/farm/sell', { itemId, quantity }),
     expand: () => request('POST', '/api/farm/expand'),
+    expandCost: () => request('GET', '/api/farm/expand-cost'),
 
     // Shop
     catalog: () => request('GET', '/api/shop/catalog'),

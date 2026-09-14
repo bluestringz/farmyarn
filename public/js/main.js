@@ -1978,10 +1978,17 @@
 
   async function doExpand() {
     if (state.viewingUserId || state.inHouse || state.inMarket) { UI.toast("You can only expand your own farm"); return; }
-    const expansionLevel = (game.farm && game.farm.expansionLevel) || 0;
-    const cost = 500 * Math.pow(2, expansionLevel);
+    let cost;
+    try {
+      const info = await Api.expandCost();
+      if (info.maxed) { UI.toast('Your farm is already at maximum size.'); return; }
+      cost = info.cost;
+    } catch (err) {
+      UI.toast(err.message);
+      return;
+    }
     const confirmed = confirm(
-      `Expand your farm by 4×4 tiles for 🪙${cost}?\n\nThis will be deducted from your coins immediately and cannot be undone.`
+      `Expand your farm by 2×2 tiles for 🪙${cost}?\n\nThis will be deducted from your coins immediately and cannot be undone.`
     );
     if (!confirmed) return;
     try {
