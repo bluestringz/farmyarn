@@ -556,6 +556,34 @@
     }
   }
 
+  // 📸 Screenshot button — captures the WHOLE current farm (own or a
+  // friend's, whichever is currently loaded) as a single PNG and triggers
+  // a browser download, without needing to zoom/pan to fit it manually
+  // first (see FarmGame.captureFullFarmScreenshot in game.js).
+  function takeFarmScreenshot() {
+    if (state.inHouse || state.inMarket || state.inPark || state.inCasino) {
+      UI.toast("Screenshots only work while looking at a farm, not inside a building, the Market, the Park, or the Casino.");
+      return;
+    }
+    const dataUrl = game.captureFullFarmScreenshot();
+    if (!dataUrl) {
+      UI.toast("Couldn't take the screenshot — try again.");
+      return;
+    }
+    const who = state.viewingUserId
+      ? (state.viewingUsername || 'friend')
+      : (state.me.displayName || state.me.username || 'my-farm');
+    const safeName = who.toString().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = `farmyarn-${safeName}-${stamp}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    UI.toast('📸 Screenshot saved!');
+  }
+
   async function refreshCurrentFarm() {
     if (state.inHouse || state.inMarket || state.inPark) return; // interior/market/park don't need the outdoor refresh
     if (state.viewingUserId) await loadFarm(state.viewingUserId);
@@ -963,7 +991,12 @@
   // stays in sync with whichever of those happened most recently.
   function updateAutoApplySelectionReady() {
     if (state.tool === 'plant') {
-      game.autoApplySelectionReady = !!(state.buildSelection && state.buildSelection.category === 'crop');
+      // Trees/fruit trees (category 'decoration') now plant instantly
+      // just like actual crop seeds do (see handleTileClick's plant
+      // branch) — so walking with one selected while holding a direction
+      // should auto-plant across tiles the same way, instead of only
+      // seeds getting that fast "walk and it plants itself" treatment.
+      game.autoApplySelectionReady = !!(state.buildSelection && (state.buildSelection.category === 'crop' || state.buildSelection.category === 'decoration'));
     } else if (state.tool === 'feed') {
       game.autoApplySelectionReady = !!state.selectedFeedId;
     } else {
@@ -1374,15 +1407,29 @@
       } else if (state.tool === 'plant') {
         if (state.viewingUserId || state.inHouse) return;
         if (!state.buildSelection) { UI.toast('Pick a seed or tree first'); return; }
-        // Trees/fruit trees (category 'decoration', moved here from
-        // Build — see openSeedPicker) use the SAME preview/rotate/
-        // confirm placement flow as Build's other decorations, not the
-        // immediate "tap a plowed tile, done" flow actual crop seeds
-        // use — they don't need plowed ground, and placement itself
-        // still needs a confirm step (rotation, exact spot) the way any
-        // other decoration does.
+        // Trees/fruit trees (category 'decoration', moved here from Build
+        // — see openSeedPicker) now plant the same instant, no-confirm way
+        // actual crop seeds do — walk up, plant, done — instead of the
+        // preview/rotate/confirm flow Build's other decorations use. A
+        // tree never actually needed rotation (it looks the same from
+        // every angle) or a "confirm the exact spot" step beyond just
+        // tapping/walking onto the tile, so that extra step just slowed
+        // down planting several at once compared to how fast seeds
+        // already are — this also means auto-apply-while-walking (see
+        // AUTO_APPLY_TOOLS) now covers trees too, so holding a direction
+        // and walking across open ground plants one per tile exactly like
+        // it already does for seeds.
         if (state.buildSelection.category === 'decoration') {
-          showPendingPlacement(x, y);
+          if (!TREE_DECORATION_IDS.has(state.buildSelection.itemId)) {
+            showPendingPlacement(x, y);
+            return;
+          }
+          game.walkTo(x, y, null);
+          await Api.placeObject('decoration', state.buildSelection.itemId, x, y, 0, 'outdoor');
+          UI.toast(`Planted ${state.buildSelection.itemId.replace(/_/g, ' ')}!`);
+          game.playAction(ACTION_ICON.plant);
+          await refreshCurrentFarm();
+          await openSeedPicker(); // refresh remaining tree count
           return;
         }
         if (state.buildSelection.category !== 'crop') { UI.toast('Pick a seed first'); return; }
@@ -2348,6 +2395,7 @@
     document.getElementById('park-exit-btn').addEventListener('click', exitPark);
     document.getElementById('casino-exit-btn').addEventListener('click', exitCasino);
     document.getElementById('daily-reward-btn').addEventListener('click', claimDailyReward);
+    document.getElementById('screenshot-btn').addEventListener('click', takeFarmScreenshot);
     refreshNotifBadge();
     setInterval(refreshNotifBadge, 15000);
     initMusic();
@@ -2494,6 +2542,16 @@
       Api.setToken(null);
       alert('You were logged out because this account signed in on another device.');
       window.location.reload();
+    });
+
+    // Admin flipped maintenance mode on from the admin panel — reload right
+    // away instead of waiting for this session's next action to hit a 503,
+    // so the maintenance banner (server/public/maintenance.html) shows up
+    // immediately for anyone already playing.
+    socket.on('maintenance:changed', ({ enabled }) => {
+      if (state.me && state.me.isAdmin) return; // admins keep playing right through it
+      if (enabled) showMaintenanceOverlay();
+      else hideMaintenanceOverlay();
     });
 
     // ---- Shared presence (farm visits + Marketplace) ----
@@ -2689,10 +2747,35 @@
     return div.innerHTML;
   }
 
+  // ---------------- Maintenance overlay ----------------
+  // Shown whenever the server 503s a request because the admin panel's
+  // Maintenance Mode is on (see Api.setOnMaintenanceBlocked below and the
+  // 'maintenance:changed' Socket.IO handler above) — this never fires for
+  // an admin account, since the server itself never blocks those (see
+  // server/index.js's requesterIsAdmin bypass), so admins keep playing
+  // straight through it without ever seeing this.
+  function showMaintenanceOverlay() {
+    document.getElementById('maintenance-overlay').classList.remove('hidden');
+  }
+  function hideMaintenanceOverlay() {
+    document.getElementById('maintenance-overlay').classList.add('hidden');
+  }
+
   // ---------------- Boot ----------------
 
   async function main() {
     initAuthScreen();
+    document.getElementById('maintenance-refresh-btn').addEventListener('click', () => window.location.reload());
+    // Lets someone stuck behind the overlay (a stored, now-blocked token —
+    // this fires before they'd ever otherwise see the login form again)
+    // clear that session and get back to a normal login screen, where
+    // logging in with an ADMIN account goes straight through instead of
+    // hitting the overlay again (see requesterIsAdmin in server/index.js).
+    document.getElementById('maintenance-logout-btn').addEventListener('click', () => {
+      Api.setToken(null);
+      window.location.reload();
+    });
+    Api.setOnMaintenanceBlocked(showMaintenanceOverlay);
     // Someone logging into this same account elsewhere invalidates this
     // session immediately, mid-use — not just on the next page load. Set
     // this before bootGame() so it's already armed for the very first API
@@ -2712,7 +2795,12 @@
         await bootGame();
         return;
       } catch (err) {
-        Api.setToken(null);
+        // A maintenance 503 already popped the overlay above (via
+        // onMaintenanceBlocked) — the token/session itself is still fine,
+        // so don't force this player back to the login screen for it;
+        // just leave the overlay up until maintenance ends and they hit
+        // Refresh, at which point bootGame() will succeed normally.
+        if (err.status !== 503) Api.setToken(null);
       }
     }
   }

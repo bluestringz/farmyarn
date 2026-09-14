@@ -16,6 +16,7 @@ const Api = (() => {
   }
 
   let onSessionSuperseded = null; // set by main.js — called once if the server says this token was replaced by a newer login elsewhere
+  let onMaintenanceBlocked = null; // set by main.js — called if the server 503s this request because maintenance mode is on (never fires for an admin account — the server itself never blocks those)
 
   async function request(method, path, body) {
     const headers = { 'Content-Type': 'application/json' };
@@ -39,6 +40,16 @@ const Api = (() => {
       // explanation, same as if their session had simply expired.
       if (res.status === 401 && message === 'Logged in from another device' && onSessionSuperseded) {
         onSessionSuperseded();
+      }
+      // Fallback for the maintenance-mode banner (see server/index.js) —
+      // normally the Socket.IO 'maintenance:changed' event in main.js
+      // catches this instantly, but a request that lands right as
+      // maintenance turns on (or with the socket briefly disconnected)
+      // still gets caught here instead of just showing a generic error.
+      // This only ever fires for a genuinely blocked (non-admin) request
+      // — the server never 503s an admin account for maintenance.
+      if (res.status === 503 && data && data.maintenance && onMaintenanceBlocked) {
+        onMaintenanceBlocked();
       }
       const err = new Error(message);
       err.status = res.status;
@@ -71,6 +82,8 @@ const Api = (() => {
   return {
     setToken, getToken,
     setOnSessionSuperseded: (fn) => { onSessionSuperseded = fn; },
+    setOnMaintenanceBlocked: (fn) => { onMaintenanceBlocked = fn; },
+    maintenanceStatus: () => request('GET', '/api/maintenance-status'),
     get: (path) => request('GET', path),
     post: (path, body) => request('POST', path, body),
     del: (path) => request('DELETE', path),
