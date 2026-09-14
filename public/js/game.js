@@ -1382,7 +1382,7 @@ class FarmGame {
   }
 
   // ---- Interior (house) mode ----
-  setInteriorMode(interiorData) {
+  setInteriorMode(interiorData, viaStairs) {
     // Only recenter the camera and reset the character back to the
     // default spawn spot on an ACTUAL fresh entry into a DIFFERENT room
     // — `location` uniquely identifies which specific room this is (the
@@ -1405,7 +1405,28 @@ class FarmGame {
     // the bare floor and could clip the wall strips right at the edge of
     // the screen.
     this._centerCameraFor(interiorData.width, interiorData.height, 0.6, 0.6, 0.6, 0);
-    const wx = (interiorData.width / 2) * TILE, wy = (interiorData.height * 0.7) * TILE;
+    // Arriving via the mansion's staircase (see main.js's staircase click
+    // handler, which passes viaStairs=true) lands a little AWAY from
+    // whichever staircase piece of furniture is on THIS floor, instead of
+    // always snapping to the same fixed spawn spot regardless of how the
+    // player got here — same "climbed the stairs, now standing near
+    // them, not on top of them" feel as the Casino's fixed multi-floor
+    // staircases (see _enterCasinoFloor's arrivalStair landing below).
+    // Falls back to the ordinary default spawn if this floor happens to
+    // have no staircase placed on it at all (or on any non-stairs entry,
+    // like walking in through the front door).
+    const stairsHere = viaStairs && interiorData.objects
+      ? interiorData.objects.find((o) => o.object_type === 'interior' && o.item_id === 'staircase')
+      : null;
+    let wx, wy;
+    if (stairsHere) {
+      wx = (stairsHere.grid_x + 0.5) * TILE;
+      const landingY = Math.min(stairsHere.grid_y + 2, interiorData.height - 1);
+      wy = (landingY + 0.5) * TILE;
+    } else {
+      wx = (interiorData.width / 2) * TILE;
+      wy = (interiorData.height * 0.7) * TILE;
+    }
     this._character.x = wx; this._character.y = wy;
     this._character.targetX = wx; this._character.targetY = wy;
     this._character.moving = false;

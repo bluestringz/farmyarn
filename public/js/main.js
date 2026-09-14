@@ -212,7 +212,7 @@
       if (nextFloor < 1 || nextFloor > maxFloor) return;
       try {
         game.setTransitioning(true);
-        await enterBuilding({ id: state.interiorSpace.buildingId }, nextFloor);
+        await enterBuilding({ id: state.interiorSpace.buildingId }, nextFloor, true);
         UI.toast(`Floor ${nextFloor}`);
       } catch (err) {
         UI.toast(err.message);
@@ -647,7 +647,7 @@
     }
   }
 
-  async function enterInterior(opts, bannerId) {
+  async function enterInterior(opts, bannerId, viaStairs) {
     // Anyone can walk into a house/coop/barn/cow_barn now, owner or
     // visitor alike — same as being able to see the outdoor farm already.
     // Read-only for visitors: state.viewingUserId stays set the whole
@@ -656,7 +656,7 @@
     // is needed here to keep it look-but-don't-touch.
     const fetchOpts = state.viewingUserId ? { ...opts, ownerId: state.viewingUserId } : opts;
     const interior = await Api.myInterior(fetchOpts);
-    game.setInteriorMode(interior);
+    game.setInteriorMode(interior, viaStairs);
     state.inHouse = true;
     state.interiorSpace = {
       buildingType: interior.buildingType, buildingId: interior.buildingId || null, location: interior.location,
@@ -689,13 +689,15 @@
   }
 
   async function enterHouse() { await enterInterior({ space: 'house' }, 'house-banner'); }
-  async function enterBuilding(obj, floor) {
+  async function enterBuilding(obj, floor, viaStairs) {
     // Chicken coop, cow barn, barn, and mansion all use the same generic
     // per-building-instance room now — each specific building placed gets
     // its own separate interior (see server/lib/interiorSpaces.js).
     // `floor` is only meaningful for multi-floor buildings (the mansion) —
-    // omitted/undefined defaults to floor 1 on the server.
-    await enterInterior({ buildingId: obj.id, floor }, 'coop-banner');
+    // omitted/undefined defaults to floor 1 on the server. `viaStairs` is
+    // also mansion-specific — see setInteriorMode's landing-near-the-
+    // staircase logic in game.js.
+    await enterInterior({ buildingId: obj.id, floor }, 'coop-banner', viaStairs);
   }
 
   async function openClosetPanel() {
@@ -1634,14 +1636,19 @@
     // Staircase — tap it (with no tool active) to go up/down a floor in a
     // multi-floor building (currently just the mansion). Available to
     // owner and visitor alike, same as walking around the room already is.
+    // Same "walk over, then go" feel as the Casino's fixed staircases
+    // (see handleCasinoStairsClick/game.js's own stairs-click handling) —
+    // the character visibly walks to the staircase tile first instead of
+    // instantly jumping straight to the next floor on tap.
     if (obj.item_id === 'staircase' && obj.object_type === 'interior' && state.inHouse
         && !state.tool) {
       const current = state.interiorSpace.floor || 1;
       const maxFloor = state.interiorSpace.maxFloor || 1;
       const nextFloor = current >= maxFloor ? current - 1 : current + 1;
       if (nextFloor < 1 || nextFloor > maxFloor) { UI.toast('Nowhere else to go.'); return; }
+      game.walkTo(obj.grid_x, obj.grid_y, null);
       try {
-        await enterBuilding({ id: state.interiorSpace.buildingId }, nextFloor);
+        await enterBuilding({ id: state.interiorSpace.buildingId }, nextFloor, true);
         UI.toast(`Floor ${nextFloor}`);
       } catch (err) {
         UI.toast(err.message);

@@ -4,7 +4,7 @@ const os = require('os');
 const fs = require('fs');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
-const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY, getTimerSetting, DEFAULT_TIMERS, initFarmTiles } = require('../lib/gameLogic');
+const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY, MAX_LEVEL, getTimerSetting, DEFAULT_TIMERS, initFarmTiles } = require('../lib/gameLogic');
 const { DB_PATH } = require('../db/migrate');
 const { listOddsFields, oddsKey, getOverrideBp, setOverrideBp, clearOverride } = require('../lib/casinoConfig');
 const { getAllStock, setStock, renewStock, removeStock } = require('../lib/shopStock');
@@ -614,7 +614,7 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
   // disagree until the player's next XP-earning action re-synced it.
   router.post('/players/:id/set-level', (req, res) => {
     const level = parseInt(req.body && req.body.level, 10);
-    if (!Number.isFinite(level) || level < 1) return res.status(400).json({ error: 'level must be 1 or higher' });
+    if (!Number.isFinite(level) || level < 1 || level > MAX_LEVEL) return res.status(400).json({ error: `level must be between 1 and ${MAX_LEVEL}` });
     const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
     const xp = xpForLevel(level);

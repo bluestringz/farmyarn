@@ -11,16 +11,22 @@ function xpForLevel(level) {
   return Math.round(100 * Math.pow(level - 1, 1.6) + 100 * (level - 1));
 }
 
+const MAX_LEVEL = 500;
+
 function levelForXp(xp) {
   let level = 1;
-  while (xpForLevel(level + 1) <= xp) level++;
+  while (level < MAX_LEVEL && xpForLevel(level + 1) <= xp) level++;
   return level;
 }
 
 function xpProgress(xp) {
   const level = levelForXp(xp);
   const currentFloor = xpForLevel(level);
-  const nextCeil = xpForLevel(level + 1);
+  // At the level cap there's no "next level" to show progress toward —
+  // nextCeil just collapses to currentFloor, which gives xpForNext = 0;
+  // the client already treats that as "bar full" (see stat-xp-bar's width
+  // calc in main.js), so no separate max-level UI case was needed there.
+  const nextCeil = level >= MAX_LEVEL ? currentFloor : xpForLevel(level + 1);
   return { level, xp, currentFloor, nextCeil, xpIntoLevel: xp - currentFloor, xpForNext: nextCeil - currentFloor };
 }
 
@@ -290,7 +296,10 @@ function grantRewards(db, userId, { coins = 0, xp = 0 } = {}) {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user) return null;
   const newCoins = user.coins + coins;
-  const newXp = user.xp + xp;
+  // Capped at whatever XP level 500 (MAX_LEVEL) needs — once there, XP
+  // grants just stop accumulating instead of piling up uselessly forever
+  // past the cap.
+  const newXp = Math.min(user.xp + xp, xpForLevel(MAX_LEVEL));
   const oldLevel = levelForXp(user.xp);
   const newLevel = levelForXp(newXp);
   db.prepare('UPDATE users SET coins = ?, xp = ?, level = ? WHERE id = ?')
@@ -465,4 +474,5 @@ module.exports = {
   isReservedName, startResting, stopResting, resolveEquippedOutfit, rollHarvestQuantity, rollAnimalQuantity,
   getTimerSetting, DEFAULT_TIMERS, DEFAULT_EXPANSION_PRICES,
   hasSpecialOutfit, getEnergyRules, SPECIAL_OUTFIT_KEYS, SPECIAL_OUTFIT_MAX_ENERGY, SPECIAL_OUTFIT_GROWTH_MULTIPLIER,
+  MAX_LEVEL,
 };
