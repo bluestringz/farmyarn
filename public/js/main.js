@@ -594,20 +594,29 @@
   // uploaded track) restarts playback.
   let currentFarmMusicUrl = null;
   let farmMusicAudio = null;
+  function updateFarmMusicToggleBtn() {
+    const btn = document.getElementById('farm-music-toggle-btn');
+    if (!farmMusicAudio) { btn.classList.add('hidden'); return; }
+    btn.classList.remove('hidden');
+    btn.textContent = farmMusicAudio.paused ? '🔇' : '🎵';
+  }
   function playFarmMusicIfNeeded(farm) {
     const url = farm.musicUrl || null;
     if (url === currentFarmMusicUrl) return;
     currentFarmMusicUrl = url;
     if (farmMusicAudio) { farmMusicAudio.pause(); farmMusicAudio = null; }
-    if (!url) return;
+    if (!url) { updateFarmMusicToggleBtn(); return; }
     farmMusicAudio = new Audio(url);
     farmMusicAudio.loop = true;
     farmMusicAudio.volume = 0.5;
     // Browsers block audio-with-sound autoplay without a recent user
     // gesture — most farm loads happen right after one anyway (tapping
     // Login, or a friend's "Visit" button), but silently ignore a
-    // rejection rather than throwing if this particular one didn't count.
-    farmMusicAudio.play().catch(() => {});
+    // rejection rather than throwing if this particular one didn't count
+    // — the 🔇 toggle button still shows up either way, so the player can
+    // just tap it themselves to start it if autoplay got blocked.
+    farmMusicAudio.play().catch(() => {}).finally(updateFarmMusicToggleBtn);
+    updateFarmMusicToggleBtn();
   }
 
   // Called when leaving the outdoor farm view entirely (house/coop/barn/
@@ -618,6 +627,17 @@
   function stopFarmMusic() {
     if (farmMusicAudio) { farmMusicAudio.pause(); farmMusicAudio = null; }
     currentFarmMusicUrl = null;
+    updateFarmMusicToggleBtn();
+  }
+
+  // Manual play/pause toggle (the 🎵/🔇 topbar button) — for stopping a
+  // farm's theme song mid-visit without needing to leave and come back,
+  // or for starting it manually if the browser blocked autoplay.
+  function toggleFarmMusic() {
+    if (!farmMusicAudio) return;
+    if (farmMusicAudio.paused) farmMusicAudio.play().catch(() => {});
+    else farmMusicAudio.pause();
+    updateFarmMusicToggleBtn();
   }
 
   // 📸 Screenshot button — captures the WHOLE current farm (own or a
@@ -2499,6 +2519,7 @@
     document.getElementById('casino-exit-btn').addEventListener('click', exitCasino);
     document.getElementById('daily-reward-btn').addEventListener('click', claimDailyReward);
     document.getElementById('screenshot-btn').addEventListener('click', takeFarmScreenshot);
+    document.getElementById('farm-music-toggle-btn').addEventListener('click', toggleFarmMusic);
     refreshNotifBadge();
     setInterval(refreshNotifBadge, 15000);
     initMusic();
