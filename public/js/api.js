@@ -79,6 +79,26 @@ const Api = (() => {
     return data;
   }
 
+  // Same multipart shape as uploadAvatar, for the Sound System's MP3.
+  async function uploadFarmMusic(file) {
+    const form = new FormData();
+    form.append('music', file);
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch('/api/player/farm-music', { method: 'POST', headers, body: form });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* no body */ }
+    if (!res.ok) {
+      const message = res.status === 429
+        ? "You're doing that a bit fast — wait a few seconds and try again."
+        : (data && data.error) || `Upload failed (${res.status})`;
+      const err = new Error(message);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
   return {
     setToken, getToken,
     setOnSessionSuperseded: (fn) => { onSessionSuperseded = fn; },
@@ -88,6 +108,8 @@ const Api = (() => {
     post: (path, body) => request('POST', path, body),
     del: (path) => request('DELETE', path),
     uploadAvatar,
+    uploadFarmMusic,
+    removeFarmMusic: () => request('POST', '/api/player/farm-music/remove'),
     setDisplayName: (name) => request('POST', '/api/player/display-name', { name }),
     changePassword: (currentPassword, newPassword) => request('POST', '/api/player/change-password', { currentPassword, newPassword }),
     startResting: () => request('POST', '/api/player/rest'),

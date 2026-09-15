@@ -33,7 +33,12 @@ module.exports = function farmRoutes(db, io) {
     const tiles = db.prepare('SELECT x, y, state FROM farm_tiles WHERE farm_id = ?').all(farm.id);
     const crops = db.prepare('SELECT * FROM crops WHERE farm_id = ?').all(farm.id);
     const objects = db.prepare("SELECT * FROM farm_objects WHERE farm_id = ? AND location = 'outdoor'").all(farm.id).map(resolveObject);
-    const owner = db.prepare('SELECT id, username, display_name, level, avatar FROM users WHERE id = ?').get(farm.owner_id);
+    const owner = db.prepare('SELECT id, username, display_name, level, avatar, farm_music_url FROM users WHERE id = ?').get(farm.owner_id);
+    // Plays for whoever loads this farm — owner and visitor alike (see
+    // loadOwnFarm/loadFarm in main.js) — as long as BOTH a placed Sound
+    // System AND an actual uploaded track exist. Buying the Sound System
+    // alone (with no track uploaded yet) plays nothing.
+    const hasSoundSystem = objects.some((o) => o.item_id === 'sound_system');
     return {
       id: farm.id,
       ownerId: farm.owner_id,
@@ -47,6 +52,7 @@ module.exports = function farmRoutes(db, io) {
       tiles,
       crops,
       objects,
+      musicUrl: (hasSoundSystem && owner.farm_music_url) ? owner.farm_music_url : null,
       serverTime: nowSec(),
     };
   }

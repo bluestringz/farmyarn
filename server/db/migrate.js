@@ -490,6 +490,12 @@ function addColumnsIfMissing(db) {
   if (!decoCols.includes('growth_seconds')) {
     db.exec('ALTER TABLE decoration_types ADD COLUMN growth_seconds INTEGER NOT NULL DEFAULT 0');
   }
+  if (!decoCols.includes('currency')) {
+    db.exec("ALTER TABLE decoration_types ADD COLUMN currency TEXT NOT NULL DEFAULT 'coins'");
+  }
+  if (!existingCols.includes('farm_music_url')) {
+    db.exec('ALTER TABLE users ADD COLUMN farm_music_url TEXT');
+  }
   const outfitCols = db.prepare("PRAGMA table_info(outfit_types)").all().map((c) => c.name);
   if (!outfitCols.includes('sprite_key')) {
     db.exec("ALTER TABLE outfit_types ADD COLUMN sprite_key TEXT NOT NULL DEFAULT 'classic'");
@@ -642,16 +648,18 @@ function seedContent(db) {
 
   const upsertDeco = db.prepare(`
     INSERT INTO decoration_types (id, name, cost, required_level, width, height, sprite, growable, growth_seconds,
-      produces_item_id, production_seconds, fruit_spoil_seconds, lifespan_seconds, yield_min, yield_max, season, banner_text)
+      produces_item_id, production_seconds, fruit_spoil_seconds, lifespan_seconds, yield_min, yield_max, season, banner_text, currency)
     VALUES (@id, @name, @cost, @required_level, @width, @height, @sprite, @growable, @growth_seconds,
-      @produces_item_id, @production_seconds, @fruit_spoil_seconds, @lifespan_seconds, @yield_min, @yield_max, @season, @banner_text)
+      @produces_item_id, @production_seconds, @fruit_spoil_seconds, @lifespan_seconds, @yield_min, @yield_max, @season, @banner_text, @currency)
     ON CONFLICT(id) DO NOTHING
   `);
   // Fruit-tree-only fields default to "not a fruit tree" (0/null) for
   // every other decoration — filled in here so each row below only needs
   // to specify them when it actually IS a fruit tree, instead of every
-  // existing decoration needing 6 new boilerplate fields added.
-  const DECORATION_DEFAULTS = { produces_item_id: null, production_seconds: 0, fruit_spoil_seconds: 0, lifespan_seconds: 0, yield_min: 0, yield_max: 0, season: null, banner_text: null, growable: 0, growth_seconds: 0 };
+  // existing decoration needing 6 new boilerplate fields added. Same
+  // reasoning for currency — every existing decoration is coins-only;
+  // only the Sound System below overrides it to gm_points.
+  const DECORATION_DEFAULTS = { produces_item_id: null, production_seconds: 0, fruit_spoil_seconds: 0, lifespan_seconds: 0, yield_min: 0, yield_max: 0, season: null, banner_text: null, growable: 0, growth_seconds: 0, currency: 'coins' };
   const decorations = [
     { id: 'fence',      name: 'Fence',       cost: 5,   required_level: 1, width: 1, height: 1, sprite: 'fence', growable: 0, growth_seconds: 0 },
     { id: 'tree',       name: 'Tree',        cost: 50,  required_level: 1, width: 1, height: 1, sprite: 'tree', growable: 1, growth_seconds: 172800 }, // 2 days as a sapling before it's a full tree
@@ -670,6 +678,13 @@ function seedContent(db) {
     { id: 'sign',       name: 'Sign',        cost: 25,  required_level: 1, width: 1, height: 1, sprite: 'sign', growable: 0, growth_seconds: 0 },
     { id: 'path',       name: 'Path Tile',   cost: 8,   required_level: 1, width: 1, height: 1, sprite: 'path', growable: 0, growth_seconds: 0 },
     { id: 'pond',       name: 'Pond',        cost: 150, required_level: 3, width: 2, height: 2, sprite: 'pond', growable: 0, growth_seconds: 0 },
+    // Bought with GM Points (admin-granted only), not coins — plays the
+    // owner's own uploaded MP3 (see POST /api/player/farm-music) whenever
+    // anyone loads this farm, owner or visitor alike (see serializeFarm's
+    // musicUrl field). Price is admin-adjustable like anything else in
+    // PRICE_TABLES (server/routes/admin.js) — this starting cost is just
+    // the default until an admin changes it.
+    { id: 'sound_system', name: 'Sound System', cost: 20, required_level: 1, width: 1, height: 1, sprite: 'sound_system', growable: 0, growth_seconds: 0, currency: 'gm_points' },
     // Fruit trees — grow like the plain Tree above (1 day to mature,
     // faster with watering, same as any other growable), but unlike it,
     // stay alive afterward producing fruit every 6 hours (yield 5-15,

@@ -244,6 +244,7 @@ const DECORATION_STYLE = {
   cupid:            { shape: 'cupid', body: '#f6d9b8', wing: '#ffffff', hair: '#e8c25a' },
   arc_heart:        { shape: 'arc_heart', color: '#f06090', colorDark: '#d0407a' },
   fireworks:        { shape: 'fireworks', tube: '#4a3521', band: '#e8c25a' },
+  sound_system:     { shape: 'sound_system', body: '#2a2a2e', bodyDark: '#1a1a1e', speaker: '#4a4a52', grille: '#0d0d0f', led: '#4fd67a' },
   merry_christmas_banner:   { shape: 'banner', post: '#6b4423', cloth: '#2d6b3a', text: 'Merry Christmas!', textColor: '#ffffff' },
   happy_halloween_banner:   { shape: 'banner', post: '#4a3521', cloth: '#e8791a', text: 'Happy Halloween!', textColor: '#241d17' },
   happy_valentines_banner:  { shape: 'banner', post: '#6b4423', cloth: '#f06090', text: 'Happy Valentine\'s!', textColor: '#ffffff' },
@@ -6406,6 +6407,36 @@ class FarmGame {
       ctx.fillStyle = style.band;
       ctx.fillRect(cx - w * 0.1, y + h * 0.58, w * 0.2, h * 0.05);
       ctx.fillRect(cx - w * 0.1, y + h * 0.78, w * 0.2, h * 0.05);
+    } else if (style.shape === 'sound_system') {
+      // A simple static boombox — cached like most other decorations
+      // (see STATIC_SHAPE_EXCLUSIONS in _drawDecoration), so no
+      // continuously-animated bits here (no blinking LED) the way the
+      // Lamp/Bonfire have, which specifically need to stay uncached.
+      this._groundShadow(x, y, w, h);
+      const bx = x + w * 0.12, by = y + h * 0.28, bw = w * 0.76, bh = h * 0.58;
+      ctx.fillStyle = style.body;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, w * 0.06); else ctx.rect(bx, by, bw, bh);
+      ctx.fill();
+      ctx.strokeStyle = style.bodyDark;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      const grilleR = w * 0.14;
+      [0.32, 0.68].forEach((fx) => {
+        const gx = x + w * fx, gy = by + bh * 0.52;
+        ctx.fillStyle = style.speaker;
+        ctx.beginPath(); ctx.arc(gx, gy, grilleR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = style.grille;
+        ctx.beginPath(); ctx.arc(gx, gy, grilleR * 0.55, 0, Math.PI * 2); ctx.fill();
+      });
+      ctx.fillStyle = style.led;
+      ctx.beginPath(); ctx.arc(x + w * 0.5, by + bh * 0.14, w * 0.025, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = style.bodyDark;
+      ctx.lineWidth = w * 0.03;
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.2, by); ctx.lineTo(x + w * 0.2, by - h * 0.1);
+      ctx.moveTo(x + w * 0.8, by); ctx.lineTo(x + w * 0.8, by - h * 0.1);
+      ctx.stroke();
     } else if (style.shape === 'banner') {
       const cx = x + w / 2;
       ctx.fillStyle = style.post;

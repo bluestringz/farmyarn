@@ -292,6 +292,17 @@ function rollCascadeQuantity(cascade) {
 function rollHarvestQuantity() { return rollCascadeQuantity(HARVEST_QTY_CASCADE); }
 function rollAnimalQuantity() { return rollCascadeQuantity(ANIMAL_QTY_CASCADE); }
 
+// Maps a catalog item's `currency` column ('coins' | 'premium' | 'gm_points')
+// to the actual users-table balance column + a display label — shared by
+// any purchase route that needs to charge something other than plain
+// coins (see buy-outfit's existing gm_points/premium branching, and
+// buy-placeable's Sound System support in shop.js).
+function currencyFieldFor(currency) {
+  if (currency === 'gm_points') return { field: 'gm_points', label: 'GM Points' };
+  if (currency === 'premium') return { field: 'premium_currency', label: 'Premium Points' };
+  return { field: 'coins', label: 'coins' };
+}
+
 function grantRewards(db, userId, { coins = 0, xp = 0 } = {}) {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user) return null;
@@ -474,5 +485,5 @@ module.exports = {
   isReservedName, startResting, stopResting, resolveEquippedOutfit, rollHarvestQuantity, rollAnimalQuantity,
   getTimerSetting, DEFAULT_TIMERS, DEFAULT_EXPANSION_PRICES,
   hasSpecialOutfit, getEnergyRules, SPECIAL_OUTFIT_KEYS, SPECIAL_OUTFIT_MAX_ENERGY, SPECIAL_OUTFIT_GROWTH_MULTIPLIER,
-  MAX_LEVEL,
+  MAX_LEVEL, currencyFieldFor,
 };

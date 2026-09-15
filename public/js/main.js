@@ -257,6 +257,7 @@
       initToolbar();
       initTopbarActions();
       initAvatarUpload();
+      initFarmMusicUpload();
       initPlacementBar();
       initChat();
       initLeaderboard();
@@ -388,6 +389,31 @@
         state.me.avatar = res.avatar;
         renderTopbar();
         UI.toast('Profile picture updated!');
+      } catch (err) {
+        UI.toast(err.message);
+      }
+    });
+  }
+
+  // Wired once at boot (see main() below) — the actual file picker is
+  // triggered on demand by tapping a placed Sound System (see
+  // handleObjectClick's sound_system branch above).
+  function initFarmMusicUpload() {
+    const input = document.getElementById('farm-music-file-input');
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      input.value = ''; // allow re-selecting the same file later
+      if (!file) return;
+      if (file.size > 8 * 1024 * 1024) { UI.toast('That MP3 is too big — please pick one under 8MB.'); return; }
+      try {
+        const res = await Api.uploadFarmMusic(file);
+        UI.toast('🎵 Farm theme song updated!');
+        // Restart playback immediately with the new track, for whoever's
+        // standing on the farm right now (the owner, mid-upload) — a
+        // visitor arriving later just gets it naturally via
+        // playFarmMusicIfNeeded on their own farm load.
+        currentFarmMusicUrl = null;
+        playFarmMusicIfNeeded({ musicUrl: res.musicUrl });
       } catch (err) {
         UI.toast(err.message);
       }
@@ -537,12 +563,14 @@
     const farm = await Api.myFarm();
     game.setFarm(farm);
     joinSpace(`farm:${farm.ownerId}`);
+    playFarmMusicIfNeeded(farm);
   }
 
   async function loadFarm(userId) {
     const farm = await Api.viewFarm(userId);
     game.setFarm(farm);
     joinSpace(`farm:${farm.ownerId}`);
+    playFarmMusicIfNeeded(farm);
     if (farm.isOwner) {
       state.viewingUserId = null;
       state.viewingUsername = null;
@@ -554,6 +582,42 @@
       document.getElementById('visiting-banner').classList.remove('hidden');
       setTool(null);
     }
+  }
+
+  // ---------------- Farm music (Sound System) ----------------
+  // A farm's musicUrl (see serializeFarm in farm.js) plays for whoever
+  // loads it — the owner logging into their own farm, or a friend
+  // visiting. Tracked by URL (not just "is something playing") so the
+  // periodic refreshCurrentFarm() poll (every 45s) re-loading the SAME
+  // farm doesn't restart the track from the beginning every time —
+  // only an actual CHANGE (a different farm, or the owner swapping their
+  // uploaded track) restarts playback.
+  let currentFarmMusicUrl = null;
+  let farmMusicAudio = null;
+  function playFarmMusicIfNeeded(farm) {
+    const url = farm.musicUrl || null;
+    if (url === currentFarmMusicUrl) return;
+    currentFarmMusicUrl = url;
+    if (farmMusicAudio) { farmMusicAudio.pause(); farmMusicAudio = null; }
+    if (!url) return;
+    farmMusicAudio = new Audio(url);
+    farmMusicAudio.loop = true;
+    farmMusicAudio.volume = 0.5;
+    // Browsers block audio-with-sound autoplay without a recent user
+    // gesture — most farm loads happen right after one anyway (tapping
+    // Login, or a friend's "Visit" button), but silently ignore a
+    // rejection rather than throwing if this particular one didn't count.
+    farmMusicAudio.play().catch(() => {});
+  }
+
+  // Called when leaving the outdoor farm view entirely (house/coop/barn/
+  // mansion, Market, Park, Casino) — none of those are "on the farm"
+  // anymore, so nothing should keep playing under them. The next
+  // loadOwnFarm/loadFarm call (on coming back outside) naturally resumes
+  // whatever that farm's track is, via the currentFarmMusicUrl check above.
+  function stopFarmMusic() {
+    if (farmMusicAudio) { farmMusicAudio.pause(); farmMusicAudio = null; }
+    currentFarmMusicUrl = null;
   }
 
   // 📸 Screenshot button — captures the WHOLE current farm (own or a
@@ -654,6 +718,7 @@
     // time they're inside, and every build/decorate/move/remove/feed
     // handler already gates on `!state.viewingUserId`, so nothing extra
     // is needed here to keep it look-but-don't-touch.
+    stopFarmMusic();
     const fetchOpts = state.viewingUserId ? { ...opts, ownerId: state.viewingUserId } : opts;
     const interior = await Api.myInterior(fetchOpts);
     game.setInteriorMode(interior, viaStairs);
@@ -1706,6 +1771,17 @@
       return;
     }
 
+    // Sound System — tap it (owner only, no tool active) to pick an MP3
+    // to upload as this farm's theme song. See playFarmMusicIfNeeded —
+    // it plays for anyone who loads this farm, owner or visitor, so a
+    // visitor tapping someone else's Sound System just gets a note
+    // instead of a file picker they couldn't use anyway.
+    if (!state.tool && obj.object_type === 'decoration' && obj.item_id === 'sound_system') {
+      if (state.viewingUserId) { UI.toast("Only the farm's owner can change its Sound System playlist."); return; }
+      document.getElementById('farm-music-file-input').click();
+      return;
+    }
+
     // Fruit trees — collect ripe fruit either by tapping with NO tool
     // active (same "just walk up and tap it" interaction as an animal),
     // OR with the Harvest tool selected/auto-applying while walking —
@@ -1905,6 +1981,8 @@
         if (['building', 'decoration', 'animal', 'interior'].includes(cat)) {
           const res = await Api.buyPlaceable(cat, itemId, qty || 1);
           state.me.coins = res.coins;
+          state.me.premiumCurrency = res.premiumCurrency;
+          state.me.gmPoints = res.gmPoints;
           renderTopbar();
           // House/Mansion's chosen wall color (picked in the Shop card
           // before buying) gets remembered here and applied automatically
@@ -2019,6 +2097,7 @@
   async function enterMarket() {
     if (state.viewingUserId) { UI.toast("Leave your friend's farm first"); return; }
     if (state.inHouse) await exitHouse();
+    stopFarmMusic();
     const stalls = await Api.marketplace();
     state.marketStalls = stalls;
     game.setMarketMode(stalls);
@@ -2063,6 +2142,7 @@
   async function enterPark() {
     if (state.viewingUserId) { UI.toast("Leave your friend's farm first"); return; }
     if (state.inHouse) await exitHouse();
+    stopFarmMusic();
     game.setParkMode();
     game.onParkBenchClick = handleParkBenchClick;
     game.onParkCartClick = handleParkCartClick;

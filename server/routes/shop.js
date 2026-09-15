@@ -1,5 +1,5 @@
 const express = require('express');
-const { grantRewards, addInventory, nowSec, rollAnimalQuantity, spendEnergy, resolveEnergy, notify } = require('../lib/gameLogic');
+const { grantRewards, addInventory, nowSec, rollAnimalQuantity, spendEnergy, resolveEnergy, notify, currencyFieldFor } = require('../lib/gameLogic');
 const { getAllStock, consumeStock } = require('../lib/shopStock');
 const { isWithinBuyWindow, SEASONS, currentSeasonKeys, formatSeasonWindow } = require('../lib/seasons');
 const {
@@ -281,18 +281,26 @@ module.exports = function shopRoutes(db) {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
     if (user.level < def.required_level) return res.status(400).json({ error: `Requires level ${def.required_level}` });
     const totalCost = def.cost * qty;
-    if (user.coins < totalCost) return res.status(400).json({ error: 'Not enough coins' });
+    // Almost everything buyable this way is coins-only — def.currency is
+    // only ever anything else for the Sound System (gm_points) so far,
+    // same currency-column pattern buy-outfit already uses for Special
+    // Outfits.
+    const { field: currencyField, label: currencyLabel } = currencyFieldFor(def.currency);
+    if ((user[currencyField] || 0) < totalCost) return res.status(400).json({ error: `Not enough ${currencyLabel}` });
 
     const stockCheck = consumeStock(db, category, itemId, qty);
     if (!stockCheck.ok) {
       return res.status(400).json({ error: stockCheck.remaining > 0 ? `Only ${stockCheck.remaining} left in stock` : 'Out of stock' });
     }
 
-    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(totalCost, req.userId);
+    db.prepare(`UPDATE users SET ${currencyField} = ${currencyField} - ? WHERE id = ?`).run(totalCost, req.userId);
     addInventory(db, req.userId, `${category}_${itemId}`, qty);
 
-    const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
-    res.json({ ok: true, category, itemId, quantity: qty, coinsSpent: totalCost, coins: updated.coins, stockRemaining: stockCheck.remaining });
+    const updated = db.prepare('SELECT coins, premium_currency, gm_points FROM users WHERE id = ?').get(req.userId);
+    res.json({
+      ok: true, category, itemId, quantity: qty, coinsSpent: totalCost, stockRemaining: stockCheck.remaining,
+      coins: updated.coins, premiumCurrency: updated.premium_currency, gmPoints: updated.gm_points,
+    });
   });
 
   // POST /api/shop/place-object  { category, itemId, x, y, rotation, location }

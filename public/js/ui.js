@@ -38,7 +38,7 @@ const UI = (() => {
     fence: '🚧', lamp: '💡', bench: '🪑', pond: '🌊', sign: '🪧',
     flower: '🌷', path: '🟫', bush: '🌳', bonfire: '🔥', hay_bale: '🌾',
     potted_plant: '🪴', painting: '🖼️', fireplace: '🔥', stove: '🍳',
-    bookshelf: '📚', wall: '🧱', staircase: '🪜',
+    bookshelf: '📚', wall: '🧱', staircase: '🪜', sound_system: '🔊',
     // Interior furniture (including the Workshop-crafted versions)
     bed: '🛏️', crafted_bed: '🛏️', chair: '🪑', crafted_chair: '🪑',
     table: '🍽️', side_table: '🪑', cabinet: '🗄️', crafted_cabinet: '🗄️',
@@ -152,6 +152,7 @@ const UI = (() => {
     bench: 'Tap it while outdoors to sit — regenerates Energy faster while seated, just like a chair indoors.',
     lamp: 'Lights up the area around it at night.',
     bonfire: 'Keeps outdoor animals warm at night within a few tiles of it — without one nearby (or a Fireplace if housed in a coop/barn), an animal left cold too long can die.',
+    sound_system: 'Bought with GM Points. Once placed, tap it to upload your own MP3 as your farm\'s theme song — plays for you and any friend who visits, for as long as it stays placed.',
     sign: 'Purely decorative sign — rotate it to face any direction.',
     path: 'Walkable paved ground tile — lay these down as a proper walkway.',
     pond: 'Decorative water feature, 2×2 tiles.',
@@ -434,7 +435,15 @@ const UI = (() => {
     const cards = items.map((item) => {
       const cost = item.seed_cost ?? item.cost;
       const locked = player.level < item.required_level;
-      const affordable = player.coins >= cost;
+      // Almost everything in this generic card is coins-only — item.currency
+      // is only ever anything else for the Sound System (gm_points) so far.
+      // Same currencyFieldFor(currency) mapping the server uses (see
+      // buy-placeable in shop.js), just duplicated client-side here purely
+      // for what to check/display — the server is still the one actually
+      // enforcing it.
+      const currencyIcon = item.currency === 'gm_points' ? '🎖️' : item.currency === 'premium' ? '💎' : '🪙';
+      const balance = item.currency === 'gm_points' ? (player.gmPoints || 0) : item.currency === 'premium' ? (player.premiumCurrency || 0) : player.coins;
+      const affordable = balance >= cost;
       // A capped item (see admin panel > 📦 Shop Stock) carries
       // currentStock/maxStock from the catalog response — absent entirely
       // means unlimited, same as every item behaved before this existed.
@@ -450,7 +459,8 @@ const UI = (() => {
       // category's generic glyph for anything not in this list.
       const FRUIT_TREE_ICONS = { mango_tree: '🥭', apple_tree: '🍎', avocado_tree: '🥑' };
       const TOOL_ICONS = { megaphone: '📢' };
-      const iconFor = (it) => FRUIT_TREE_ICONS[it.id] || TOOL_ICONS[it.id] || glyphMap[activeCategory];
+      const DECORATION_ICONS = { sound_system: '🔊' };
+      const iconFor = (it) => FRUIT_TREE_ICONS[it.id] || TOOL_ICONS[it.id] || DECORATION_ICONS[it.id] || glyphMap[activeCategory];
       const durationLine = isCrops || activeCategory === 'fruit_trees' ? `<div class="shop-level">⏱ ${formatDuration(item.growth_seconds)} to grow</div>` : '';
       // Seeds are the one thing people buy in bulk (to plant a whole field
       // at once) — give them a quantity field instead of one-click-at-a-time,
@@ -465,7 +475,7 @@ const UI = (() => {
       const isFruitTreeTab = activeCategory === 'fruit_trees';
       const isToolsTab = activeCategory === 'tools';
       const qtyCap = isFruitTreeTab ? 20 : 99;
-      const maxAffordable = Math.max(1, Math.min(qtyCap, Math.floor(player.coins / cost), hasStockCap ? Math.max(1, item.currentStock) : qtyCap));
+      const maxAffordable = Math.max(1, Math.min(qtyCap, Math.floor(balance / cost), hasStockCap ? Math.max(1, item.currentStock) : qtyCap));
       const qtyRow = (isCrops || isFruitTreeTab || isToolsTab) && !locked && !outOfStock
         ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="${hasStockCap ? Math.min(qtyCap, Math.max(1, item.currentStock)) : qtyCap}" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
         : '';
@@ -483,7 +493,7 @@ const UI = (() => {
         <div class="shop-card">
           <div class="shop-icon">${iconFor(item)}</div>
           <div class="shop-name">${item.name}</div>
-          <div class="shop-price">🪙 ${cost}${isCrops ? ' each' : ''}</div>
+          <div class="shop-price">${currencyIcon} ${cost}${isCrops ? ' each' : ''}</div>
           ${durationLine}
           ${stockLine}
           ${locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}

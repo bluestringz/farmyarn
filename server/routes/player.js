@@ -61,6 +61,63 @@ module.exports = function playerRoutes(db) {
     });
   });
 
+  // ---- FARM MUSIC (Sound System) ----
+  // Same disk-persistence reasoning as AVATAR_DIR above — configurable so
+  // it survives redeploys on hosts with a persistent volume.
+  const FARM_MUSIC_DIR = process.env.UPLOADS_DIR
+    ? path.join(process.env.UPLOADS_DIR, 'farm-music')
+    : path.join(__dirname, '..', '..', 'public', 'uploads', 'farm-music');
+  fs.mkdirSync(FARM_MUSIC_DIR, { recursive: true });
+  const farmMusicUpload = multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => cb(null, FARM_MUSIC_DIR),
+      filename: (req, file, cb) => cb(null, `${req.userId}_${Date.now()}.mp3`),
+    }),
+    limits: { fileSize: 8 * 1024 * 1024 }, // 8MB — a few minutes of MP3 at a normal bitrate
+    fileFilter: (req, file, cb) => {
+      const ok = file.mimetype === 'audio/mpeg' || file.mimetype === 'audio/mp3';
+      cb(ok ? null : new Error('Only MP3 files are allowed'), ok);
+    },
+  });
+
+  // POST /api/player/farm-music — upload (or replace) the track that plays
+  // whenever anyone loads this player's farm (see serializeFarm's
+  // musicUrl in farm.js). Gated on actually owning a placed Sound System
+  // — the same "buy it, THEN it unlocks the feature" shape as the Closet
+  // unlocking costume-wearing, just checked here instead of client-side.
+  router.post('/farm-music', (req, res) => {
+    const farm = db.prepare('SELECT id FROM farms WHERE owner_id = ?').get(req.userId);
+    const hasSoundSystem = farm && db.prepare("SELECT 1 FROM farm_objects WHERE farm_id = ? AND item_id = 'sound_system'").get(farm.id);
+    if (!hasSoundSystem) return res.status(400).json({ error: 'Buy and place a Sound System on your farm first' });
+
+    farmMusicUpload.single('music')(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+      const old = db.prepare('SELECT farm_music_url FROM users WHERE id = ?').get(req.userId);
+      if (old && old.farm_music_url && old.farm_music_url.startsWith('/uploads/farm-music/')) {
+        const oldPath = path.join(__dirname, '..', '..', 'public', old.farm_music_url);
+        fs.unlink(oldPath, () => {});
+      }
+
+      const musicUrl = `/uploads/farm-music/${req.file.filename}`;
+      db.prepare('UPDATE users SET farm_music_url = ? WHERE id = ?').run(musicUrl, req.userId);
+      res.json({ ok: true, musicUrl });
+    });
+  });
+
+  // POST /api/player/farm-music/remove — stop playing anything, without
+  // needing to remove the Sound System itself from the farm.
+  router.post('/farm-music/remove', (req, res) => {
+    const old = db.prepare('SELECT farm_music_url FROM users WHERE id = ?').get(req.userId);
+    if (old && old.farm_music_url && old.farm_music_url.startsWith('/uploads/farm-music/')) {
+      const oldPath = path.join(__dirname, '..', '..', 'public', old.farm_music_url);
+      fs.unlink(oldPath, () => {});
+    }
+    db.prepare('UPDATE users SET farm_music_url = NULL WHERE id = ?').run(req.userId);
+    res.json({ ok: true });
+  });
+
   const DISPLAY_NAME_CHANGE_COST = 200; // Premium Points, after the first free set
 
   // POST /api/player/display-name { name } — the public-facing name shown
