@@ -608,7 +608,7 @@
     if (!url) { updateFarmMusicToggleBtn(); return; }
     farmMusicAudio = new Audio(url);
     farmMusicAudio.loop = true;
-    farmMusicAudio.volume = 0.5;
+    farmMusicAudio.volume = FarmMusic.getVolume();
     // Browsers block audio-with-sound autoplay without a recent user
     // gesture — most farm loads happen right after one anyway (tapping
     // Login, or a friend's "Visit" button), but silently ignore a
@@ -2484,12 +2484,29 @@
       document.getElementById('settings-new-password').value = '';
       document.getElementById('account-settings-error').textContent = '';
       document.getElementById('graphics-quality-select').value = game.graphicsQuality || 'middle';
+      const volPercent = Math.round(FarmMusic.getVolume() * 100);
+      document.getElementById('music-volume-slider').value = volPercent;
+      document.getElementById('music-volume-value').textContent = `${volPercent}%`;
       document.getElementById('account-settings-modal').classList.remove('hidden');
     });
     document.getElementById('graphics-quality-select').addEventListener('change', (e) => {
       game.setGraphicsQuality(e.target.value);
       localStorage.setItem('fy_graphics_quality', e.target.value);
       UI.toast(`Graphics set to ${e.target.value.toUpperCase()}`);
+    });
+    // 'input' (not 'change') so it updates live while dragging, same as
+    // any other volume slider — applies to BOTH the background jingle
+    // (FarmMusic.setVolume, which persists it for next time too) and
+    // whichever farm's custom theme song happens to be playing right now
+    // (farmMusicAudio doesn't persist its own volume — it just re-reads
+    // FarmMusic.getVolume() the next time playFarmMusicIfNeeded creates a
+    // new Audio() for a farm, so this line is what keeps an ALREADY-
+    // playing one in sync too).
+    document.getElementById('music-volume-slider').addEventListener('input', (e) => {
+      const level = parseInt(e.target.value, 10) / 100;
+      FarmMusic.setVolume(level);
+      if (farmMusicAudio) farmMusicAudio.volume = level;
+      document.getElementById('music-volume-value').textContent = `${e.target.value}%`;
     });
     document.getElementById('account-settings-cancel').addEventListener('click', () => {
       document.getElementById('account-settings-modal').classList.add('hidden');

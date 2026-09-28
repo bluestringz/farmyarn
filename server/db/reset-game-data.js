@@ -63,6 +63,7 @@ function run() {
     db.prepare('DELETE FROM friends').run();
     db.prepare('DELETE FROM daily_rewards_claimed').run();
     db.prepare('DELETE FROM marketplace_listings').run();
+    db.prepare('DELETE FROM seed_purchases').run();
     // marketplace_stalls are fixed pre-seeded slots (id is not
     // autoincrement) — clear who's renting each one instead of deleting
     // the rows themselves.

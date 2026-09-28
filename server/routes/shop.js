@@ -1,6 +1,7 @@
 const express = require('express');
 const { grantRewards, addInventory, nowSec, rollAnimalQuantity, spendEnergy, resolveEnergy, notify, currencyFieldFor } = require('../lib/gameLogic');
 const { getAllStock, consumeStock } = require('../lib/shopStock');
+const { seedLimitStatus, recordSeedPurchase } = require('../lib/seedLimits');
 const { isWithinBuyWindow, SEASONS, currentSeasonKeys, formatSeasonWindow } = require('../lib/seasons');
 const {
   INTERIOR_WIDTH, INTERIOR_HEIGHT, HOUSE_LOCATION,
@@ -86,6 +87,17 @@ module.exports = function shopRoutes(db) {
       if (s) { r.maxStock = s.maxStock; r.currentStock = s.currentStock; }
     });
     annotate(crops, 'crop');
+    // Per-player weekly seed cap (see seedLimits.js) — only attached when
+    // an admin has actually set one for that crop, so the client can show
+    // "X/120 bought this week" and cap the quantity box to what's left.
+    for (const c of crops) {
+      const info = seedLimitStatus(db, req.userId, c.id);
+      if (info.limit > 0) {
+        c.weeklyLimit = info.limit;
+        c.weeklyBought = info.bought;
+        c.weeklyRemaining = info.remaining;
+      }
+    }
     annotate(buildings, 'building');
     annotate(decorations, 'decoration');
     annotate(animals, 'animal');
@@ -177,6 +189,18 @@ module.exports = function shopRoutes(db) {
     const totalCost = crop.seed_cost * qty;
     if (user.coins < totalCost) return res.status(400).json({ error: 'Not enough coins' });
 
+    // Weekly per-player cap (admin-set per crop, see seedLimits.js) —
+    // checked BEFORE consuming shop stock so a rejected purchase never
+    // eats into the restock other players are waiting on.
+    const limitInfo = seedLimitStatus(db, req.userId, cropType);
+    if (limitInfo.limit > 0 && qty > limitInfo.remaining) {
+      return res.status(400).json({
+        error: limitInfo.remaining > 0
+          ? `Weekly limit: you can only buy ${limitInfo.remaining} more ${crop.name} seeds this week (${limitInfo.bought}/${limitInfo.limit} bought). Resets every Monday.`
+          : `You've reached this week's limit of ${limitInfo.limit} ${crop.name} seeds. Resets every Monday.`,
+      });
+    }
+
     const stockCheck = consumeStock(db, 'crop', cropType, qty);
     if (!stockCheck.ok) {
       return res.status(400).json({ error: stockCheck.remaining > 0 ? `Only ${stockCheck.remaining} left in stock` : 'Out of stock' });
@@ -184,6 +208,7 @@ module.exports = function shopRoutes(db) {
 
     db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(totalCost, req.userId);
     addInventory(db, req.userId, `seed_${cropType}`, qty);
+    recordSeedPurchase(db, req.userId, cropType, qty);
 
     const updated = db.prepare('SELECT coins FROM users WHERE id = ?').get(req.userId);
     res.json({ ok: true, cropType, quantity: qty, coinsSpent: totalCost, coins: updated.coins, stockRemaining: stockCheck.remaining });

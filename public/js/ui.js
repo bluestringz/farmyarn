@@ -461,6 +461,17 @@ const UI = (() => {
       const TOOL_ICONS = { megaphone: '📢' };
       const DECORATION_ICONS = { sound_system: '🔊' };
       const iconFor = (it) => FRUIT_TREE_ICONS[it.id] || TOOL_ICONS[it.id] || DECORATION_ICONS[it.id] || glyphMap[activeCategory];
+      // Per-player weekly seed cap (admin-set, see server/lib/seedLimits.js)
+      // — only present on crops an admin has actually capped. Shows how
+      // much of this week's allowance is used, and clamps the quantity box
+      // / MAX to what's left so a player isn't offered more than the
+      // server will actually sell them.
+      const hasWeeklyLimit = item.weeklyLimit > 0;
+      const weeklyRemaining = hasWeeklyLimit ? Math.max(0, item.weeklyRemaining) : Infinity;
+      const weeklyLimitReached = hasWeeklyLimit && weeklyRemaining <= 0;
+      const weeklyLine = hasWeeklyLimit
+        ? `<div class="shop-level" style="${weeklyLimitReached ? 'color:#c0392b;font-weight:700;' : ''}">📅 Weekly limit: ${item.weeklyBought}/${item.weeklyLimit} bought${weeklyLimitReached ? ' — resets Monday' : ''}</div>`
+        : '';
       const durationLine = isCrops || activeCategory === 'fruit_trees' ? `<div class="shop-level">⏱ ${formatDuration(item.growth_seconds)} to grow</div>` : '';
       // Seeds are the one thing people buy in bulk (to plant a whole field
       // at once) — give them a quantity field instead of one-click-at-a-time,
@@ -475,9 +486,10 @@ const UI = (() => {
       const isFruitTreeTab = activeCategory === 'fruit_trees';
       const isToolsTab = activeCategory === 'tools';
       const qtyCap = isFruitTreeTab ? 20 : 99;
-      const maxAffordable = Math.max(1, Math.min(qtyCap, Math.floor(balance / cost), hasStockCap ? Math.max(1, item.currentStock) : qtyCap));
-      const qtyRow = (isCrops || isFruitTreeTab || isToolsTab) && !locked && !outOfStock
-        ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="${hasStockCap ? Math.min(qtyCap, Math.max(1, item.currentStock)) : qtyCap}" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
+      const maxAffordable = Math.max(1, Math.min(qtyCap, Math.floor(balance / cost), hasStockCap ? Math.max(1, item.currentStock) : qtyCap, weeklyRemaining));
+      const qtyInputMax = Math.max(1, Math.min(qtyCap, hasStockCap ? item.currentStock : qtyCap, weeklyRemaining));
+      const qtyRow = (isCrops || isFruitTreeTab || isToolsTab) && !locked && !outOfStock && !weeklyLimitReached
+        ? `<div class="qty-row"><input type="number" class="qty-input" min="1" max="${qtyInputMax}" value="1" data-qty-for="${item.id}"><button type="button" class="qty-max-btn" data-max-for="${item.id}" data-max-value="${maxAffordable}">MAX</button></div>`
         : '';
       const colorOptions = BUILDING_COLOR_OPTIONS[item.id];
       const isMansion = item.id === 'mansion';
@@ -496,12 +508,13 @@ const UI = (() => {
           <div class="shop-price">${currencyIcon} ${cost}${isCrops ? ' each' : ''}</div>
           ${durationLine}
           ${stockLine}
+          ${weeklyLine}
           ${locked ? `<div class="shop-level">Requires Lvl ${item.required_level}</div>` : ''}
           ${ITEM_DESCRIPTIONS[item.id] ? `<div class="shop-desc">${ITEM_DESCRIPTIONS[item.id]}</div>` : ''}
           ${colorSwatches}
           ${qtyRow}
-          <button data-item="${item.id}" ${(locked || !affordable || outOfStock) ? 'disabled' : ''}>
-            ${locked ? 'Locked' : outOfStock ? 'Out of Stock' : isCrops ? 'Buy Seeds' : 'Buy'}
+          <button data-item="${item.id}" ${(locked || !affordable || outOfStock || weeklyLimitReached) ? 'disabled' : ''}>
+            ${locked ? 'Locked' : outOfStock ? 'Out of Stock' : weeklyLimitReached ? 'Weekly limit reached' : isCrops ? 'Buy Seeds' : 'Buy'}
           </button>
         </div>`;
     }).join('') || `<div class="empty-state">Nothing here yet.</div>`;

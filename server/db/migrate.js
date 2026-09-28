@@ -364,6 +364,18 @@ function migrate(db) {
     UNIQUE(category, item_id)
   );
 
+  -- How many seeds of each crop a player has bought from the Shop in a given
+  -- week (see server/lib/seedLimits.js) — backs the admin-set weekly
+  -- per-player purchase limit. week_index is that lib's Monday-based week
+  -- number, so a new week simply means new rows and the count starts at 0.
+  CREATE TABLE IF NOT EXISTS seed_purchases (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    crop_id TEXT NOT NULL,
+    week_index INTEGER NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, crop_id, week_index)
+  );
+
   -- Separate cold storage for cooking ingredients, distinct from the Bag
   -- (the 'inventory' table) — lets crops/animal products used for cooking
   -- live in the Refrigerator instead of cluttering the Bag. The Stove's

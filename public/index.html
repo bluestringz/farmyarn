@@ -320,6 +320,12 @@
   <div id="account-settings-modal" class="modal-overlay hidden">
     <div class="modal-card">
       <h2>Settings</h2>
+      <h3 style="margin-bottom:4px;">🔊 Music Volume</h3>
+      <p style="font-size:12px;color:#8a5a34;margin-top:0;">Controls both the background music and any farm's custom theme song — muting either one with their own topbar button still works independently. Saved in this browser, takes effect immediately.</p>
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+        <input type="range" id="music-volume-slider" min="0" max="100" step="1" style="flex:1;">
+        <span id="music-volume-value" style="min-width:38px; text-align:right; font-weight:700;">50%</span>
+      </div>
       <h3 style="margin-bottom:4px;">🖥️ Graphics Quality</h3>
       <p style="font-size:12px;color:#8a5a34;margin-top:0;">Lower settings trade fine detail (tile texture, glow effects, screen sharpness) for smoother performance — pick whichever feels best on your device. Takes effect immediately.</p>
       <select id="graphics-quality-select" style="width:100%;margin-bottom:14px;">

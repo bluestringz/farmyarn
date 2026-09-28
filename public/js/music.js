@@ -21,6 +21,15 @@ const FarmMusic = (() => {
   let ctx = null;
   let playing = false;
   let muted = localStorage.getItem('fy_music_muted') === '1';
+  // 0..1 — same slider value main.js's Settings modal also applies to the
+  // separate per-farm custom theme song (see updateFarmMusicToggleBtn's
+  // volume handling), so both music sources move together from one control
+  // even though they're otherwise independent (muting one doesn't mute
+  // the other).
+  let volume = (() => {
+    const saved = parseFloat(localStorage.getItem('fy_music_volume'));
+    return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.5;
+  })();
   let nextLoopTimer = null;
   let masterGain = null;
 
@@ -33,7 +42,7 @@ const FarmMusic = (() => {
     return new Promise((resolve) => {
       const audio = new Audio(CUSTOM_TRACK_URL);
       audio.loop = true;
-      audio.volume = 0.5;
+      audio.volume = volume;
       audio.addEventListener('canplaythrough', () => resolve(audio), { once: true });
       audio.addEventListener('error', () => resolve(null), { once: true });
       audio.load();
@@ -104,7 +113,7 @@ const FarmMusic = (() => {
       // fall back to the procedural tune
       ensureContext();
       if (ctx.state === 'suspended') ctx.resume();
-      masterGain.gain.value = 0.5;
+      masterGain.gain.value = volume;
       masterGain.connect(ctx.destination);
       playing = true;
       scheduleLoop();
@@ -134,7 +143,22 @@ const FarmMusic = (() => {
     return muted;
   }
 
-  return { start, stop, toggle, isMuted };
+  // level: 0..1. Applied immediately to whichever source is actually
+  // playing right now (the Web Audio gain node for the procedural tune,
+  // or the <audio> element's own volume for a custom theme.mp3) — no
+  // restart needed either way.
+  function setVolume(level) {
+    volume = Math.max(0, Math.min(1, level));
+    localStorage.setItem('fy_music_volume', String(volume));
+    if (masterGain) masterGain.gain.value = volume;
+    if (customAudio) customAudio.volume = volume;
+  }
+
+  function getVolume() {
+    return volume;
+  }
+
+  return { start, stop, toggle, isMuted, setVolume, getVolume };
 })();
 
 window.FarmMusic = FarmMusic;

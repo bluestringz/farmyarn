@@ -8,6 +8,7 @@ const { grantRewards, addInventory, nowSec, xpForLevel, MAX_ENERGY, MAX_LEVEL, g
 const { DB_PATH } = require('../db/migrate');
 const { listOddsFields, oddsKey, getOverrideBp, setOverrideBp, clearOverride } = require('../lib/casinoConfig');
 const { getAllStock, setStock, renewStock, removeStock } = require('../lib/shopStock');
+const { getSeedWeeklyLimit, setSeedWeeklyLimit } = require('../lib/seedLimits');
 const { isMaintenanceMode, setMaintenanceMode } = require('../lib/maintenance');
 
 module.exports = function adminRoutes(db, onlineUsers, io) {
@@ -279,6 +280,7 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
       db.prepare('DELETE FROM friends').run();
       db.prepare('DELETE FROM daily_rewards_claimed').run();
       db.prepare('DELETE FROM marketplace_listings').run();
+      db.prepare('DELETE FROM seed_purchases').run();
       db.prepare('UPDATE marketplace_stalls SET renter_id = NULL, rented_until = NULL, listing_item_id = NULL, listing_price = NULL, listing_quantity = 0').run();
 
       for (const userId of existingUserIds) {
@@ -324,6 +326,26 @@ module.exports = function adminRoutes(db, onlineUsers, io) {
     tx();
 
     res.json({ ok: true, playersReset: existingUserIds.length });
+  });
+
+  // ---- Weekly Seed Limits (Admin Panel > 🛒 Weekly Seed Limits) ----
+  // Per-crop cap on how many seeds ONE player can buy from the Shop per
+  // week (anti-hoarding when seeds are restocked — see seedLimits.js for
+  // how the week is defined). 0 = unlimited, which is also what every
+  // crop is until an admin sets one.
+  router.get('/seed-limits', (req, res) => {
+    const crops = db.prepare('SELECT id, name FROM crop_types ORDER BY required_level, seed_cost').all();
+    res.json(crops.map((c) => ({ cropId: c.id, name: c.name, limit: getSeedWeeklyLimit(db, c.id) })));
+  });
+
+  router.post('/set-seed-limit', (req, res) => {
+    const { cropId, limit } = req.body || {};
+    const crop = db.prepare('SELECT id FROM crop_types WHERE id = ?').get(cropId);
+    if (!crop) return res.status(400).json({ error: 'Unknown crop' });
+    const n = parseInt(limit, 10);
+    if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: 'Enter 0 (unlimited) or a positive number' });
+    setSeedWeeklyLimit(db, cropId, n);
+    res.json({ ok: true });
   });
 
   router.get('/expansion-prices', (req, res) => {
