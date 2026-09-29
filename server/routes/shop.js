@@ -425,6 +425,12 @@ module.exports = function shopRoutes(db) {
         }
       }
     } else {
+      if (loc === 'outdoor') {
+        const crop = findCropInFootprint(db, farm.id, x, y, w, h);
+        if (crop) {
+          return res.status(400).json({ error: `May nakatanim na crop dito (at ${crop.tile_x},${crop.tile_y}) — i-harvest o alisin muna bago maglagay dito.` });
+        }
+      }
       const blocking = findOverlap(db, farm.id, loc, x, y, w, h);
       if (blocking) {
         return res.status(400).json({
@@ -529,6 +535,12 @@ module.exports = function shopRoutes(db) {
         }
       }
     } else {
+      if (obj.location === 'outdoor') {
+        const crop = findCropInFootprint(db, farm.id, x, y, w, h);
+        if (crop) {
+          return res.status(400).json({ error: `May nakatanim na crop dito (at ${crop.tile_x},${crop.tile_y}) — i-harvest o alisin muna bago ilipat dito.` });
+        }
+      }
       const blocking = findOverlap(db, farm.id, obj.location, x, y, w, h, objectId);
       if (blocking) {
         return res.status(400).json({
@@ -920,6 +932,18 @@ function lookupDefSync(db, type, itemId) {
   return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(itemId);
 }
 
+// Returns the first crop sitting anywhere inside the given outdoor
+// footprint, or null. Crops live in their own `crops` table (not
+// farm_objects), so findOverlap above never saw them — which is how a
+// fruit tree could get planted right on top of a growing crop.
+function findCropInFootprint(db, farmId, x, y, w, h) {
+  return db.prepare(
+    'SELECT * FROM crops WHERE farm_id = ? AND tile_x >= ? AND tile_x < ? AND tile_y >= ? AND tile_y < ? LIMIT 1'
+  ).get(farmId, x, x + w, y, y + h) || null;
+}
+
+module.exports.findOverlap = findOverlap;
+module.exports.findCropInFootprint = findCropInFootprint;
 module.exports.INTERIOR_WIDTH = INTERIOR_WIDTH;
 module.exports.INTERIOR_HEIGHT = INTERIOR_HEIGHT;
 

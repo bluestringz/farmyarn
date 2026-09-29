@@ -261,6 +261,13 @@ module.exports = function farmRoutes(db, io) {
       // doesn't spam a toast on every tile that's already in the state
       // it's checking for.
       if (action === 'unplow') return res.json({ ok: true, noop: true, tile: { x, y, state: 'grass' } });
+      // Can't plow under a tree or any other placed object (paths excepted).
+      const { findOverlap } = require('./shop');
+      const blocking = findOverlap(db, farm.id, 'outdoor', x, y, 1, 1);
+      if (blocking) {
+        const name = blocking.def ? blocking.def.name : blocking.object.item_id;
+        return res.status(400).json({ error: `May ${name} dito — hindi pwedeng i-plow ang tile na ito.` });
+      }
       if (!spendEnergy(db, req.userId, 1)) return res.status(400).json({ error: 'Not enough energy' });
       db.prepare('UPDATE farm_tiles SET state = ? WHERE id = ?').run('plowed', tile.id);
       return res.json({ ok: true, tile: { x, y, state: 'plowed' }, energy: resolveEnergy(db, req.userId) });
@@ -290,6 +297,15 @@ module.exports = function farmRoutes(db, io) {
 
     const existingCrop = db.prepare('SELECT * FROM crops WHERE farm_id = ? AND tile_x = ? AND tile_y = ?').get(farm.id, x, y);
     if (existingCrop) return res.status(400).json({ error: 'Tile already has a crop' });
+
+    // A tree (or any other placed object, except a plain path tile) sitting
+    // on this tile blocks planting — crops and trees can't share a tile.
+    const { findOverlap } = require('./shop');
+    const blocking = findOverlap(db, farm.id, 'outdoor', x, y, 1, 1);
+    if (blocking) {
+      const name = blocking.def ? blocking.def.name : blocking.object.item_id;
+      return res.status(400).json({ error: `May ${name} na nakatanim/nakalagay dito — hindi pwedeng magtanim ng crop sa ibabaw nito.` });
+    }
 
     const crop = db.prepare('SELECT * FROM crop_types WHERE id = ?').get(cropType);
     if (!crop) return res.status(400).json({ error: 'Unknown crop type' });
