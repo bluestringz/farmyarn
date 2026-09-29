@@ -1169,6 +1169,10 @@
   async function openFeedPicker() {
     const picker = document.getElementById('seed-picker');
     const inv = await Api.inventory();
+    // The inventory fetch above is async — if the player switched to a
+    // different tool (or closed this one) while it was loading, don't
+    // pop this picker back open over whatever they're doing now.
+    if (state.tool !== 'feed') return;
     const owned = {};
     inv.forEach((row) => { owned[row.item_id] = row.quantity; });
     const feedsOwned = FEED_TYPES.map((f) => ({
@@ -1183,6 +1187,10 @@
   async function openSeedPicker() {
     const picker = document.getElementById('seed-picker');
     const inv = await Api.inventory();
+    // The inventory fetch above is async — if the player switched to a
+    // different tool (or closed this one) while it was loading, don't
+    // pop this picker back open over whatever they're doing now.
+    if (state.tool !== 'plant') return;
     const owned = {};
     inv.forEach((row) => {
       if (row.item_id.startsWith('seed_')) owned[row.item_id.slice(5)] = row.quantity;
@@ -1238,6 +1246,10 @@
   async function openBuildPicker() {
     const picker = document.getElementById('build-picker');
     const inv = await Api.inventory();
+    // The inventory fetch above is async — if the player switched to a
+    // different tool (or closed this one) while it was loading, don't
+    // pop this picker back open over whatever they're doing now.
+    if (state.tool !== 'build') return;
     const owned = [];
     inv.forEach((row) => {
       for (const cat of ['building', 'decoration']) {
@@ -1270,6 +1282,10 @@
   async function openAnimalPicker() {
     const picker = document.getElementById('build-picker');
     const inv = await Api.inventory();
+    // The inventory fetch above is async — if the player switched to a
+    // different tool (or closed this one) while it was loading, don't
+    // pop this picker back open over whatever they're doing now.
+    if (state.tool !== 'place-animal') return;
     const owned = [];
     // Inside a coop/barn/cow_barn, only that specific building's allowed
     // animal types are offered — the server enforces this regardless, but
@@ -1305,6 +1321,10 @@
   async function openDecoratePicker() {
     const picker = document.getElementById('build-picker');
     const inv = await Api.inventory();
+    // The inventory fetch above is async — if the player switched to a
+    // different tool (or closed this one) while it was loading, don't
+    // pop this picker back open over whatever they're doing now.
+    if (state.tool !== 'decorate') return;
     const owned = [];
     inv.forEach((row) => {
       if (row.item_id.startsWith('interior_') && row.quantity > 0) {
@@ -1427,7 +1447,11 @@
       // top of the wrong picker reopening afterward (see below).
       game.playAction(state.tool === 'plant' ? ACTION_ICON.plant : ACTION_ICON.build);
       clearPendingPlacement();
-      if (state.inHouse) { await refreshInterior(); await openDecoratePicker(); }
+      if (state.inHouse) {
+        await refreshInterior();
+        if (state.tool === 'place-animal') await openAnimalPicker();
+        else await openDecoratePicker();
+      }
       else {
         await refreshCurrentFarm();
         // Reopen whichever picker actually matches the CURRENT tool —

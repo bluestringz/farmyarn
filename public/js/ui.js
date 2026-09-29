@@ -230,7 +230,7 @@ const UI = (() => {
       const isRental = item.cost > 0;
       let expiryLine = '';
       if (isRental && item.expiresAt) {
-        const daysLeft = Math.max(0, Math.ceil((item.expiresAt * 1000 - Date.now()) / 86400000));
+        const daysLeft = Math.max(0, Math.ceil((item.expiresAt - serverNowSec()) / 86400));
         expiryLine = owned
           ? `<div class="shop-level">Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}</div>`
           : `<div class="shop-level" style="color:#c0392b">Rental expired</div>`;
@@ -715,7 +715,7 @@ const UI = (() => {
     // a countdown rather than a flat duration label.
     const timeLeft = (expiresAt) => {
       if (expiresAt === null || expiresAt === undefined) return 'never expires';
-      const secs = expiresAt - Math.floor(Date.now() / 1000);
+      const secs = expiresAt - serverNowSec();
       if (secs <= 0) return 'expired';
       return formatDuration(secs) + ' left';
     };
@@ -937,8 +937,14 @@ const UI = (() => {
       </div>`).join('');
   }
 
+  // Game time always comes from the SERVER clock (offset synced on each
+  // farm load) so changing the phone's date/time can't skew these labels.
+  function serverNowSec() {
+    return Math.floor(Date.now() / 1000 + (window.__serverTimeOffset || 0));
+  }
+
   function timeAgo(unixSec) {
-    const diff = Math.floor(Date.now() / 1000) - unixSec;
+    const diff = serverNowSec() - unixSec;
     if (diff < 60) return 'just now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -984,7 +990,7 @@ const UI = (() => {
       const equipped = item.equipped;
       let expiryLine = '';
       if (item.expiresAt) {
-        const daysLeft = Math.max(0, Math.ceil((item.expiresAt * 1000 - Date.now()) / 86400000));
+        const daysLeft = Math.max(0, Math.ceil((item.expiresAt - serverNowSec()) / 86400));
         expiryLine = `<div class="shop-level">Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}</div>`;
       }
       return `

@@ -1355,6 +1355,7 @@ class FarmGame {
     // fetch, so crop progress/readiness can be estimated every frame between
     // fetches instead of freezing until the next API call comes back.
     this._serverTimeOffset = farm.serverTime - Date.now() / 1000;
+    window.__serverTimeOffset = this._serverTimeOffset; // shared with ui.js labels
     // Only snap the camera (and re-place the character) on an ACTUAL farm
     // switch (first load, or now viewing a different player's farm) —
     // every plow/plant/water/harvest action re-fetches this same farm's
@@ -1400,6 +1401,7 @@ class FarmGame {
     this._doorExitTriggered = false; // fresh room — allow the door-exit check to fire again
     this._staircaseTriggered = false; // fresh room — allow the staircase check to fire again
     this._serverTimeOffset = interiorData.serverTime - Date.now() / 1000;
+    window.__serverTimeOffset = this._serverTimeOffset;
     if (isSameRoom) return;
     // 0.6 tiles of margin on left/right/top matches wallDepth in
     // _drawIndoorRoom — without this, the camera fit only accounted for
