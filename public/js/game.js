@@ -2563,11 +2563,20 @@ class FarmGame {
   // Time-of-day tint + a December snowfall, both driven off the player's
   // actual real-world clock (not an in-game clock) — drawn last, in screen
   // space, so it uniformly washes over the whole scene regardless of pan/zoom.
+  // Current Philippine time (UTC+8), based on the server clock offset —
+  // read with getUTC*() methods. Immune to the phone's date/time settings.
+  static phtNow() {
+    const serverSec = Date.now() / 1000 + (window.__serverTimeOffset || 0);
+    return new Date((serverSec + 8 * 3600) * 1000);
+  }
+
   _drawWeatherOverlay(rect) {
     const ctx = this.ctx;
-    const now = new Date();
-    const hour = now.getHours() + now.getMinutes() / 60;
-    const isChristmasSeason = now.getMonth() === 11; // December
+    // Philippine time (UTC+8) from the server-synced clock, so day/night
+    // and the December snow don't depend on the phone's own date/time.
+    const now = FarmGame.phtNow();
+    const hour = now.getUTCHours() + now.getUTCMinutes() / 60;
+    const isChristmasSeason = now.getUTCMonth() === 11; // December
 
     // Day/night tint by hour: dawn ~5-7, day 7-17, dusk 17-19, night 19-5
     let tint = null, alpha = 0;
@@ -5333,7 +5342,7 @@ class FarmGame {
   // (nighttime-only) agree with what the screen actually looks like
   // instead of each inventing their own threshold.
   _isNight() {
-    const hour = new Date().getHours();
+    const hour = FarmGame.phtNow().getUTCHours();
     return hour >= 19 || hour < 5;
   }
 

@@ -49,7 +49,11 @@ function monthDayValue(month, day) {
 function isWithinBuyWindow(seasonKey, now = new Date()) {
   const season = SEASONS[seasonKey];
   if (!season) return false;
-  const cur = monthDayValue(now.getMonth() + 1, now.getDate());
+  // Season windows follow the Philippine calendar date (UTC+8), not the
+  // server's own timezone (Render runs on UTC, which flipped seasons 8
+  // hours late — at 8 AM PH time instead of midnight).
+  const pht = new Date(now.getTime() + 8 * 3600 * 1000);
+  const cur = monthDayValue(pht.getUTCMonth() + 1, pht.getUTCDate());
   const start = monthDayValue(season.buyStart.month, season.buyStart.day);
   const end = monthDayValue(season.buyEnd.month, season.buyEnd.day);
   if (start <= end) return cur >= start && cur <= end;
