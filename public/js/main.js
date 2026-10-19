@@ -2098,7 +2098,10 @@
         const res = await Api.eat(foodItemId);
         state.me.energy = res.energy;
         renderTopbar();
-        UI.toast(`Yum! +${res.energyRestored} ⚡ energy`);
+        const gained = res.energyGained ?? res.energyRestored;
+        UI.toast(gained < res.energyRestored
+          ? `Yum! +${gained} ⚡ energy (umabot na sa max energy)`
+          : `Yum! +${res.energyRestored} ⚡ energy`);
         await renderInventoryPanel();
       } catch (err) {
         UI.toast(err.message);

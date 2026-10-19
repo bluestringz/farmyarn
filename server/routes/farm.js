@@ -822,8 +822,9 @@ module.exports = function farmRoutes(db, io) {
     if (!foodRow || foodRow.quantity < 1) return res.status(400).json({ error: "You don't have any of that to eat" });
     db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE id = ?').run(foodRow.id);
 
+    const before = resolveEnergy(db, req.userId) || 0;
     const energy = addEnergy(db, req.userId, energyRestore);
-    res.json({ ok: true, energy, energyRestored: energyRestore });
+    res.json({ ok: true, energy, energyRestored: energyRestore, energyGained: energy - before });
   });
 
   return router;

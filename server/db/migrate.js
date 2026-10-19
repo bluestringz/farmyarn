@@ -805,6 +805,40 @@ function seedContent(db) {
   const txItems = db.transaction((rows) => rows.forEach((r) => upsertItem.run(r)));
   txItems(items);
 
+  // One-time fixes, each guarded by a game_settings flag so they only ever
+  // run once (an admin can still change these values afterwards).
+  const runOnce = (flag, fn) => {
+    if (db.prepare('SELECT 1 FROM game_settings WHERE key = ?').get(flag)) return;
+    db.transaction(() => {
+      fn();
+      db.prepare('INSERT INTO game_settings (key, value) VALUES (?, 1)').run(flag);
+    })();
+  };
+  // Hotdog/Ice Cream were labeled +8/+5 Energy but the live rows (seeded
+  // by an older version — ON CONFLICT DO NOTHING never updated them) only
+  // gave +5/+3. Bring them in line with what the game advertises.
+  runOnce('fix_snack_energy_v1', () => {
+    db.prepare("UPDATE item_types SET energy_restore = 8 WHERE id = 'hotdog'").run();
+    db.prepare("UPDATE item_types SET energy_restore = 5 WHERE id = 'ice_cream'").run();
+  });
+  // Seeds can no longer be sold on the Marketplace — return any seed
+  // listings still sitting at a stall to their sellers' Bags.
+  runOnce('remove_seed_listings_v1', () => {
+    const rows = db.prepare(`
+      SELECT l.id, l.item_id, l.quantity, s.renter_id FROM marketplace_listings l
+      JOIN marketplace_stalls s ON s.id = l.stall_id
+      WHERE substr(l.item_id, 1, 5) = 'seed_'
+    `).all();
+    const give = db.prepare(`
+      INSERT INTO inventory (user_id, item_id, quantity) VALUES (?, ?, ?)
+      ON CONFLICT(user_id, item_id) DO UPDATE SET quantity = quantity + excluded.quantity
+    `);
+    for (const r of rows) {
+      if (r.renter_id && r.quantity > 0) give.run(r.renter_id, r.item_id, r.quantity);
+    }
+    db.prepare("DELETE FROM marketplace_listings WHERE substr(item_id, 1, 5) = 'seed_'").run();
+  });
+
   const upsertOutfit = db.prepare(`
     INSERT INTO outfit_types (id, name, cost, required_level, gender, shirt_color, pants_color, hat_color, style, sprite_key, currency, rental_days)
     VALUES (@id, @name, @cost, @required_level, @gender, @shirt_color, @pants_color, @hat_color, @style, @sprite_key, @currency, @rental_days)

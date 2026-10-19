@@ -653,7 +653,7 @@ const UI = (() => {
             <div class="row-icon">${ITEM_ICONS[row.item_id] || '🍽️'}</div>
             <div class="row-main">
               <div class="row-title">${meta.name} × ${row.quantity}</div>
-              <div class="row-sub">Eat for ⚡+${FOOD_ITEMS[row.item_id]} energy</div>
+              <div class="row-sub">Eat for ⚡+${row.energy_restore || FOOD_ITEMS[row.item_id]} energy</div>
             </div>
             <div class="row-actions">
               <button data-eat="${row.item_id}">Eat 1</button>
@@ -824,9 +824,12 @@ const UI = (() => {
         // decoration_crafted_*), which is deliberately sellable: that's
         // the whole point of crafting it instead of just buying it.
         const isCraftedFurniture = (id) => id.includes('_crafted_');
-        const sellable = inv.filter((r) =>
+        // Seeds are NOT listable anymore (anti-cheat: dummy accounts were
+        // buying seeds and funneling them to a main account) — the server
+        // rejects them too.
+        const sellable = inv.filter((r) => !r.item_id.startsWith('seed_') && (
           isCraftedFurniture(r.item_id) ||
-          !['building_', 'decoration_', 'animal_', 'interior_'].some((p) => r.item_id.startsWith(p)));
+          !['building_', 'decoration_', 'animal_', 'interior_'].some((p) => r.item_id.startsWith(p))));
         const select = document.getElementById('mkt-list-item');
         // Costumes you own (and aren't already listed) show up in the SAME
         // picker as ordinary items — its 7-day rental clock keeps running

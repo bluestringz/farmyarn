@@ -151,6 +151,13 @@ module.exports = function marketplaceRoutes(db) {
       return res.json({ ok: true, stallId: stall.id, itemId, quantity: 1, price: unitPrice, expiresAt: owned.expires_at });
     }
 
+    // Seeds can't be listed — otherwise a dummy account could buy seeds
+    // (dodging the weekly seed limit) and funnel them to a main account
+    // through the Marketplace.
+    if (typeof itemId === 'string' && itemId.startsWith('seed_')) {
+      return res.status(400).json({ error: 'Bawal ibenta ang seeds sa Marketplace.' });
+    }
+
     const qty = parseInt(quantity, 10);
     if (!qty || qty < 1) return res.status(400).json({ error: 'Invalid quantity' });
 
@@ -223,6 +230,7 @@ module.exports = function marketplaceRoutes(db) {
     const stall = db.prepare('SELECT * FROM marketplace_stalls WHERE id = ?').get(listing.stall_id);
     if (!stall || !stall.renter_id) return res.status(404).json({ error: 'Stall not found or unrented' });
     if (stall.renter_id === req.userId) return res.status(400).json({ error: "You can't buy from your own stall" });
+    if (listing.item_id.startsWith('seed_')) return res.status(400).json({ error: 'Bawal bumili ng seeds sa Marketplace.' });
 
     if (listing.listing_type === 'outfit') {
       // The costume's rental clock kept running the whole time it sat

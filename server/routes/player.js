@@ -263,7 +263,11 @@ module.exports = function playerRoutes(db) {
     // in the Bag disappears here too, even in a session that never
     // happens to load the farm view first.
     resolveSeasonalExpiry(db, null, req.userId);
-    const rows = db.prepare('SELECT item_id, quantity FROM inventory WHERE user_id = ? AND quantity > 0').all(req.userId);
+    const rows = db.prepare(`
+      SELECT i.item_id, i.quantity, COALESCE(t.energy_restore, 0) AS energy_restore
+      FROM inventory i LEFT JOIN item_types t ON t.id = i.item_id
+      WHERE i.user_id = ? AND i.quantity > 0
+    `).all(req.userId);
     res.json(rows);
   });
 
