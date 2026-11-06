@@ -186,6 +186,24 @@ module.exports = function farmRoutes(db, io) {
   function handleInteriorRequest(req, res, farmOwnerId) {
     const farm = db.prepare('SELECT * FROM farms WHERE owner_id = ?').get(farmOwnerId);
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
+
+    // Anyone can walk around another player's OUTDOOR farm (via the All
+    // Players list), but going INSIDE their house/coop/barn/mansion needs
+    // the owner's friendship — otherwise it's the owner's call whether to
+    // accept the friend request first. The designated Event Place stays
+    // open to everyone, same as the rest of how that place works.
+    if (farmOwnerId !== req.userId && !farm.is_event_place && !getFriendship(db, req.userId, farmOwnerId)) {
+      const pending = db.prepare(`
+        SELECT requester_id FROM friends
+        WHERE status = 'pending' AND ((requester_id = ? AND receiver_id = ?) OR (requester_id = ? AND receiver_id = ?))
+      `).get(req.userId, farmOwnerId, farmOwnerId, req.userId);
+      const friendStatus = !pending ? 'none' : (pending.requester_id === req.userId ? 'pending_out' : 'pending_in');
+      const owner = db.prepare('SELECT COALESCE(display_name, username) AS name FROM users WHERE id = ?').get(farmOwnerId);
+      return res.status(403).json({
+        error: `You need to be friends with ${owner ? owner.name : 'this player'} to go inside their buildings.`,
+        notFriends: true, ownerId: farmOwnerId, ownerName: owner ? owner.name : null, friendStatus,
+      });
+    }
     resolveAnimalDeaths(db, farm.id);
     resolveAnimalColdDeaths(db, farm.id); // covers animals in here too, not just outdoor — same farm_id either way
 

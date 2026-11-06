@@ -738,9 +738,31 @@
     // time they're inside, and every build/decorate/move/remove/feed
     // handler already gates on `!state.viewingUserId`, so nothing extra
     // is needed here to keep it look-but-don't-touch.
-    stopFarmMusic();
     const fetchOpts = state.viewingUserId ? { ...opts, ownerId: state.viewingUserId } : opts;
-    const interior = await Api.myInterior(fetchOpts);
+    let interior;
+    try {
+      interior = await Api.myInterior(fetchOpts);
+    } catch (err) {
+      // Visiting a non-friend's farm: the outdoors is open to everyone,
+      // but going inside needs the owner's friendship. Stay outside and
+      // offer to send a friend request instead (see handleInteriorRequest
+      // in server/routes/farm.js).
+      if (err.status === 403 && err.data && err.data.notFriends) {
+        const who = err.data.ownerName || state.viewingUsername || 'this player';
+        if (err.data.friendStatus === 'pending_out') {
+          UI.toast(`Your friend request to ${who} is still waiting for their answer.`);
+        } else if (err.data.friendStatus === 'pending_in') {
+          UI.toast(`${who} already sent you a friend request — accept it in Neighbors to go inside.`);
+        } else if (confirm(`You're not friends with ${who} yet, so you can't go inside their buildings.\n\nSend them a friend request?`)) {
+          try { await Api.requestFriend(err.data.ownerId); UI.toast('Friend request sent!'); }
+          catch (e2) { UI.toast(e2.message); }
+        }
+        return;
+      }
+      UI.toast(err.message);
+      return;
+    }
+    stopFarmMusic();
     game.setInteriorMode(interior, viaStairs);
     state.inHouse = true;
     state.interiorSpace = {
@@ -2636,6 +2658,7 @@
   async function openFriends() {
     UI.openPanel('Neighbors');
     const data = await Api.listFriends();
+    try { data.players = await Api.listPlayers(); } catch (e) { data.players = []; }
     UI.renderFriends(data, state.online, {
       onSearch: (q) => Api.searchUsers(q),
       onRequest: async (userId) => { await Api.requestFriend(userId); UI.toast('Friend request sent!'); openFriends(); },

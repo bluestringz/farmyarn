@@ -53,6 +53,7 @@ const Api = (() => {
       }
       const err = new Error(message);
       err.status = res.status;
+      err.data = data; // lets callers read extra fields the server sent along with the error (e.g. notFriends)
       throw err;
     }
     return data;
@@ -203,6 +204,7 @@ const Api = (() => {
     // Friends
     searchUsers: (q) => request('GET', `/api/friends/search?q=${encodeURIComponent(q)}`),
     listFriends: () => request('GET', '/api/friends'),
+    listPlayers: () => request('GET', '/api/friends/players'),
     requestFriend: (userId) => request('POST', '/api/friends/request', { userId }),
     respondFriend: (requestId, accept) => request('POST', '/api/friends/respond', { requestId, accept }),
     removeFriend: (userId) => request('DELETE', `/api/friends/${userId}`),

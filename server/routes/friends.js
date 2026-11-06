@@ -16,6 +16,33 @@ module.exports = function friendsRoutes(db, io) {
     res.json(rows);
   });
 
+  // GET /api/friends/players - EVERY player (not just friends), so anyone
+  // can be visited straight from a list without needing a friend request
+  // first. Each row says where the friendship stands so the client can
+  // show Add Friend / Pending / Friends. Visiting a farm's outdoors is
+  // open to all; going inside a building still needs friendship (see
+  // handleInteriorRequest in routes/farm.js).
+  router.get('/players', (req, res) => {
+    const rows = db.prepare(`
+      SELECT id, COALESCE(display_name, username) AS username, level, avatar FROM users
+      WHERE id != ? AND is_banned = 0
+      ORDER BY LOWER(COALESCE(display_name, username)) ASC
+      LIMIT 500
+    `).all(req.userId);
+
+    const rels = db.prepare(`
+      SELECT requester_id, receiver_id, status FROM friends
+      WHERE requester_id = ? OR receiver_id = ?
+    `).all(req.userId, req.userId);
+    const statusByUser = new Map();
+    for (const r of rels) {
+      const other = r.requester_id === req.userId ? r.receiver_id : r.requester_id;
+      if (r.status === 'accepted') statusByUser.set(other, 'friend');
+      else statusByUser.set(other, r.requester_id === req.userId ? 'pending_out' : 'pending_in');
+    }
+    res.json(rows.map((u) => ({ ...u, friendStatus: statusByUser.get(u.id) || 'none' })));
+  });
+
   // GET /api/friends - list accepted friends + pending requests
   router.get('/', (req, res) => {
     const accepted = db.prepare(`

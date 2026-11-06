@@ -2655,7 +2655,12 @@ class FarmGame {
       }
     }
 
-    if (isChristmasSeason) {
+    // Weather is an outdoor thing — no snow or rain falling inside a house,
+    // coop, barn or mansion.
+    const isOutdoors = this.mode !== 'indoor';
+
+    // Snow: December only (PH time) — January 1st it's gone again.
+    if (isChristmasSeason && isOutdoors) {
       ctx.save();
       ctx.globalAlpha = 0.06;
       ctx.fillStyle = '#ffffff';
@@ -2663,6 +2668,116 @@ class FarmGame {
       ctx.restore();
       this._drawSnowfall(rect);
     }
+
+    // Rain: random showers on a schedule everyone shares (see rainIntensityAt).
+    if (isOutdoors) {
+      const rain = FarmGame.rainIntensityAt(now);
+      if (rain > 0.01) this._drawRain(rect, rain);
+    }
+  }
+
+  // ---- Rain schedule ----
+  // Which hours it rains on a given day is worked out from the date alone
+  // (a seeded random generator), so there's nothing to store or sync: every
+  // player computes the exact same showers from the server-synced
+  // Philippine clock. Each day is either dry or has 1-3 showers of
+  // different lengths (roughly half an hour to three hours) spread across
+  // the day, with sunshine in between. Rainy season (Jun-Nov) gets
+  // showers on most days, the rest of the year only now and then, and
+  // December never rains because that's the snow month.
+  static _rainCache = new Map();
+
+  static _seededRandom(seed) {
+    // mulberry32 — small, fast, and good enough for picking shower times.
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Returns the day's showers as [{ start, end, peak }] in hours (0-24),
+  // peak being how heavy that particular shower gets (0.5-1).
+  static rainScheduleForDay(year, month, day) {
+    const key = year * 10000 + month * 100 + day;
+    const cached = FarmGame._rainCache.get(key);
+    if (cached) return cached;
+
+    const showers = [];
+    if (month !== 12) {
+      const rnd = FarmGame._seededRandom(key * 2654435761);
+      const rainySeason = month >= 6 && month <= 11;
+      const chanceOfRain = rainySeason ? 0.75 : (month >= 3 && month <= 5 ? 0.2 : 0.35);
+      if (rnd() < chanceOfRain) {
+        const count = 1 + Math.floor(rnd() * (rainySeason ? 3 : 2)); // 1-3 showers (1-2 outside rainy season)
+        const segLen = 24 / count;
+        for (let i = 0; i < count; i++) {
+          const segStart = i * segLen;
+          const start = segStart + rnd() * segLen * 0.5;
+          const maxLen = segLen - (start - segStart) - 0.25; // never runs into the next shower's slot
+          const length = Math.min(0.5 + rnd() * 2.5, Math.max(0.4, maxLen));
+          showers.push({ start, end: Math.min(24, start + length), peak: 0.5 + rnd() * 0.5 });
+        }
+      }
+    }
+    if (FarmGame._rainCache.size > 14) FarmGame._rainCache.clear(); // only ever need today's; keeps this from growing forever
+    FarmGame._rainCache.set(key, showers);
+    return showers;
+  }
+
+  // 0 = dry, up to 1 = pouring. Eases in and out over a few minutes at
+  // either end of a shower so rain starts and stops gradually.
+  static rainIntensityAt(phtDate) {
+    const showers = FarmGame.rainScheduleForDay(phtDate.getUTCFullYear(), phtDate.getUTCMonth() + 1, phtDate.getUTCDate());
+    const hour = phtDate.getUTCHours() + phtDate.getUTCMinutes() / 60 + phtDate.getUTCSeconds() / 3600;
+    let best = 0;
+    for (const s of showers) {
+      if (hour < s.start || hour > s.end) continue;
+      const fade = 0.12; // ~7 minutes
+      const ease = Math.min(1, (hour - s.start) / fade, (s.end - hour) / fade);
+      best = Math.max(best, ease * s.peak);
+    }
+    return best;
+  }
+
+  _drawRain(rect, intensity) {
+    const ctx = this.ctx;
+    // Grey-blue overcast wash over the whole scene, darker the harder it rains.
+    ctx.save();
+    ctx.globalAlpha = 0.22 * intensity;
+    ctx.fillStyle = '#2c3e50';
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.restore();
+
+    if (!this._raindrops) {
+      this._raindrops = [];
+      for (let i = 0; i < 160; i++) {
+        this._raindrops.push({
+          x: Math.random(), y: Math.random(),
+          len: 10 + Math.random() * 12,
+          speed: 0.9 + Math.random() * 0.7,
+        });
+      }
+    }
+    const t = (Date.now() - this._startTime) / 1000;
+    const visible = Math.floor(this._raindrops.length * (0.3 + 0.7 * intensity));
+    ctx.save();
+    ctx.strokeStyle = `rgba(190,215,245,${0.35 + 0.35 * intensity})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < visible; i++) {
+      const d = this._raindrops[i];
+      const fy = (d.y + t * d.speed) % 1.05;
+      const fx = (d.x - fy * 0.08 + 1) % 1; // drifts slightly sideways as it falls
+      const px = fx * rect.width, py = fy * rect.height;
+      ctx.moveTo(px, py);
+      ctx.lineTo(px - d.len * 0.18, py + d.len);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
 
   _drawSnowfall(rect) {

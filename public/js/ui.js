@@ -900,7 +900,45 @@ const UI = (() => {
         </div>`;
     }).join('') : '<div class="empty-state">No neighbors yet. Search above to add friends!</div>';
 
+    // Everyone on the server, friend or not — anyone can be visited from
+    // here (outdoors only); getting inside someone's buildings still needs
+    // them to be a friend, so each row also offers Add Friend.
+    const players = data.players || [];
+    html += '<div class="panel-section-title">All Players</div>';
+    html += '<div class="friend-search"><input id="player-filter-input" placeholder="Filter players..."></div>';
+    html += '<div id="all-players-list"></div>';
+
     body.innerHTML = html;
+
+    function renderPlayerRows() {
+      const q = (document.getElementById('player-filter-input').value || '').trim().toLowerCase();
+      const shown = players.filter((p) => !q || String(p.username).toLowerCase().includes(q));
+      const listEl = document.getElementById('all-players-list');
+      listEl.innerHTML = shown.map((p) => {
+        const online = onlineSet.has(p.id);
+        let relBtn;
+        if (p.friendStatus === 'friend') relBtn = '<button class="outline" disabled>✓ Friends</button>';
+        else if (p.friendStatus === 'pending_out') relBtn = '<button class="outline" disabled>Requested</button>';
+        else if (p.friendStatus === 'pending_in') relBtn = '<button class="outline" disabled>Sent you a request</button>';
+        else relBtn = `<button class="secondary" data-padd="${p.id}">+ Add</button>`;
+        return `
+          <div class="list-row">
+            <div class="row-icon">🧑‍🌾</div>
+            <div class="row-main">
+              <div class="row-title"><span class="online-dot ${online ? 'online' : ''}"></span>${p.username}</div>
+              <div class="row-sub">Lvl ${p.level}</div>
+            </div>
+            <div class="row-actions">
+              <button data-pvisit="${p.id}">Visit</button>
+              ${relBtn}
+            </div>
+          </div>`;
+      }).join('') || '<div class="empty-state">No players found.</div>';
+      listEl.querySelectorAll('button[data-pvisit]').forEach((btn) => btn.addEventListener('click', () => handlers.onVisit(btn.dataset.pvisit)));
+      listEl.querySelectorAll('button[data-padd]').forEach((btn) => btn.addEventListener('click', () => handlers.onRequest(btn.dataset.padd)));
+    }
+    renderPlayerRows();
+    document.getElementById('player-filter-input').addEventListener('input', renderPlayerRows);
 
     document.getElementById('friend-search-btn').addEventListener('click', async () => {
       const q = document.getElementById('friend-search-input').value.trim();
