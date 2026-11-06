@@ -1,6 +1,8 @@
 // server/lib/gameLogic.js
 // Server-authoritative helpers. The client NEVER dictates coins, xp, or crop state directly.
 
+const { firstRainBetween } = require('./weather');
+
 const nowSec = () => Math.floor(Date.now() / 1000);
 
 // XP required to REACH a given level. Level 1 = 0.
@@ -86,10 +88,62 @@ function getTimerSetting(db, key) {
 //    that wither instead (still visible/clearable, just yield nothing).
 // Both windows are admin-tunable (see DEFAULT_TIMERS / game_settings above).
 
+// Rain waters everything that needs watering — crops AND growing trees,
+// no coins or energy needed. Settled lazily like the rest of this file
+// (whenever a farm is loaded), so it works the same whether or not the
+// owner was online while it rained: if a shower happened any time after
+// something was planted (and, for crops, before it would have died of
+// thirst anyway), it counts as watered from the moment that rain began,
+// with the same 10% growth boost a manual watering gives. See
+// server/lib/weather.js for when it rains.
+function resolveRainWatering(db, farmId, deathSeconds) {
+  const t = nowSec();
+
+  const crops = db.prepare(`
+    SELECT id, planted_at, growth_end_at FROM crops
+    WHERE farm_id = ? AND state = 'growing' AND watered = 0
+  `).all(farmId);
+  for (const crop of crops) {
+    const wetAt = firstRainBetween(crop.planted_at, Math.min(t, crop.planted_at + deathSeconds));
+    if (wetAt === null) continue;
+    db.prepare('UPDATE crops SET watered = 1, watered_by = NULL, growth_end_at = ? WHERE id = ?')
+      .run(boostedGrowthEnd(crop.planted_at, crop.growth_end_at, wetAt), crop.id);
+  }
+
+  const trees = db.prepare(`
+    SELECT id, state FROM farm_objects
+    WHERE farm_id = ? AND object_type = 'decoration'
+      AND state LIKE '%"growthEndAt"%' AND state LIKE '%"watered":0%'
+  `).all(farmId);
+  for (const tree of trees) {
+    let growth;
+    try { growth = tree.state ? JSON.parse(tree.state) : null; } catch (e) { growth = null; }
+    if (!growth || growth.watered || !growth.plantedAt || !growth.growthEndAt) continue;
+    const wetAt = firstRainBetween(growth.plantedAt, t);
+    if (wetAt === null) continue;
+    growth.growthEndAt = boostedGrowthEnd(growth.plantedAt, growth.growthEndAt, wetAt);
+    growth.watered = 1;
+    db.prepare('UPDATE farm_objects SET state = ? WHERE id = ?').run(JSON.stringify(growth), tree.id);
+  }
+}
+
+// Same math as a manual watering at moment `wetAt` (see /water in
+// routes/farm.js): 10% off whatever growth time is still left — or, if the
+// growth window had already run out before the rain came (it couldn't
+// finish without water, so that time did nothing), the full growth time
+// starts over from the moment the rain began.
+function boostedGrowthEnd(plantedAt, growthEndAt, wetAt) {
+  if (wetAt >= growthEndAt) return wetAt + (growthEndAt - plantedAt);
+  return growthEndAt - Math.floor((growthEndAt - wetAt) * 0.10);
+}
+
 function resolveCropStates(db, farmId) {
   const t = nowSec();
   const CROP_DEATH_UNWATERED_SECONDS = getTimerSetting(db, 'crop_death_unwatered_seconds');
   const CROP_WITHER_UNHARVESTED_SECONDS = getTimerSetting(db, 'crop_wither_unharvested_seconds');
+  // Must run BEFORE the ready/dead updates below, so a crop the rain
+  // already watered isn't wrongly killed or left stuck un-ready.
+  resolveRainWatering(db, farmId, CROP_DEATH_UNWATERED_SECONDS);
   // A crop only actually finishes growing once it's been watered at least
   // once — watering was previously just an optional 10%-faster speed
   // boost, meaning a crop still fully matured on its own even if you never

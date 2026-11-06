@@ -372,6 +372,10 @@ module.exports = function farmRoutes(db, io) {
       if (!friendship) return res.status(403).json({ error: 'You must be friends to help on this farm' });
     }
 
+    // Let any rain settle first — if it already watered this crop, the
+    // "Already watered" check below stops it before anything gets charged.
+    resolveCropStates(db, farm.id);
+
     const crop = db.prepare('SELECT * FROM crops WHERE farm_id = ? AND tile_x = ? AND tile_y = ?').get(farm.id, x, y);
     if (!crop || crop.state !== 'growing') return res.status(400).json({ error: 'No growing crop there' });
     if (crop.watered) return res.status(400).json({ error: 'Already watered this cycle' });
@@ -448,6 +452,7 @@ module.exports = function farmRoutes(db, io) {
     const farm = getOwnFarm(req.userId);
     if (!farm) return res.status(404).json({ error: 'Farm not found' });
 
+    resolveCropStates(db, farm.id); // settle any rain first — same reasoning as /water above
     const obj = db.prepare("SELECT * FROM farm_objects WHERE id = ? AND farm_id = ? AND object_type = 'decoration'")
       .get(objectId, farm.id);
     if (!obj) return res.status(404).json({ error: 'Not found on your farm' });
